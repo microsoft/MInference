@@ -399,11 +399,12 @@ FodyWeavers.xsd
 
 # Experiments
 data
+!experiments/ruler/data
+needle
 results
 *.json
 *.jsonl
 .vscode/
-*.txt
 *.pt
 *.pkl
 !minference/configs/*
