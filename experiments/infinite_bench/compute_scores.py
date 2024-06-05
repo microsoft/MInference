@@ -1,15 +1,15 @@
 from __future__ import annotations
-from pathlib import Path
+
 import json
+import os
 import re
 import string
 from collections import Counter
+from pathlib import Path
 
-from tqdm import tqdm
 import evaluate
-
 from args import parse_args
-import os
+from tqdm import tqdm
 
 ROUGE_SCORER = evaluate.load("rouge")
 
@@ -138,8 +138,8 @@ def split_retrieval_answer(pred: str):
 
 
 def get_score_one_kv_retrieval(pred, label, model_name: str) -> bool:
-    for c in ['\n', ':', '\"', '\'', '.', ',', '?', '!', '{', '}', '</s>']:
-        pred = pred.replace(c, ' ')
+    for c in ["\n", ":", '"', "'", ".", ",", "?", "!", "{", "}", "</s>"]:
+        pred = pred.replace(c, " ")
     words = pred.split()
     return label in words
 
@@ -287,10 +287,7 @@ def get_score_one_longbook_qa_eng(pred, label, model_name: str) -> float:
     return qa_f1_score(pred, label)
 
 
-def get_score_one_longbook_sum_eng(
-    pred: str, label: str, model_name: str
-) -> float:
-
+def get_score_one_longbook_sum_eng(pred: str, label: str, model_name: str) -> float:
     score = ROUGE_SCORER.compute(
         predictions=[pred], references=[label], use_aggregator=False
     )
@@ -326,9 +323,7 @@ def get_score_one_math_calc(pred, label, model_name: str) -> float:
     return cnt / len(label)
 
 
-def get_score_one(
-    pred: str, label: str, task_name: str, model_name: str
-) -> float:
+def get_score_one(pred: str, label: str, task_name: str, model_name: str) -> float:
     """
     Computes the score for one prediction.
     Returns one float (zero and one for boolean values).
@@ -338,7 +333,6 @@ def get_score_one(
         "kv_retrieval": get_score_one_kv_retrieval,
         "kv_retrieval_prefix": get_score_one_kv_retrieval,
         "kv_retrieval_both": get_score_one_kv_retrieval,
-
         "passkey": get_score_one_passkey,
         "number_string": get_score_one_number_string,
         # Code
@@ -382,9 +376,7 @@ def get_preds(preds: list, data_name: str) -> list[str]:
     return pred_strings
 
 
-def get_score(
-    labels: list, preds: list, data_name: str, model_name: str
-) -> float:
+def get_score(labels: list, preds: list, data_name: str, model_name: str) -> float:
     """
     Computes the average score for a task.
     """
@@ -406,7 +398,7 @@ def compute_scores(preds_path, data_name: str, model_name: str, max_seq_length=-
     print(f"===== Accuracy of {model_name} on {data_name} task is: {acc} =====")
     pred_dir = preds_path.parent
     save_file = pred_dir / f"{model_name}_summary.txt"
-    pred_dir2 = 'results/'
+    pred_dir2 = "results/"
 
     os.makedirs(pred_dir2, exist_ok=True)
     save_file2 = pred_dir2 + f"{model_name}_summary.txt"
@@ -421,6 +413,7 @@ def compute_scores(preds_path, data_name: str, model_name: str, max_seq_length=-
         else:
             f.write(f"{model_name},{data_name},{acc*100:.2f}\n")
     return acc
+
 
 ALL_TASKS = [
     "passkey",
@@ -448,4 +441,3 @@ if __name__ == "__main__":
         preds_path = result_dir / f"preds_{task}.jsonl"
         assert preds_path.exists(), f"Predictions not found in: {preds_path}"
         compute_scores(preds_path, task, args.model_name)
-

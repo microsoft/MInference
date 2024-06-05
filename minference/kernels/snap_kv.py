@@ -1,22 +1,16 @@
+import math
+import time
+import warnings
+from importlib.metadata import version
+from typing import List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List, Optional, Tuple, Union
-import warnings
-from transformers.cache_utils import Cache, DynamicCache
-from transformers.models.llama.modeling_llama import (
-    apply_rotary_pos_emb,
-    repeat_kv,
-)
-from transformers.utils import (
-    logging,
-)
-
-import time
-import math
-
-from importlib.metadata import version
 import transformers
+from transformers.cache_utils import Cache, DynamicCache
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv
+from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
@@ -56,7 +50,7 @@ def llama_flash_attn2_forward(
     query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
     key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
     value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-    
+
     kv_seq_len = key_states.shape[-2]
     # if past_key_value is not None:
     #     kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
@@ -296,9 +290,9 @@ def init_snapkv(self):
             self.config.kernel_size = 13
         if not hasattr(self.config, 'pooling'):
             self.config.pooling = 'avgpool'
-    self.kv_cluster = SnapKVCluster( 
-        window_size = self.config.window_size, 
-        max_capacity_prompt = self.config.max_capacity_prompt, 
+    self.kv_cluster = SnapKVCluster(
+        window_size = self.config.window_size,
+        max_capacity_prompt = self.config.max_capacity_prompt,
         kernel_size = self.config.kernel_size,
         pooling = self.config.pooling
         )

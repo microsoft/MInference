@@ -30,6 +30,7 @@ repos:
     rev: 23.3.0
     hooks:
     - id: black
+      exclude: minference/kernels
   - repo: https://github.com/nbQA-dev/nbQA
     rev: 1.7.1
     hooks:

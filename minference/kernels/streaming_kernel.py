@@ -12,8 +12,8 @@ Extra Credits:
 """
 
 import math
-import torch
 
+import torch
 import triton
 import triton.language as tl
 
@@ -21,7 +21,7 @@ _BLOCK_N=64
 _BLOCK_M=64
 
 @triton.jit
-def _attn_fwd_inner(acc, l_i, m_i, q, 
+def _attn_fwd_inner(acc, l_i, m_i, q,
                     K_block_ptr, V_block_ptr,
                     start_m, qk_scale, N_CTX,
                     sliding_window_offset, sliding_window_size,
@@ -59,7 +59,7 @@ def _attn_fwd_inner(acc, l_i, m_i, q,
             k = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
 
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-        qk += tl.dot(q, k) 
+        qk += tl.dot(q, k)
         qk = qk * qk_scale
 
         if SLIDING_WINDOW:
@@ -75,7 +75,7 @@ def _attn_fwd_inner(acc, l_i, m_i, q,
 
         if not IS_EVEN_N:
             qk = tl.where(((tl.arange(0, BLOCK_N) + start_n) < N_CTX)[None, :], qk, float("-inf"))
-   
+
         m_ij = tl.maximum(m_i, tl.max(qk, 1))
         qk = qk - m_ij[:, None]
         p = tl.math.exp2(qk)
@@ -192,7 +192,7 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out, L,#
         l_i = tl.zeros([BLOCK_M], dtype=tl.float32) + 1.0
         acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
     else:
-        # don't have to check boundary for q len 
+        # don't have to check boundary for q len
         m_i = tl.load(m_ptrs).to(tl.float32)
         l_i = tl.load(l_ptrs).to(tl.float32)
         acc = tl.load(O_block_ptr).to(tl.float32)
@@ -209,7 +209,7 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out, L,#
                                     start_m, qk_scale, NKV_CTX, #
                                     sliding_window_offset, sliding_window_size,
                                     BLOCK_M, BLOCK_DMODEL, BLOCK_N, SLIDING_WINDOW, IS_EVEN_M, IS_EVEN_N,
-                                    COMPLEMENT_SLIDING_WINDOW) 
+                                    COMPLEMENT_SLIDING_WINDOW)
     # epilogue
     if (END):
         m_i += tl.math.log2(l_i)
@@ -278,7 +278,7 @@ def _score_kernel(
         k = tl.load(K_block_ptr)
     else:
         k = tl.load(K_block_ptr, boundary_check=(0, 1), padding_option="zero")
-        
+
 
     lo = 0
     hi = ROUND_CTX
@@ -294,9 +294,9 @@ def _score_kernel(
 
         m = tl.load(m_ptrs)
 
-        # calc qk 
+        # calc qk
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-        qk += tl.dot(q, k) 
+        qk += tl.dot(q, k)
         qk = qk * qk_scale
 
         if SLIDING_WINDOW:
@@ -350,7 +350,7 @@ def get_score(q, k, m, sliding_window, complement_sliding_window):
     else:
         sliding_window_offset, sliding_window_size = None, None
 
-    
+
     grid = lambda META: (
         triton.cdiv(k.shape[2], META["BLOCK_N"]),
         q.shape[0] * q.shape[1]
@@ -400,13 +400,13 @@ def get_score(q, k, m, sliding_window, complement_sliding_window):
     return ret
 
 def _forward(
-    q, k, v, sm_scale, 
-    o = None, m = None, l = None, end = False, 
+    q, k, v, sm_scale,
+    o = None, m = None, l = None, end = False,
     sliding_window=None, init=False,
     complement_sliding_window=False
 ):
     Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
-    
+
     assert Lq == Lk and Lk == Lv
     assert Lk in {16, 32, 64, 128}
 
@@ -484,7 +484,7 @@ def _forward(
 
 class MultiStageDotProductionAttention:
     def __init__(
-        self, 
+        self,
         q_shape,
         dtype,
         device,
@@ -499,8 +499,8 @@ class MultiStageDotProductionAttention:
         self.score_list = []
 
     def append(
-        self, 
-        q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, 
+        self,
+        q: torch.Tensor, k: torch.Tensor, v: torch.Tensor,
         sliding_window=None, complement_sliding_window: bool = False,
         end=False, get_score=False,
         *args, **kwargs
@@ -555,11 +555,11 @@ class TritonMultiStageDotProductionAttention(MultiStageDotProductionAttention):
         q = q.contiguous()
         k = k.contiguous()
         v = v.contiguous()
-        
+
         sm_scale = 1 / math.sqrt(q.shape[-1])
         o, m, l = _forward(
-            q, k, v, sm_scale, self.o, self.m, self.l, 
-            sliding_window=sliding_window, end=end, init=not self.init, 
+            q, k, v, sm_scale, self.o, self.m, self.l,
+            sliding_window=sliding_window, end=end, init=not self.init,
             complement_sliding_window=complement_sliding_window
         )
         self.init = True
@@ -578,7 +578,7 @@ class TritonMultiStageDotProductionAttention(MultiStageDotProductionAttention):
             self.complement_sliding_window_list.append(None)
 
         if end:
-            assert not self.end 
+            assert not self.end
             self.finalize()
 
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -651,7 +651,7 @@ def streaming_forward2(
             (v.size(0), v.size(1), 0, v.size(3)),
             dtype=v.dtype, device=v.device
         )
-    
+
     attn.append(q, k, v, sliding_window=n_local)
     attn.append(
         q, init_k, init_v, end=True,
@@ -723,7 +723,7 @@ def stream_llm_forward(n_local, n_init, *args, **kwargs):
                 h_q, n_local + n_init
             )
             init_h_k = position_bias.apply_rotary_pos_emb(
-                h_k[:, :, :n_init, :].contiguous(), 
+                h_k[:, :, :n_init, :].contiguous(),
                 n_init, n_init, position_bias._cos_cached, position_bias._sin_cached
             )
             init_h_v = h_v[:, :, :n_init, :].contiguous()

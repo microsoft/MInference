@@ -1,36 +1,37 @@
 from __future__ import annotations
+
 import json
 import os
-from pathlib import Path
 import time
-from typing import List, Tuple, Any
-from tqdm import tqdm
+from pathlib import Path
+from typing import Any, List, Tuple
 
 import torch
+from args import parse_args
+from compute_scores import compute_scores
+from eval_utils import (
+    DATA_NAME_TO_MAX_NEW_TOKENS,
+    check_benchmark_availability,
+    create_prompt,
+    dump_jsonl,
+    get_answer,
+    load_data,
+)
 from torch import Tensor
+from tqdm import tqdm
 from transformers import (
     AutoConfig,
-    AutoTokenizer,
     AutoModelForCausalLM,
+    AutoTokenizer,
     GenerationConfig,
-    LlamaForCausalLM
+    LlamaForCausalLM,
 )
-from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.cache_utils import SinkCache
-
-from eval_utils import (
-    check_benchmark_availability,
-    dump_jsonl,
-    create_prompt,
-    load_data,
-    get_answer,
-    DATA_NAME_TO_MAX_NEW_TOKENS,
-)
-from compute_scores import compute_scores
-from args import parse_args
+from transformers.modeling_outputs import BaseModelOutputWithPast
 from vllm import LLM, SamplingParams
 
 from minference import MInference
+
 
 # sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
 def truncate_input(input: list, max_length: int, manner="middle"):
@@ -44,6 +45,7 @@ def truncate_input(input: list, max_length: int, manner="middle"):
     else:
         return None
 
+
 def truncate_by_tokens(input, tok, max_tokens, manner: str = "middle"):
     tokens = tok.encode(input)
     len_before = len(tokens)
@@ -55,6 +57,7 @@ def truncate_by_tokens(input, tok, max_tokens, manner: str = "middle"):
     assert len_after <= max_tokens or max_tokens < 0
     return tokens
 
+
 def get_pred(
     model,
     tok: AutoTokenizer,
@@ -62,7 +65,7 @@ def get_pred(
     max_input_length: int,
     verbose: bool = False,
     generation_config: GenerationConfig = None,
-    attn_type: str = 'vllm'
+    attn_type: str = "vllm",
 ) -> str:
     """
     Truncate down to 128k then make inference.
@@ -85,27 +88,38 @@ def get_pred(
         output = outputs[0].outputs[0].text
         output = output.strip()
     else:
-        input_tensors = {"input_ids": torch.tensor(input_tokens).unsqueeze(0).to(model.device)}
+        input_tensors = {
+            "input_ids": torch.tensor(input_tokens).unsqueeze(0).to(model.device)
+        }
         # cache = SinkCache(window_length=200000, num_sink_tokens=10000)
         # if attn_type == "minference_wo_cache":
         #     input_tensors["use_cache"] = False
         outputs = model.generate(**input_tensors, generation_config=generation_config)
         # outputs = model.generate(**input_tensors, generation_config=generation_config, past_key_values=cache)
 
-        output = outputs[0, len(input_tokens):]
+        output = outputs[0, len(input_tokens) :]
         output = tok.decode(output, skip_special_tokens=True)
         output = output.strip()
     # print(input_text[:5000], input_text[-5000:])
     print("Chunked generation:", output)
     return output
 
+
 def load_model(
-    model_name: str, topk: int=-1, starting_layer: int=-1, topk_dims_file_path: str="", use_sparq: bool = False,
-    attn_type: str = 'vllm', max_seq_length: int = None, is_search: bool = False,
+    model_name: str,
+    topk: int = -1,
+    starting_layer: int = -1,
+    topk_dims_file_path: str = "",
+    use_sparq: bool = False,
+    attn_type: str = "vllm",
+    max_seq_length: int = None,
+    is_search: bool = False,
 ):
     tok = AutoTokenizer.from_pretrained(model_name)
     tok.pad_token = tok.eos_token
-    minfence_patch = MInference(attn_type, model_name, topk_dims_file_path, is_search, topk)
+    minfence_patch = MInference(
+        attn_type, model_name, topk_dims_file_path, is_search, starting_layer
+    )
 
     if attn_type == "vllm":
         llm = LLM(
@@ -119,14 +133,14 @@ def load_model(
         config = AutoConfig.from_pretrained(model_name)
         if "LWM" in model_name:
             c = {
-                'theta': 10000000,
-                'max_sequence_length': 131072,
-                'scan_attention': True,
-                'scan_query_chunk_size': 1024,
-                'scan_key_chunk_size': 1024,
-                'scan_mlp': True,
-                'scan_mlp_chunk_size': 1024,
-                'scan_layers': True
+                "theta": 10000000,
+                "max_sequence_length": 131072,
+                "scan_attention": True,
+                "scan_query_chunk_size": 1024,
+                "scan_key_chunk_size": 1024,
+                "scan_mlp": True,
+                "scan_mlp_chunk_size": 1024,
+                "scan_layers": True,
             }
             config.update(c)
 
@@ -141,6 +155,7 @@ def load_model(
     print("Model and tokenizer loaded.")
     return llm, tok
 
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -150,26 +165,29 @@ if __name__ == "__main__":
     real_model_name = model_name.split("/")[-1]
     data_name = args.task
 
-    if ',' in data_name:
-        data_names = data_name.split(',')
+    if "," in data_name:
+        data_names = data_name.split(",")
     else:
         data_names = [data_name]
 
     # Model
     model, tok = load_model(
-        model_name, args.topk, args.starting_layer,
-        args.topk_dims_file_path, args.use_sparq,
-        attn_type=args.attn_type, max_seq_length=max_seq_length,
+        model_name,
+        args.topk,
+        args.starting_layer,
+        args.topk_dims_file_path,
+        args.use_sparq,
+        attn_type=args.attn_type,
+        max_seq_length=max_seq_length,
         is_search=args.is_search,
     )
     results = {}
 
     for data_name in data_names:
-
         max_new_tokens = DATA_NAME_TO_MAX_NEW_TOKENS[data_name]
         if max_new_tokens >= max_seq_length:
             max_new_tokens = 500
-        
+
         if args.attn_type == "vllm":
             generation_config = SamplingParams(
                 temperature=0,
@@ -186,14 +204,14 @@ if __name__ == "__main__":
             )
 
         # Data
-        result_dir = Path(args.output_dir, f'{real_model_name}_{args.attn_type}')
+        result_dir = Path(args.output_dir, f"{real_model_name}_{args.attn_type}")
         result_dir.mkdir(exist_ok=True, parents=True)
         output_path = result_dir / f"prediction_{data_name}.jsonl"
         examples = load_data(data_name, data_dir=args.data_dir)
 
         if args.num_eval_examples != -1:
             num_eval_examples = min(args.num_eval_examples, len(examples))
-            examples = examples[: num_eval_examples]
+            examples = examples[:num_eval_examples]
 
         preds = []
         print("==== Evaluation ====")
@@ -214,10 +232,13 @@ if __name__ == "__main__":
             # print(input_text.index(ground_truth), len(input_text), input_text.index(ground_truth) / len(input_text))
             # print(f"====== Example {i} ======")
             pred = get_pred(
-                model, tok, input_text,
-                max_input_length=max_seq_length-max_new_tokens,
-                verbose=args.verbose, generation_config=generation_config,
-                attn_type=args.attn_type
+                model,
+                tok,
+                input_text,
+                max_input_length=max_seq_length - max_new_tokens,
+                verbose=args.verbose,
+                generation_config=generation_config,
+                attn_type=args.attn_type,
             )
             print("Ground Truth", get_answer(eg, data_name))
             if args.verbose:
@@ -231,7 +252,7 @@ if __name__ == "__main__":
             )
             dump_jsonl(preds, output_path)
             torch.cuda.empty_cache()
-        
+
         result_file_path = f"{real_model_name}_{args.attn_type}"
         score = compute_scores(output_path, data_name, result_file_path)
         results[data_name] = score

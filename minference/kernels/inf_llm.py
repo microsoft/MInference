@@ -1,9 +1,11 @@
-import torch
-
-from typing import Optional, Tuple
 from copy import deepcopy
+from typing import Optional, Tuple
+
+import torch
 from flash_attn import flash_attn_func
+
 from .streaming_kernel import TritonMultiStageDotProductionAttention
+
 
 class CudaCache:
     def __init__(self, num_units, unit_size, dtype):
@@ -30,10 +32,10 @@ class CudaCache:
 
 class MemoryUnit:
     def __init__(
-        self, 
-        kv: Tuple[torch.Tensor, torch.Tensor], 
-        cache: CudaCache, 
-        load_to_cache: bool = False, 
+        self,
+        kv: Tuple[torch.Tensor, torch.Tensor],
+        cache: CudaCache,
+        load_to_cache: bool = False,
         pin_memory: bool = False,
     ):
         self.cache = cache
@@ -113,7 +115,7 @@ class MemoryUnit:
 
 class VectorTensor:
     def __init__(
-        self, 
+        self,
         hidden_size,
         element_dtype
     ):
@@ -171,6 +173,7 @@ class VectorTensor:
 class Faiss:
     def __init__(self, hidden_size, element_dtype):
         import faiss
+
         # We use the CPU index here because the GPU index requires a long initialization time
         self.index = faiss.IndexFlatIP(hidden_size)
         self.hidden_size = hidden_size
@@ -196,10 +199,10 @@ GLOBAL_STREAM = None
 
 
 class ContextManager:
-    def __init__(self, 
+    def __init__(self,
                  position_embedding,
-                 n_init, n_local, 
-                 block_size, max_cached_block, topk, exc_block_size, 
+                 n_init, n_local,
+                 block_size, max_cached_block, topk, exc_block_size,
                  score_decay: Optional[float] = None,
                  repr_topk: int = 1,
                  cache_strategy = "lru",
@@ -245,7 +248,7 @@ class ContextManager:
         else:
             self.calc_block_score = False
 
-        
+
     def remove_lru_blocks(self, u, num_remove: Optional[int] = None, ignore_blocks = None):
         if num_remove is None:
             num_remove = len(self.cached_blocks[u]) - self.max_cached_block
@@ -281,7 +284,7 @@ class ContextManager:
 
 
     def from_group_kv(self, tensor):
-        assert tensor.dim() == 4 
+        assert tensor.dim() == 4
         assert tensor.size(1) == self.num_heads_kv
         if self.num_heads == self.num_heads_kv:
             return tensor
@@ -291,9 +294,9 @@ class ContextManager:
         tensor = tensor.expand((self.num_units, self.unit_size_kv, num_group, length, dim_head)).reshape((self.num_units, self.num_heads, length, dim_head))
         return tensor
 
-            
+
     def init(
-        self, 
+        self,
         local_q, local_k, local_v,
         global_q, global_k, global_v
     ):
@@ -368,7 +371,7 @@ class ContextManager:
         )
 
         self.initialized = True
-    
+
 
     def calc_block_topk(
         self, global_h_q
@@ -421,11 +424,11 @@ class ContextManager:
                         global_block_map[u][j] = b_idx
                         break
 
-                
+
                 assert b_idx in self.cached_blocks[u]
                 self.global_blocks[u][b_idx].load((global_h_k[u, :, st:ed, :], global_h_v[u, :, st:ed, :]))
 
-             
+
         init_st = block_num * self.block_size
         init_ed = init_st + init_len
         if self.global_buffer_init_st != init_st or self.global_buffer_init_ed != init_ed:
@@ -477,7 +480,7 @@ class ContextManager:
                     self.cached_blocks[u][i] += s
 
 
-    
+
     def _append(
         self,
         local_q, local_k, local_v, global_q
@@ -491,14 +494,14 @@ class ContextManager:
         # calc local result first to overlap host-device communication
         attn = self.Attn(local_h_q.shape, local_h_q.dtype, local_h_q.device)
         attn.append(
-            local_h_q, local_h_k, local_h_v, 
+            local_h_q, local_h_k, local_h_v,
             get_score=True, sliding_window=self.n_local
         )
 
         # calc topk global repr k and load cache
         with torch.cuda.stream(GLOBAL_STREAM):
             block_topk = self.calc_block_topk(global_q)
-            
+
             for u in range(self.num_units):
                 num_remove = len(self.cached_blocks[u]) - self.max_cached_block
                 for bidx in block_topk[u]:
@@ -531,8 +534,8 @@ class ContextManager:
 
         # calc global result
         attn.append(
-            global_h_q, global_h_k, global_h_v, 
-            end=True, get_score=self.calc_block_score, 
+            global_h_q, global_h_k, global_h_v,
+            end=True, get_score=self.calc_block_score,
             sliding_window=global_sliding_window,
             complement_sliding_window=True
         )
@@ -593,10 +596,10 @@ class ContextManager:
                 for u in range(self.num_units):
                     tmp.append(indices[u, b].tolist())
                     assert len(tmp[-1]) == self.topk
-                
+
                 ret.append(tmp)
 
-        if exc_block_num != exc_num: 
+        if exc_block_num != exc_num:
             tmp_global_h_q = global_h_q[:, :, exc_block_num * self.exc_block_size:, :].reshape(
                 self.num_units, self.unit_size, length - exc_block_num * self.exc_block_size, self.dim_head
             ).mean(dim=-2, keepdim=True)
@@ -615,7 +618,6 @@ class ContextManager:
 
             ret.append(tmp)
 
-         
         return ret
 
     def append_global(
@@ -630,7 +632,7 @@ class ContextManager:
         assert local_score.shape[:3] == (self.num_units, self.unit_size, kv_length)
         local_score = local_score[:, :, -exc_length-self.n_local:]
         self.global_remainder_local_score[:, :, global_remainder_ed-local_score.size(-1):global_remainder_ed].add_(local_score)
-        
+
 
         if not self.init_exc and global_remainder_len > self.n_local:
             global_k = self.global_remainder[0]
@@ -717,7 +719,7 @@ class ContextManager:
             )
 
         input_length = local_q.size(-2)
-        
+
         if self.async_global_stream:
             GLOBAL_STREAM.wait_stream(torch.cuda.current_stream())
 
@@ -742,7 +744,7 @@ class ContextManager:
             )
 
             self.global_remainder_local_score = torch.cat(
-                (self.global_remainder_local_score, 
+                (self.global_remainder_local_score,
                 torch.zeros(
                         (self.num_units, self.unit_size, global_k.size(-2)),
                         dtype=global_k.dtype, device=global_k.device
@@ -770,7 +772,7 @@ class ContextManager:
 
         o_list = []
 
-        for st in range(0, input_length, self.exc_block_size): 
+        for st in range(0, input_length, self.exc_block_size):
             ed = min(st + self.exc_block_size, input_length)
             if use_chunk_topk and calc_cur_list[self._topk_calc_cur + 1] < ed:
                 # calculate topk and sync with host here
@@ -825,9 +827,9 @@ class ContextManager:
 
     def size(self, *args, **kwargs):
         return self.length
-    
+
 def inf_llm_forward(
-    n_local, n_init, topk, 
+    n_local, n_init, topk,
     block_size, max_cached_block,
     exc_block_size,
     repr_topk: int = 1,
@@ -847,7 +849,7 @@ def inf_llm_forward(
                     position_bias : Optional[torch.Tensor],
                     use_cache: bool,
                     past_key_value,
-                    project_q, project_k, project_v, attention_out, 
+                    project_q, project_k, project_v, attention_out,
                     dim_head, num_heads, num_heads_kv
     ):
 
@@ -871,7 +873,7 @@ def inf_llm_forward(
 
             h_k = torch.cat((past_k, h_k), dim=-2)
             h_v = torch.cat((past_v, h_v), dim=-2)
-            
+
             past_key_value.dense_k = h_k
             past_key_value.dense_v = h_v
 
@@ -961,7 +963,7 @@ class GreedySearch:
 
         with torch.inference_mode():
             result = self._decode(input_ids, **kwargs)
-        
+
         self.clear()
         return result
 
@@ -977,7 +979,7 @@ class GreedySearch:
         past_key_values = self.past_kv
         if output:
             output_text = ""
-        
+
         for i in range(max_length + 1):
             if i == 0:
                 if chunk_size is None:
@@ -1024,7 +1026,7 @@ class GreedySearch:
             if output:
                 tmp = self.tokenizer.decode(input_ids.squeeze(0)[length:])
                 if len(tmp) > len(output_text):
-                    import sys               
+                    import sys
                     sys.stdout.write(tmp[len(output_text):])
                     sys.stdout.flush()
                     output_text = tmp

@@ -1,12 +1,10 @@
-import torch
 import numpy as np
-
+import pycuda.autoprimaryctx
+import torch
 import triton
 import triton.language as tl
-import pycuda.autoprimaryctx
-from pycuda.compiler import SourceModule
-
 from flash_attn import flash_attn_varlen_func
+from pycuda.compiler import SourceModule
 
 
 @triton.jit
