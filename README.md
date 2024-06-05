@@ -1,14 +1,25 @@
-# Project
+<div style="display: flex; align-items: center;">
+    <div style="width: 100px; margin-right: 10px; height:auto;" align="left">
+        <img src="images/minference_logo.png" alt="MInference" width="100" align="left">
+    </div>
+    <div style="flex-grow: 1;" align="center">
+        <h2 align="center">MInference: Million-Tokens Prompt Inference for LLMs</h2>
+    </div>
+</div>
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
+<p align="center">
+    | <a href="https://llmlingua.com/"><b>Project Page</b></a> |
+    <a href="https://arxiv.org/abs/2406."><b>Paper</b></a> |
+    <a href="https://huggingface.co/spaces/microsoft/MInference"><b>Demo</b></a> |
+</p>
 
-As the maintainer of this project, please make a few updates:
+## TL;DR
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+MInference 1.0 leverages the dynamic sparse nature of LLMs' attention, which exhibits some static patterns, to speed up the pre-filling for long-context LLMs. It first determines offline which sparse pattern each head belongs to, then approximates the sparse index online and dynamically computes attention with the optimal custom kernels. This approach achieves up to a 10x speedup for pre-filling on an A100 while maintaining accuracy.
+
+- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2406.) (Under Review)<br>
+  _Huiqiang Jiang†, Yucheng Li†, Chengruidong Zhang†, Qianhui Wu, Xufang Luo, Surin Ahn, Zhenhua Han, Amir H. Abdi, Dongsheng Li, Chin-Yew Lin, Yuqing Yang and Lili Qiu_
+
 
 ## Contributing
 

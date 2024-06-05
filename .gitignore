@@ -396,3 +396,19 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Experiments
+data
+results
+*.json
+*.jsonl
+.vscode/
+*.txt
+*.pt
+*.pkl
+!minference/configs/*
+
+__pycache__
+build/
+*.egg-info/
+*.so
