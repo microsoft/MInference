@@ -62,7 +62,7 @@ class LongPPL:
         else:
             topk_dims_file_path = kwargs.get("topk_dims_file_path", None)
             topk_from_layer = kwargs.get("topk_from_layer", -1)
-            minfence_patch = MInference(
+            minference_patch = MInference(
                 attn_type,
                 model_name,
                 topk_dims_file_path,
@@ -74,7 +74,7 @@ class LongPPL:
                 device_map="auto",
             )
             self.model.config.is_ppl = True
-            self.model = minfence_patch.patch_model(self.model)
+            self.model = minference_patch.patch_model(self.model)
         return
 
     def prepare_data(

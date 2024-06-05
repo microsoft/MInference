@@ -94,8 +94,10 @@ class MInferenceModel:
             torch_dtype="auto",
             device_map="auto",
         )
-        minfence_patch = MInference("minference", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "minference", name_or_path, None, starting_layer=0
+        )
+        self.model = minference_patch.patch_model(self.model)
 
         self.pipeline = None
         self.generation_kwargs = generation_kwargs
@@ -131,8 +133,8 @@ class Dilated1(MInferenceModel):
             torch_dtype="auto",
             device_map="auto",
         )
-        minfence_patch = MInference("dilated1", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference("dilated1", name_or_path, None, starting_layer=0)
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -151,8 +153,8 @@ class InfLLM(MInferenceModel):
             torch_dtype="auto",
             device_map="auto",
         )
-        minfence_patch = MInference("inf_llm", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference("inf_llm", name_or_path, None, starting_layer=0)
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
         self.generation_kwargs = generation_kwargs
         self.stop = self.generation_kwargs.pop("stop")
@@ -191,8 +193,8 @@ class Dilated2(MInferenceModel):
             torch_dtype="auto",
             device_map="auto",
         )
-        minfence_patch = MInference("dilated2", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference("dilated2", name_or_path, None, starting_layer=0)
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -212,8 +214,10 @@ class YiStatic(MInferenceModel):
             device_map="auto",
         )
         self.model.config.static_pattern = True
-        minfence_patch = MInference("minference", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "minference", name_or_path, None, starting_layer=0
+        )
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -233,8 +237,10 @@ class LlamaStatic(MInferenceModel):
             device_map="auto",
         )
         self.model.config.static_pattern = True
-        minfence_patch = MInference("minference", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "minference", name_or_path, None, starting_layer=0
+        )
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -254,8 +260,10 @@ class MInferenceOP(MInferenceModel):
             device_map="auto",
         )
         self.model.config.static_pattern = True
-        minfence_patch = MInference("minference", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "minference", name_or_path, None, starting_layer=0
+        )
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -275,8 +283,10 @@ class MInferenceOPYi(MInferenceModel):
             device_map="auto",
         )
         self.model.config.static_pattern = True
-        minfence_patch = MInference("minference", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "minference", name_or_path, None, starting_layer=0
+        )
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -296,8 +306,10 @@ class OPYiHalfV2(MInferenceModel):
             device_map="auto",
         )
         self.model.config.static_pattern = True
-        minfence_patch = MInference("minference", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "minference", name_or_path, None, starting_layer=0
+        )
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs
@@ -317,8 +329,8 @@ class Streaming(MInferenceModel):
             device_map="auto",
         )
         self.model.config.static_pattern = True
-        minfence_patch = MInference("streaming", name_or_path, None, starting_layer=0)
-        self.model = minfence_patch.patch_model(self.model)
+        minference_patch = MInference("streaming", name_or_path, None, starting_layer=0)
+        self.model = minference_patch.patch_model(self.model)
         self.pipeline = None
 
         self.generation_kwargs = generation_kwargs

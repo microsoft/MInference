@@ -117,7 +117,7 @@ def load_model(
 ):
     tok = AutoTokenizer.from_pretrained(model_name)
     tok.pad_token = tok.eos_token
-    minfence_patch = MInference(
+    minference_patch = MInference(
         attn_type, model_name, topk_dims_file_path, is_search, starting_layer
     )
 
@@ -150,7 +150,7 @@ def load_model(
             torch_dtype="auto",
             device_map="cuda",
         )
-        llm = minfence_patch.patch_model(llm)
+        llm = minference_patch.patch_model(llm)
 
     print("Model and tokenizer loaded.")
     return llm, tok

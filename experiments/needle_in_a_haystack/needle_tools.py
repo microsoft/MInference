@@ -202,7 +202,7 @@ class LLMNeedleHaystackTester:
             self.context_lengths = self.context_lengths[int(start) : int(end)]
             print(self.context_lengths)
         self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
-        minfence_patch = MInference(
+        minference_patch = MInference(
             self.config.attn_type,
             self.config.model_name,
             self.config.pattern_path,
@@ -221,7 +221,7 @@ class LLMNeedleHaystackTester:
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.config.model_name, torch_dtype="auto", device_map="cuda", **kwargs
             )
-            self.model = minfence_patch.patch_model(self.model)
+            self.model = minference_patch.patch_model(self.model)
             self.generation_config = GenerationConfig(
                 max_new_tokens=32,
                 pad_token_id=self.tokenizer.pad_token_id,
