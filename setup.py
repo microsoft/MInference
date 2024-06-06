@@ -1,7 +1,11 @@
 # Copyright (c) 2023 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+import os
+
+import torch
 from setuptools import find_packages, setup
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 # PEP0440 compatible formatted version, see:
 # https://www.python.org/dev/peps/pep-0440/
@@ -26,7 +30,7 @@ INSTALL_REQUIRES = [
     "transformers>=4.37.0",
     "accelerate",
     "torch",
-    "triton==2.1.0",
+    "triton",
     "flash_attn",
     "pycuda==2023.1",
 ]
@@ -39,6 +43,17 @@ QUANLITY_REQUIRES = [
     "pytest-xdist",
 ]
 DEV_REQUIRES = INSTALL_REQUIRES + QUANLITY_REQUIRES
+
+ext_modules = [
+    CUDAExtension(
+        name="minference.cuda",
+        sources=[
+            os.path.join("csrc", "kernels.cpp"),
+            os.path.join("csrc", "vertical_slash_index.cu"),
+        ],
+        extra_compile_args=["-std=c++17", "-O3"],
+    )
+]
 
 setup(
     name="minference",
@@ -58,13 +73,30 @@ setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     package_dir={"": "."},
-    packages=find_packages("."),
+    packages=find_packages(
+        exclude=(
+            "csrc",
+            "dist",
+            "examples",
+            "experiments",
+            "images",
+            "test",
+            "minference.egg-info",
+        )
+    ),
     extras_require={
         "dev": DEV_REQUIRES,
         "quality": QUANLITY_REQUIRES,
     },
     install_requires=INSTALL_REQUIRES,
+    setup_requires=[
+        "packaging",
+        "psutil",
+        "ninja",
+    ],
     include_package_data=True,
     python_requires=">=3.8.0",
     zip_safe=False,
+    ext_modules=ext_modules,
+    cmdclass={"build_ext": BuildExtension},
 )

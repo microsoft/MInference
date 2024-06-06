@@ -5,10 +5,10 @@ import os
 from transformers.models.llama.modeling_llama import *
 from vllm.attention.backends.flash_attn import *
 
-from .block_sparse_flash_attention import block_sparse_flash_attention_forward
-from .pit_sparse_flash_attention_v2 import pit_sparse_flash_attention_forward
+from ..ops.block_sparse_flash_attention import block_sparse_attention
+from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
+from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .snap_kv import *
-from .streaming_kernel import streaming_forward, streaming_forward2
 
 last_q = 64
 arange = torch.arange(last_q, device="cuda")
@@ -167,12 +167,12 @@ def search_pattern_v2(q, k, v, head):
         slash_topk = slash
         slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
 
-        return pit_sparse_flash_attention_forward(q, k, v, vertical_topk, slash)
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
     def dense(q, k, v, vertical_size=None, slash_size=None):
         return flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)
     def block_sparse_kernel(q, k, v, vertical_size=None, slash_size=None):
         topk = 100
-        return block_sparse_flash_attention_forward(q, k, v, topk)
+        return block_sparse_attention(q, k, v, topk)
 
     best_s, best_v, best_score, best_ty = 0, 0, float("inf"), ""
     bsz = q.shape[0]
@@ -300,7 +300,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
             slash = torch.cat([slash[-2048:], slash[-6144:-2048:2]], 0)[None, None, :]
 
         slash = (q_len - 1) - slash
-        return pit_sparse_flash_attention_forward(q, k, v, vertical_topk, slash)
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
 
     def vertical_and_slash_kernel(q, k, v, vertical_size, slash_size):
         vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
@@ -317,7 +317,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         slash_topk = slash
         slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
 
-        return pit_sparse_flash_attention_forward(q, k, v, vertical_topk, slash)
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
 
     def vertical_and_slash_kernel_static(q, k, v, vertical_size, slash_size):
         if "vs" in self.__dict__:
@@ -338,12 +338,12 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
             slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
             self.vs = vertical_topk, slash
 
-        return pit_sparse_flash_attention_forward(q, k, v, vertical_topk, slash)
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
     def dense(q, k, v, vertical_size=None, slash_size=None):
         return flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, self.head_dim)
     def block_sparse_kernel(q, k, v, vertical_size=None, slash_size=None):
         topk = 100
-        return block_sparse_flash_attention_forward(q, k, v, topk)
+        return block_sparse_attention(q, k, v, topk)
 
     q_len = q.shape[2]
     bsz = q.shape[0]
@@ -641,11 +641,11 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
         slash_topk = slash
         slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
 
-        return pit_sparse_flash_attention_forward(q, k, v, vertical_topk, slash)
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
 
     def block_sparse_kernel(q, k, v, vertical_size=None, slash_size=None):
         topk = 100
-        return block_sparse_flash_attention_forward(q, k, v, topk)
+        return block_sparse_attention(q, k, v, topk)
 
     def dense(q, k, v, vertical_size=None, slash_size=None):
         return flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)

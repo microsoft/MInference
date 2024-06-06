@@ -5,8 +5,8 @@ import transformers
 from transformers.cache_utils import *
 from transformers.models.llama.modeling_llama import *
 
-from .kernels.inf_llm import InfLLMGenerator, inf_llm_forward
-from .kernels.minference_forward import (
+from .modules.inf_llm import InfLLMGenerator, inf_llm_forward
+from .modules.minference_forward import (
     gather_last_q_vertical_slash_topk_v4,
     gather_last_q_vertical_slash_topk_vllm,
     init_minference_parameters,
@@ -17,7 +17,7 @@ from .kernels.minference_forward import (
     search_pattern,
     sum_all_diagonal_matrix,
 )
-from .kernels.streaming_kernel import stream_llm_forward
+from .ops.streaming_kernel import stream_llm_forward
 
 
 class RotaryEmbeddingESM(torch.nn.Module):
