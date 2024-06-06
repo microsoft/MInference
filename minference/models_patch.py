@@ -3,6 +3,7 @@ import os
 from .minference_configuration import MInferenceConfig
 from .patch import (
     minference_patch,
+    minference_patch_vllm,
     minference_patch_with_snapkv,
     minference_path_wo_cache,
     patch_hf,
@@ -15,8 +16,8 @@ class MInference:
         attn_type="minference",
         model_name=None,
         config_path=None,
-        is_search=False,
         starting_layer=-1,
+        is_search=False,
         **kwargs,
     ):
         super(MInference, self).__init__()
@@ -24,14 +25,18 @@ class MInference:
             attn_type=attn_type,
             model_name=model_name,
             config_path=config_path,
-            is_search=is_search,
             starting_layer=starting_layer,
+            is_search=is_search,
             **kwargs,
         )
 
+    def __call__(self, model):
+        return self.patch_model(model)
+
     def patch_model(self, model):
-        model.config.starting_layer = self.config.starting_layer
-        model.config.config_path = self.config.config_path
+        if self.config.attn_type != "vllm":
+            model.config.starting_layer = self.config.starting_layer
+            model.config.config_path = self.config.config_path
 
         if self.config.attn_type == "minference":
             model.config.is_search = self.config.is_search
@@ -77,6 +82,8 @@ class MInference:
                     "dense_decoding": True,
                 },
             )
+        elif self.config.attn_type == "vllm":
+            model = minference_patch_vllm(model, self.config.config_path)
         else:
             raise ValueError(
                 f"The attention type {self.config.attn_type} you specified is not supported."

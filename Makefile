@@ -1,7 +1,7 @@
 .PHONY: install style test
 
 PYTHON := python
-CHECK_DIRS := minference tests experiments
+CHECK_DIRS := minference tests experiments examples
 EXELUDE_DIRS := minference/kernels
 
 install:

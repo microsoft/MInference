@@ -13,6 +13,7 @@ class MInferenceConfig:
         "minference_with_snapkv",
         "streaming",
         "inf_llm",
+        "vllm",
     ]
 
     def __init__(
@@ -20,8 +21,8 @@ class MInferenceConfig:
         attn_type="minference",
         model_name=None,
         config_path=None,
-        is_search=False,
         starting_layer=-1,
+        is_search=False,
         **kwargs,
     ):
         super(MInferenceConfig, self).__init__()

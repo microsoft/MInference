@@ -118,7 +118,7 @@ def load_model(
     tok = AutoTokenizer.from_pretrained(model_name)
     tok.pad_token = tok.eos_token
     minference_patch = MInference(
-        attn_type, model_name, topk_dims_file_path, is_search, starting_layer
+        attn_type, model_name, topk_dims_file_path, starting_layer, is_search
     )
 
     if attn_type == "vllm":

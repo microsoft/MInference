@@ -15,11 +15,57 @@
 
 ## TL;DR
 
-MInference 1.0 leverages the dynamic sparse nature of LLMs' attention, which exhibits some static patterns, to speed up the pre-filling for long-context LLMs. It first determines offline which sparse pattern each head belongs to, then approximates the sparse index online and dynamically computes attention with the optimal custom kernels. This approach achieves up to a 10x speedup for pre-filling on an A100 while maintaining accuracy.
+**MInference 1.0** leverages the dynamic sparse nature of LLMs' attention, which exhibits some static patterns, to speed up the pre-filling for long-context LLMs. It first determines offline which sparse pattern each head belongs to, then approximates the sparse index online and dynamically computes attention with the optimal custom kernels. This approach achieves up to a **10x speedup** for pre-filling on an A100 while maintaining accuracy.
 
 - [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2406.) (Under Review)<br>
   _Huiqiang Jiang†, Yucheng Li†, Chengruidong Zhang†, Qianhui Wu, Xufang Luo, Surin Ahn, Zhenhua Han, Amir H. Abdi, Dongsheng Li, Chin-Yew Lin, Yuqing Yang and Lili Qiu_
 
+
+## 🎥 Overview
+
+## 🎯 Quick Start
+
+### Requirements
+
+- FlashAttention-2
+- Triton >
+
+To get started with MInference, simply install it using pip:
+
+```bash
+pip install minference
+```
+
+### How to use MInference
+
+for HF,
+```diff
+from transformers import pipeline
++from minference import MInference
+
+pipe = pipeline("text-generation", model=model_name, torch_dtype="auto", device_map="auto")
+
+# Patch MInference Module
++minference_patch = MInference("minference", model_name)
++pipe.model = minference_patch(pipe.model)
+
+pipe(prompt, max_length=10)
+```
+
+for vLLM,
+
+```diff
+from vllm import LLM, SamplingParams
++ from minference import MInference
+
+llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128000)
+
+# Patch MInference Module
++minference_patch = MInference("vllm", model_name)
++llm = minference_patch(llm)
+
+outputs = llm.generate(prompts, sampling_params)
+```
 
 ## Contributing
 
