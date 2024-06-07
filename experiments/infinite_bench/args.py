@@ -52,6 +52,8 @@ def parse_args() -> Namespace:
     p.add_argument("--topk", type=int, default=-1)
     p.add_argument("--starting_layer", type=int, default=-1)
     p.add_argument("--topk_dims_file_path", type=str, default=None)
+    P.add_argument("--kv_cache_cpu", action="store_true")
+    P.add_argument("--use_snapkv", action="store_true")
     p.add_argument(
         "--attn_type",
         type=str,
@@ -60,13 +62,10 @@ def parse_args() -> Namespace:
             "hf",
             "streaming",
             "inf_llm",
-            "snap_kv",
             "flash_attn",
             "minference",
             "dilated1",
             "dilated2",
-            "minference_with_snapkv",
-            "minference_wo_cache",
         ],
         default="hf",
     )

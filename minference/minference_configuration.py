@@ -6,11 +6,10 @@ from .configs.model2path import MODEL2PATH
 class MInferenceConfig:
     ATTENTION_TYPES = [
         "minference",
-        "minference_wo_cache",
-        "dilated1",
+        "minference_with_dense",
         "static",
+        "dilated1",
         "dilated2",
-        "minference_with_snapkv",
         "streaming",
         "inf_llm",
         "vllm",
@@ -18,11 +17,14 @@ class MInferenceConfig:
 
     def __init__(
         self,
-        attn_type="minference",
-        model_name=None,
-        config_path=None,
-        starting_layer=-1,
-        is_search=False,
+        attn_type: str = "minference",
+        model_name: str = None,
+        config_path: str = None,
+        starting_layer: int = -1,
+        kv_cache_cpu: bool = False,
+        use_snapkv: bool = False,
+        is_search: bool = False,
+        attn_kwargs: dict = {},
         **kwargs,
     ):
         super(MInferenceConfig, self).__init__()
@@ -34,6 +36,9 @@ class MInferenceConfig:
         self.model_name = model_name
         self.is_search = is_search
         self.starting_layer = starting_layer
+        self.kv_cache_cpu = kv_cache_cpu
+        self.use_snapkv = use_snapkv
+        self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):
         if config_path is not None:

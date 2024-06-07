@@ -18,7 +18,8 @@ python experiments/needle_in_a_haystack/needle_test.py \
     --max_length 1000000 \
     --min_length 1000 \
     --rounds 5 \
-    --attn_type minference_wo_cache \
+    --attn_type minference \
+    --kv_cache_cpu \
     --output_path ./needle \
     --run_name minference_LLaMA_1M \
     --jobs 4-15

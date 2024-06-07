@@ -11,9 +11,9 @@ from .modules.minference_forward import (
     gather_last_q_vertical_slash_topk_vllm,
     init_minference_parameters,
     minference_forward,
+    minference_kv_cache_cpu_forward,
     minference_vllm_forward,
     minference_with_snapkv_forward,
-    minference_wo_cache_forward,
     search_pattern,
     sum_all_diagonal_matrix,
 )
@@ -736,8 +736,13 @@ def forward_llama_for_causal_lm(
     )
 
 
-def minference_patch(model):
+def minference_patch(model, config):
     from transformers import LlamaForCausalLM
+
+    if config.kv_cache_cpu:
+        return minference_patch_kv_cache_cpu(model)
+    if config.use_snapkv:
+        return minference_patch_with_snapkv(model)
 
     Attention = model.model.layers[0].self_attn.__class__
     Model = model.model.__class__
@@ -777,7 +782,7 @@ def minference_patch(model):
     return model
 
 
-def minference_path_wo_cache(model):
+def minference_patch_kv_cache_cpu(model):
     from transformers import LlamaForCausalLM
 
     transformers.cache_utils.DynamicCache.update = cpu_cache_update
@@ -787,7 +792,7 @@ def minference_path_wo_cache(model):
     Model = model.model.__class__
     DecoderLayer = model.model.layers[0].__class__
 
-    forward = minference_wo_cache_forward()
+    forward = minference_kv_cache_cpu_forward()
 
     def update_module(m):
         if isinstance(m, Attention):
@@ -817,7 +822,7 @@ def minference_path_wo_cache(model):
     )
     model.forward = forward_llama_for_causal_lm.__get__(model, model.__class__)
 
-    print("Patched model for minference without cache..")
+    print("Patched model for MInference load KV Cache to CPU.")
     return model
 
 

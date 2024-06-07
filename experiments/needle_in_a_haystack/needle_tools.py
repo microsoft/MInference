@@ -207,6 +207,10 @@ class LLMNeedleHaystackTester:
             self.config.model_name,
             self.config.pattern_path,
             starting_layer=0,
+            kv_cache_cpu=self.config.kv_cache_cpu,
+            attn_kwargs=(
+                {} if self.config.attn_type != "inf_llm" else {"dense_decoding": False}
+            ),
         )
         if self.config.attn_type == "vllm":
             #### use vllm implementation
@@ -221,7 +225,7 @@ class LLMNeedleHaystackTester:
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.config.model_name, torch_dtype="auto", device_map="cuda", **kwargs
             )
-            self.model = minference_patch.patch_model(self.model)
+            self.model = minference_patch(self.model)
             self.generation_config = GenerationConfig(
                 max_new_tokens=32,
                 pad_token_id=self.tokenizer.pad_token_id,

@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 
 import torch
 from flash_attn import flash_attn_func
+from transformers.modeling_outputs import CausalLMOutput
 
 from ..ops.streaming_kernel import TritonMultiStageDotProductionAttention
 
@@ -1018,7 +1019,7 @@ def inf_llm_forward(
     perhead=False,
     dense_decoding=False,
     *args,
-    **kwargs,
+    **kwargs
 ):
     def forward(
         self,
@@ -1039,7 +1040,7 @@ def inf_llm_forward(
         len_q = query.size(1)
         len_k = key_value.size(1)
 
-        assert use_cache
+        # assert use_cache
 
         h_q = project_q(query)  # (batch, len_q, num_heads * dim_head)
         h_k = project_k(key_value)  # (batch, len_k, num_heads * dim_head)
@@ -1277,3 +1278,19 @@ class InfLLMGenerator(GreedySearch):
             chunk_size=8192,
             extra_end_token_ids=[pad_token_id] if pad_token_id is not None else [],
         )
+
+    @torch.no_grad()
+    def __call__(self, input_ids=None, *args, **kwargs):
+        # chunked forward
+        chunk_size = 8192
+        all_logits = torch.empty(0, dtype=torch.bfloat16).to(input_ids.device)
+        for st in range(0, input_ids.size(1), chunk_size):
+            torch.cuda.empty_cache()
+            ed = min(input_ids.size(1), st + chunk_size)
+            out = self.model(
+                input_ids=input_ids[:, st:ed],
+            )
+            logits = out.logits.to(torch.bfloat16)
+            all_logits = torch.cat((all_logits, logits), dim=1)
+
+        return CausalLMOutput(logits=all_logits)

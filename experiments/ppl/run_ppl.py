@@ -74,7 +74,7 @@ class LongPPL:
                 device_map="auto",
             )
             self.model.config.is_ppl = True
-            self.model = minference_patch.patch_model(self.model)
+            self.model = minference_patch(self.model)
         return
 
     def prepare_data(
@@ -229,9 +229,7 @@ if __name__ == "__main__":
         choices=[
             "hf",
             "streaming",
-            "flash_attn",
             "minference",
-            "minference_with_snapkv",
             "dilated1",
             "dilated2",
         ],

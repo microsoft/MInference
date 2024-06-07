@@ -1,23 +1,20 @@
 import os
 
 from .minference_configuration import MInferenceConfig
-from .patch import (
-    minference_patch,
-    minference_patch_vllm,
-    minference_patch_with_snapkv,
-    minference_path_wo_cache,
-    patch_hf,
-)
+from .patch import minference_patch, minference_patch_vllm, patch_hf
 
 
 class MInference:
     def __init__(
         self,
-        attn_type="minference",
-        model_name=None,
-        config_path=None,
-        starting_layer=-1,
-        is_search=False,
+        attn_type: str = "minference",
+        model_name: str = None,
+        config_path: str = None,
+        starting_layer: int = -1,
+        kv_cache_cpu: bool = False,
+        use_snapkv: bool = False,
+        is_search: bool = False,
+        attn_kwargs: dict = {},
         **kwargs,
     ):
         super(MInference, self).__init__()
@@ -26,7 +23,10 @@ class MInference:
             model_name=model_name,
             config_path=config_path,
             starting_layer=starting_layer,
+            kv_cache_cpu=kv_cache_cpu,
+            use_snapkv=use_snapkv,
             is_search=is_search,
+            attn_kwargs=attn_kwargs,
             **kwargs,
         )
 
@@ -40,30 +40,38 @@ class MInference:
 
         if self.config.attn_type == "minference":
             model.config.is_search = self.config.is_search
-            model = minference_patch(model)
+            model = minference_patch(model, self.config)
 
-        elif self.config.attn_type == "minference_wo_cache":
-            model = minference_path_wo_cache(model)
+        elif self.config.attn_type == "minference_with_dense":
+            model.config.dense = True
+            model = minference_patch(model, self.config)
 
         elif self.config.attn_type == "dilated1":
             model.config.dilated1 = True
-            model = minference_patch(model)
+            model = minference_patch(model, self.config)
 
         elif self.config.attn_type == "static":
             model.config.static_pattern = True
-            model = minference_patch(model)
+            model = minference_patch(model, self.config)
 
         elif self.config.attn_type == "dilated2":
             model.config.dilated2 = True
-            model = minference_patch(model)
+            model = minference_patch(model, self.config)
 
-        elif self.config.attn_type == "minference_with_snapkv":
-            model = minference_patch_with_snapkv(model)
         elif self.config.attn_type == "streaming":
+            model.config.streaming = True
+            model.config.streaming_kwargs = {
+                "n_local": 3968,
+                "n_init": 128,
+                **self.config.attn_kwargs,
+            }
+            model = minference_patch(model, self.config)
+
+        elif self.config.attn_type == "streaming2":
             model = patch_hf(
                 model,
                 attn_type="streaming",
-                attn_kwargs={"n_local": 3968, "n_init": 128},
+                attn_kwargs={"n_local": 3968, "n_init": 128, **self.config.attn_kwargs},
             )
         elif self.config.attn_type == "inf_llm":
             model = patch_hf(
@@ -80,6 +88,7 @@ class MInference:
                     "base": 1000000,
                     "distance_scale": 1.0,
                     "dense_decoding": True,
+                    **self.config.attn_kwargs,
                 },
             )
         elif self.config.attn_type == "vllm":

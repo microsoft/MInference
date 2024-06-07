@@ -92,7 +92,7 @@ def get_pred(
             "input_ids": torch.tensor(input_tokens).unsqueeze(0).to(model.device)
         }
         # cache = SinkCache(window_length=200000, num_sink_tokens=10000)
-        # if attn_type == "minference_wo_cache":
+        # if attn_type == "minference_kv_cache_cpu":
         #     input_tensors["use_cache"] = False
         outputs = model.generate(**input_tensors, generation_config=generation_config)
         # outputs = model.generate(**input_tensors, generation_config=generation_config, past_key_values=cache)
@@ -114,11 +114,17 @@ def load_model(
     attn_type: str = "vllm",
     max_seq_length: int = None,
     is_search: bool = False,
+    use_snapkv: bool = False,
 ):
     tok = AutoTokenizer.from_pretrained(model_name)
     tok.pad_token = tok.eos_token
     minference_patch = MInference(
-        attn_type, model_name, topk_dims_file_path, starting_layer, is_search
+        attn_type,
+        model_name,
+        config_path=topk_dims_file_path,
+        starting_layer=starting_layer,
+        use_snapkv=use_snapkv,
+        is_search=is_search,
     )
 
     if attn_type == "vllm":
@@ -150,7 +156,7 @@ def load_model(
             torch_dtype="auto",
             device_map="cuda",
         )
-        llm = minference_patch.patch_model(llm)
+    llm = minference_patch(llm)
 
     print("Model and tokenizer loaded.")
     return llm, tok
@@ -180,6 +186,7 @@ if __name__ == "__main__":
         attn_type=args.attn_type,
         max_seq_length=max_seq_length,
         is_search=args.is_search,
+        use_snapkv=use_snapkv,
     )
     results = {}
 

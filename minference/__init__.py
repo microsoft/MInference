@@ -8,8 +8,8 @@ from .ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from .ops.streaming_kernel import streaming_forward
 from .patch import (
     minference_patch,
+    minference_patch_kv_cache_cpu,
     minference_patch_with_snapkv,
-    minference_path_wo_cache,
     patch_hf,
 )
 from .version import VERSION as __version__
@@ -18,7 +18,7 @@ __all__ = [
     "MInference",
     "MInferenceConfig",
     "minference_patch",
-    "minference_path_wo_cache",
+    "minference_patch_kv_cache_cpu",
     "minference_patch_with_snapkv",
     "patch_hf",
     "vertical_slash_sparse_attention",

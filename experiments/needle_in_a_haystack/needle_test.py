@@ -23,6 +23,7 @@ class Config:
     output_path: str = "results/needle/"
     pattern_path: str = "config/Llama_3_8B_Instruct_262k_kv_out_v32_best_pattern.json"
     jobs: str = None
+    kv_cache_cpu: bool = False
 
     def __post_init__(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -42,6 +43,7 @@ def main(
     jobs: str = None,
     max_length: int = 100000,
     min_length: int = 1000,
+    kv_cache_cpu: bool = False,
 ):
     config = Config(
         model_name=model_name,
@@ -53,6 +55,7 @@ def main(
         jobs=jobs,
         context_lengths_min=min_length,
         context_lengths_max=max_length,
+        kv_cache_cpu=kv_cache_cpu,
     )
     kwargs = {
         "swap_space": 64,
@@ -89,7 +92,6 @@ if __name__ == "__main__":
             "hf",
             "streaming",
             "minference",
-            "minference_wo_cache",
             "inf_llm",
         ],
     )
@@ -99,6 +101,7 @@ if __name__ == "__main__":
     args.add_argument("--jobs", type=str, default=None)
     args.add_argument("--max_length", type=int, default=100000)
     args.add_argument("--min_length", type=int, default=1000)
+    args.add_argument("--kv_cache_cpu", action="store_true")
     args = args.parse_args()
 
     main(
@@ -111,4 +114,5 @@ if __name__ == "__main__":
         jobs=args.jobs,
         max_length=args.max_length,
         min_length=args.min_length,
+        kv_cache_cpu=kv_cache_cpu,
     )

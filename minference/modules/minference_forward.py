@@ -352,6 +352,10 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         return dialted(q, k, v, 'dilated1')
     if self.config.to_dict().get("dilated2", False):
         return dialted(q, k, v, 'dilated2')
+    if self.config.to_dict().get("dense", False):
+        return dense(q, k, v)
+    if self.config.to_dict().get("streaming", False):
+        return streaming_forward(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
 
     ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
 
@@ -465,7 +469,7 @@ def minference_forward():
 
     return forward
 
-def minference_wo_cache_forward():
+def minference_kv_cache_cpu_forward():
     def forward(
         self,
         hidden_states,
@@ -481,7 +485,7 @@ def minference_wo_cache_forward():
 
         bsz, q_len, hidden_dim = hidden_states.size()
         kv_seq_len = q_len
-        if past_key_value is not None:
+        if use_cache and past_key_value is not None:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
 
         if ROPE_TYPE:
@@ -492,8 +496,9 @@ def minference_wo_cache_forward():
 
         attn_out = torch.empty_like(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim)
         act_num_heads = self.num_heads // self.num_key_value_groups
-        k = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).cpu()
-        v = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).cpu()
+        if use_cache:
+            k = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).cpu()
+            v = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).cpu()
         part_k, part_v = None, None
         for head in range(self.num_heads):
             if "q_proj" in self.__dict__["_modules"]:
@@ -511,9 +516,10 @@ def minference_wo_cache_forward():
                     part_v = F.linear(hidden_states, self.qkv_proj.weight.view(3, act_num_heads, self.head_dim, hidden_dim)[2][head // self.num_key_value_groups]).unsqueeze(2).transpose(1, 2)
 
                 part_k = apply_rotary_pos_emb_single(part_k.transpose(1, 2), cos, sin, position_ids)
-                k[:,head // self.num_key_value_groups] = part_k.cpu()
-                v[:,head // self.num_key_value_groups] = part_v.cpu()
-                part_k, part_v = past_key_value.get(part_k, part_v, self.layer_idx, head // self.num_key_value_groups, cache_kwargs)
+                if use_cache and past_key_value is not None:
+                    k[:,head // self.num_key_value_groups] = part_k.cpu()
+                    v[:,head // self.num_key_value_groups] = part_v.cpu()
+                    part_k, part_v = past_key_value.get(part_k, part_v, self.layer_idx, head // self.num_key_value_groups, cache_kwargs)
 
             if self.layer_idx >= self.starting_layer:
                 part_o = self.gather_last_q_vertical_slash_topk_v4(part_q, part_k, part_v, head)
@@ -521,7 +527,8 @@ def minference_wo_cache_forward():
                 part_o = flash_attn_func(part_q, part_k, part_v.transpose(1, 2), 0.0, softmax_scale=None, causal=True).view(bsz, part_q.shape[1], self.head_dim)
             attn_out[:, :, head, :] = part_o
 
-        past_key_value.update(k, v, self.layer_idx, cache_kwargs)
+        if use_cache and past_key_value is not None:
+            past_key_value.update(k, v, self.layer_idx, cache_kwargs)
         torch.matmul(attn_out.view(bsz, q_len, hidden_dim), self.o_proj.weight.T, out=hidden_states)
         torch.cuda.empty_cache()
         return (hidden_states, None, past_key_value)
