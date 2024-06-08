@@ -23,6 +23,8 @@
 
 ## 🎥 Overview
 
+![Onepage of MInference](./images/MInference1_onepage.png)
+
 ## 🎯 Quick Start
 
 ### Requirements
