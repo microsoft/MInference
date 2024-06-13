@@ -114,5 +114,5 @@ if __name__ == "__main__":
         jobs=args.jobs,
         max_length=args.max_length,
         min_length=args.min_length,
-        kv_cache_cpu=kv_cache_cpu,
+        kv_cache_cpu=args.kv_cache_cpu,
     )

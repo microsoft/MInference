@@ -196,7 +196,7 @@ class LongPPL:
     @staticmethod
     def viz_results(
         result_path: str = "results/long-ppl/",
-        output_path: str = "results/long-ppl-viz.png",
+        output_path: str = "results/long-ppl/long-ppl-viz.png",
     ):
         from glob import glob
 

@@ -52,8 +52,101 @@ Note: All of these experiments were run on one A100 GPUs with 80GB of VRAM. You 
 
 ### InfiniteBench
 
+[InfiniteBench](https://github.com/OpenBMB/InfiniteBench) is a benchmark tailored for evaluating the capabilities of language models to process, understand, and reason over super long contexts.
+
+InfiniteBench consists of the following tasks: `kv_retrieval`, `longbook_choice_eng`, `math_find`, `longbook_qa_chn`, `longbook_qa_eng`, `longdialogue_qa_eng`, `code_debug`, `longbook_sum_eng`, `number_string`, `passkey`.
+
+1. Run InfiniteBench with `MInference`:
+
+```bash
+bash infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 128000 -1 minference
+```
+
+2. Or test InfiniteBench with `FlashAttention-2` via `vLLM`:
+
+```bash
+bash infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 128000 -1 vllm
+```
+
+3. Experimental results
+
+| Methods       | longbook_sum_eng | longbook_qa_eng | longbook_choice_eng | longdialogue_qa_eng | longbook_qa_chn | code_debug | math_find | passkey | number_string | kv_retrieval | Avg. |
+|---------------|------------------|-----------------|---------------------|---------------------|-----------------|------------|-----------|---------|---------------|--------------|------|
+| Full Attention| 20.2             | 12.4            | 67.3                | 6.0                 | 12.9            | 22.1       | 26.6      | 100.0   | 100.0         | 14.4         | 38.2 |
+| Ours          | **20.5**         | **12.9**        | 65.9            | **7.5**                 | 12.5            | **22.3**       | **33.1**  | 100.0   | 100.0         | 12.8         | **38.8** |
+
 ### RULER
+
+The [RULER](https://github.com/hsiehjackson/RULER) benchmark is a challenging long-context LLMs benchmark contains four task categories: Retrieval, Multi-hop Tracing, Aggregation, and Question Answering (QA). The retrieval tasks extend the needle-in-a-haystack (NIAH) test; Multi-hop Tracing involves resolving coreference chains; Aggregation requires identifying frequently occurring words; and QA adapts existing datasets with added distracting information to test models on extended contexts.
+
+To run the RULER benchmark, you need first install the requirements:
+
+```bash
+pip install -r ruler/requirements.txt
+```
+
+1. Download required data files:
+
+```bash
+cd ruler/data/synthetic/json/
+
+# download Paul Graham Essays for the needle test
+python download_paulgraham_essay.py
+
+# download SQuAD and HotpotQA for the QA test
+bash download_qa_dataset.sh
+
+# you will need nltk.download('punkt') as well
+python -c "import nltk; nltk.download('punkt')"
+```
+
+
+
+2. Run RULER with `MInference` and `Llama-3-8B-Instruct-262k`:
+
+```bash
+# under the ruler/ directory
+bash run.sh llama-3-262k-minference synthetic
+```
+
+The default output dir `results/ruler`, you use `ROOT_DIR` in `run.sh` to change the output dir.
+
+3. Experimental results
+
+| Models       | Claimed | Effective | 4K  | 8K  | 16K | 32K | 64K | 128K | Avg. |
+|--------------|---------|-----------|-----|-----|-----|-----|-----|------|------|
+| Full-Attention | 262K    | 16K       | 97.2| 91.8| 87.3| 80.8| 77.4| 72.2 | 84.4 |
+| Ours         | -       | 32K       | **97.7**| 91.2| **88.5**| **85.0** | **82.3** | **77.6** | **87.0** |
+
 
 ### PPL
 
+We use continues 100K text chunks samples from [PG-19](https://huggingface.co/datasets/deepmind/pg19) for the perplexity evaluation.
+
+1. To run the PPL test, simply run:
+```bash
+bash ppl/run_ppl.sh
+```
+
+The result will be saved at `results/long-ppl/`, and the visualization will be saved as `results/long-ppl/long-ppl-viz.png`.
+
+2. Experimental results
+
+![PPL](../images/benchmarks/ppl-LLaMA-3-262k.png)
+
+
 ### Needle in A Haystack
+
+The [Needle In A Haystack test](https://github.com/gkamradt/LLMTest_NeedleInAHaystack) is an evaluation method that randomly inserts key information into long texts to form prompts for large language models (LLMs). The test aims to detect whether large models can extract such key information from extensive texts, thereby assessing the models’ capabilities in processing and understanding long documents.
+
+1. Run the Needle in A Haystack test:
+
+```bash
+bash needle_in_a_haystack/run_needle.sh
+```
+
+The results will be saved under `./needle` directory.
+
+2. Our experimental results
+
+![needle](../images/benchmarks/needle_viz_LLaMA-3-8B-1M_ours_1K_1000K.png)
