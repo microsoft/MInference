@@ -186,7 +186,7 @@ if __name__ == "__main__":
         attn_type=args.attn_type,
         max_seq_length=max_seq_length,
         is_search=args.is_search,
-        use_snapkv=use_snapkv,
+        use_snapkv=args.use_snapkv,
     )
     results = {}
 
@@ -232,8 +232,8 @@ if __name__ == "__main__":
             compute_scores(output_path, data_name, real_model_name, max_seq_length)
 
         for i, eg in tqdm(enumerate(examples)):
-            # if i < 3:
-            #     continue
+            if i < args.start_example_id:
+                continue
             input_text = create_prompt(eg, data_name, real_model_name, args.data_dir)
             ground_truth = get_answer(eg, data_name)
             # print(input_text.index(ground_truth), len(input_text), input_text.index(ground_truth) / len(input_text))

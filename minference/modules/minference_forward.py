@@ -1,6 +1,7 @@
 import inspect
 import json
 import os
+from importlib import import_module
 
 from transformers.models.llama.modeling_llama import *
 from vllm.attention.backends.flash_attn import *
@@ -13,7 +14,7 @@ from .snap_kv import *
 last_q = 64
 arange = torch.arange(last_q, device="cuda")
 LAST_Q_MASK = arange[None, None, :, None] >= arange[None, None, None, :]
-ROPE_TYPE = "seq_len" in inspect.signature(LlamaRotaryEmbedding.forward).parameters
+ROPE_TYPE = None
 SEARCH_MASK = None
 
 def init_minference_parameters(self):
@@ -31,6 +32,13 @@ def init_minference_parameters(self):
     else:
         self.best_pattern = {}
     self.vertical, self.slash = None, None
+
+    # import apply_rotary_pos_emb
+    if "apply_rotary_pos_emb" not in self.__dict__:
+        global apply_rotary_pos_emb
+        model_path = self.rotary_emb.__class__.__module__
+        apply_rotary_pos_emb = getattr(import_module(model_path), "apply_rotary_pos_emb")
+        self.apply_rotary_pos_emb = True
 
 def sum_all_diagonal_matrix(mat: torch.tensor):
     b, h, n, m = mat.shape
@@ -144,6 +152,8 @@ def search_pattern(q, k, head):
                 best_score = score
                 best_s, best_v = s_size, v_size
                 best_ty = ty
+    if best_ty == "stream_llm":
+        best_ty = "vertical_and_slash"
     if best_ty == "block_sparse":
         best_ty, best_v, best_s = "vertical_and_slash", 1000, 6096
     print(head, best_ty, best_v, best_s, best_score)
@@ -419,6 +429,9 @@ def minference_forward():
                     "with a layer index."
                 )
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+        global ROPE_TYPE
+        if ROPE_TYPE is None:
+            ROPE_TYPE = "seq_len" in inspect.signature(self.rotary_emb.forward).parameters
         if ROPE_TYPE:
             cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         else:
@@ -488,6 +501,9 @@ def minference_kv_cache_cpu_forward():
         if use_cache and past_key_value is not None:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
 
+        global ROPE_TYPE
+        if ROPE_TYPE is None:
+            ROPE_TYPE = "seq_len" in inspect.signature(self.rotary_emb.forward).parameters
         if ROPE_TYPE:
             cos, sin = self.rotary_emb(hidden_states, seq_len=kv_seq_len)
         else:
@@ -577,6 +593,9 @@ def minference_with_snapkv_forward():
                     kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
             else:
                 kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+        global ROPE_TYPE
+        if ROPE_TYPE is None:
+            ROPE_TYPE = "seq_len" in inspect.signature(self.rotary_emb.forward).parameters
         if ROPE_TYPE:
             cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
         else:
