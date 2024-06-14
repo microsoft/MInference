@@ -17,7 +17,9 @@ from minference import MInference
 
 
 @torch.no_grad()
-def greedy_generate(model, tokenizer, input_ids, past_key_values, max_gen_len):
+def greedy_generate(
+    model, tokenizer, input_ids, past_key_values, max_gen_len, attn_type
+):
     torch.cuda.synchronize()
     st = time.time()
     outputs = model(
@@ -26,7 +28,9 @@ def greedy_generate(model, tokenizer, input_ids, past_key_values, max_gen_len):
         use_cache=True,
     )
     torch.cuda.synchronize()
-    print(f"\033[1;31m TTFT: {time.time() - st:.2f}s\033[0m\n")
+    print(
+        f"\033[1;31m Attention Type: {attn_type}, TTFT: {time.time() - st:.2f}s\033[0m\n"
+    )
 
     past_key_values = outputs.past_key_values
     pred_token_idx = outputs.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
@@ -65,26 +69,31 @@ def greedy_generate(model, tokenizer, input_ids, past_key_values, max_gen_len):
 
 
 @torch.no_grad()
-def streaming_inference(model, tokenizer, prompts, kv_cache=None, max_gen_len=1000):
+def streaming_inference(
+    model, tokenizer, prompts, kv_cache=None, max_gen_len=500, attn_type=None
+):
     past_key_values = None
     for idx, prompt in enumerate(prompts):
-        prompt = "USER: " + prompt + "\n\nASSISTANT: "
-
         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
         input_ids = input_ids.to(model.device)
         seq_len = input_ids.shape[1]
 
         if seq_len > 5000:
             print(
-                "\n" + "USER: " + prompt[:2500] + prompt[-2500:] + "\n\nASSISTANT: ",
+                "\n" + prompt[:2500] + prompt[-2500:] + "\n\nASSISTANT: ",
                 end="",
             )
         else:
-            print("\n" + prompt, end="")
+            print("\n" + prompt + "\n\nASSISTANT: ", end="")
         print(seq_len)
 
         past_key_values = greedy_generate(
-            model, tokenizer, input_ids, past_key_values, max_gen_len=max_gen_len
+            model,
+            tokenizer,
+            input_ids,
+            past_key_values,
+            max_gen_len=max_gen_len,
+            attn_type=attn_type,
         )
 
 
@@ -98,12 +107,18 @@ def main(args):
     )
 
     # Patch MInference Module
-    minference_patch = MInference(args.attn_type, model_name_or_path, kv_cache_cpu=True)
+    minference_patch = MInference(
+        args.attn_type if args.attn_type != "hf" else "minference_with_dense",
+        model_name_or_path,
+        kv_cache_cpu=True,
+    )
     model = minference_patch(model)
 
     prompts = [
-        open("data/pg2600.txt").read()
-        + "\nCould you help me summarization the previous book."
+        "Summarization the following book."
+        + "\n\n"
+        + open("data/pg2600.txt").read()
+        + "\n\nSummarization:"
     ]
 
     kv_cache = None
@@ -113,6 +128,7 @@ def main(args):
         tokenizer,
         prompts,
         kv_cache,
+        attn_type=args.attn_type,
     )
 
 
@@ -134,6 +150,7 @@ if __name__ == "__main__":
             "streaming",
             "minference",
             "inf_llm",
+            "minference_with_dense",
         ],
     )
     args = parser.parse_args()

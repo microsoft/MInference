@@ -548,12 +548,15 @@ def forward_llama_model(
             )
             use_cache = False
 
+    seq_length_with_past = seq_length
     past_key_values_length = 0
+
     if use_cache:
         use_legacy_cache = not isinstance(past_key_values, Cache)
         if use_legacy_cache:
             past_key_values = DynamicCache.from_legacy_cache(past_key_values)
         past_key_values_length = past_key_values.get_usable_length(seq_length)
+        seq_length_with_past = seq_length_with_past + past_key_values_length
 
     if position_ids is None:
         device = input_ids.device if input_ids is not None else inputs_embeds.device

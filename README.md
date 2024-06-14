@@ -1,6 +1,6 @@
 <div style="display: flex; align-items: center;">
     <div style="width: 100px; margin-right: 10px; height:auto;" align="left">
-        <img src="images/minference_logo.png" alt="MInference" width="100" align="left">
+        <img src="images/MInference_logo.png" alt="MInference" width="100" align="left">
     </div>
     <div style="flex-grow: 1;" align="center">
         <h2 align="center">MInference: Million-Tokens Prompt Inference for LLMs</h2>
@@ -12,6 +12,8 @@
     <a href="https://arxiv.org/abs/2406."><b>Paper</b></a> |
     <a href="https://huggingface.co/spaces/microsoft/MInference"><b>Demo</b></a> |
 </p>
+
+https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-7123c81d6b19
 
 ## TL;DR
 
@@ -29,8 +31,9 @@
 
 ### Requirements
 
+- Torch
 - FlashAttention-2
-- Triton >
+- Triton == 2.1.0
 
 To get started with MInference, simply install it using pip:
 
