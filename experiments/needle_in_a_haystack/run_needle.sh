@@ -1,3 +1,5 @@
+export TOKENIZERS_PARALLELISM=false
+
 # Load Haystack
 mkdir data
 wget https://github.com/liyucheng09/LatestEval/releases/download/pg19/pg19_mini.jsonl -O ./data/pg19_mini.jsonl

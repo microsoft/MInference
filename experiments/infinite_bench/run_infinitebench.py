@@ -116,7 +116,7 @@ def load_model(
     is_search: bool = False,
     use_snapkv: bool = False,
 ):
-    tok = AutoTokenizer.from_pretrained(model_name)
+    tok = AutoTokenizer.from_pretrained(model_name, resume_download=None)
     tok.pad_token = tok.eos_token
     minference_patch = MInference(
         attn_type,
@@ -136,7 +136,7 @@ def load_model(
             max_model_len=max_seq_length,
         )
     else:
-        config = AutoConfig.from_pretrained(model_name)
+        config = AutoConfig.from_pretrained(model_name, resume_download=None)
         if "LWM" in model_name:
             c = {
                 "theta": 10000000,
@@ -155,6 +155,7 @@ def load_model(
             config=config,
             torch_dtype="auto",
             device_map="cuda",
+            resume_download=None,
         )
     llm = minference_patch(llm)
 

@@ -21,6 +21,7 @@ if [ $# -ne 2 ]; then
     exit 1
 fi
 
+export TOKENIZERS_PARALLELISM=false
 
 # Root Directories
 GPUS="1" # GPU size for tensor_parallel.

@@ -1,3 +1,5 @@
+export TOKENIZERS_PARALLELISM=false
+
 mkdir -p results/long-ppl/
 python3.9 experiments/ppl/run_ppl.py \
     --model_name gradientai/Llama-3-8B-Instruct-262k \

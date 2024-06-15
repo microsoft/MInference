@@ -78,16 +78,10 @@ InfiniteBench consists of the following tasks: `kv_retrieval`, `longbook_choice_
 1. Run InfiniteBench with `MInference`:
 
 ```bash
-bash infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 128000 -1 minference
+bash experiments/infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 128000 -1 minference
 ```
 
-2. Or test InfiniteBench with `FlashAttention-2` via `vLLM`:
-
-```bash
-bash infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 128000 -1 vllm
-```
-
-3. Experimental results
+2. Experimental results
 
 | Methods       | longbook_sum_eng | longbook_qa_eng | longbook_choice_eng | longdialogue_qa_eng | longbook_qa_chn | code_debug | math_find | passkey | number_string | kv_retrieval | Avg. |
 |---------------|------------------|-----------------|---------------------|---------------------|-----------------|------------|-----------|---------|---------------|--------------|------|
@@ -101,13 +95,15 @@ The [RULER](https://github.com/hsiehjackson/RULER) benchmark is a challenging lo
 To run the RULER benchmark, you need first install the requirements:
 
 ```bash
-pip install -r ruler/requirements.txt
+pip install Cython
+pip install nemo-toolkit[all]==1.21 --no-deps
+pip install -r experiments/ruler/requirements.txt
 ```
 
 1. Download required data files:
 
 ```bash
-cd ruler/data/synthetic/json/
+cd experiments/ruler/data/synthetic/json/
 
 # download Paul Graham Essays for the needle test
 python download_paulgraham_essay.py
@@ -119,12 +115,10 @@ bash download_qa_dataset.sh
 python -c "import nltk; nltk.download('punkt')"
 ```
 
-
-
 2. Run RULER with `MInference` and `Llama-3-8B-Instruct-262k`:
 
 ```bash
-# under the ruler/ directory
+# under the experiments/ruler/ directory
 bash run.sh llama-3-262k-minference synthetic
 ```
 
@@ -144,7 +138,7 @@ We use continues 100K text chunks samples from [PG-19](https://huggingface.co/da
 
 1. To run the PPL test, simply run:
 ```bash
-bash ppl/run_ppl.sh
+bash experiments/ppl/run_ppl.sh
 ```
 
 The result will be saved at `results/long-ppl/`, and the visualization will be saved as `results/long-ppl/long-ppl-viz.png`.
@@ -161,7 +155,7 @@ The [Needle In A Haystack test](https://github.com/gkamradt/LLMTest_NeedleInAHay
 1. Run the Needle in A Haystack test:
 
 ```bash
-bash needle_in_a_haystack/run_needle.sh
+bash experiments/needle_in_a_haystack/run_needle.sh
 ```
 
 The results will be saved under `./needle` directory.
