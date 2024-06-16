@@ -98,12 +98,14 @@ Intuitively, the significant sparse redundancy in attention suggests that these 
 
 If you find MInference useful or relevant to your project and research, please kindly cite our paper:
 
+```bibtex
 @article{jiang2024minference,
     title={MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention},
     author={Jiang, Huiqiang and Li, Yucheng and Zhang, Chengruidong and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Han, Zhenhua and Abdi, Amir H and Li, Dongsheng and Lin, Chin-Yew and Yang, Yuqing and Qiu, Lili},
     journal={arXiv},
     year={2024}
 }
+```
 
 ## Contributing
 
