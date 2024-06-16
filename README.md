@@ -72,6 +72,39 @@ llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128000)
 outputs = llm.generate(prompts, sampling_params)
 ```
 
+## FAQ
+
+For more insights and answers, visit our [FAQ section](./Transparency_FAQ.md).
+
+**Q1: How to effectively evaluate the impact of dynamic sparse attention on the capabilities of long-context LLMs?**
+
+To effectively evaluate long-context LLM capabilities, we tested: 1) effective  context window with RULER, 2) general long-context tasks with InfiniteBench, 3) retrieval tasks across different contexts and positions with Needle in a Haystack, and 4) language model prediction with PG-19.<br/>
+We found that traditional methods perform poorly in retrieval tasks, with difficulty levels varying as follows: KV retrieval (every key as a needle) > Needle in a Haystack > Retrieval.Number > Retrieval PassKey. The key challenge is the semantic difference between needles and the haystack. Traditional methods perform better when the semantic difference is larger, as in passkey tasks. KV retrieval demands higher retrieval capabilities since any key can be a target, and multi-needle tasks are even more complex.<br/>
+We will continue to update our results with more models and datasets in future versions.
+
+**Q2: Does this dynamic sparse attention pattern only exist in long-context LLMs that are not fully trained?**
+
+Firstly, attention is dynamically sparse, and this is true for both short- and long-contexts, a characteristic inherent to the attention mechanism.
+Additionally, we selected the state-of-the-art open-source long-context LLM, LLaMA-3-8B-Instruct-1M, which has an effective context window size of 16K. With MInference, this can be extended to 32K.
+We will continue to adapt our method to other advanced long-context LLMs and update our results. We will also explore the theoretical reasons behind this dynamic sparse attention pattern.
+
+**Q3: What is the relationship between MInference, SSM, Linear Attention, and Sparse Attention?**
+
+All four approaches (MInference, SSM, Linear Attention, and Sparse Attention) are efficient solutions for optimizing the high complexity of attention in Transformers, each introducing inductive bias from different perspectives. Notably, the latter three require training from scratch.
+Additionally, recent works like Mamba-2 and Unified Implicit Attention Representation unify SSM and Linear Attention as static sparse attention. Mamba-2 itself is a block-wise sparse attention method.
+Intuitively, the significant sparse redundancy in attention suggests that these approaches have potential. However, static sparse attention may not handle dynamic semantic associations well, especially in complex tasks. Dynamic sparse attention, on the other hand, holds potential for better managing these dynamic relationships.
+
+## Citation
+
+If you find MInference useful or relevant to your project and research, please kindly cite our paper:
+
+@article{jiang2024minference,
+    title={MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention},
+    author={Jiang, Huiqiang and Li, Yucheng and Zhang, Chengruidong and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Han, Zhenhua and Abdi, Amir H and Li, Dongsheng and Lin, Chin-Yew and Yang, Yuqing and Qiu, Lili},
+    journal={arXiv},
+    year={2024}
+}
+
 ## Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
