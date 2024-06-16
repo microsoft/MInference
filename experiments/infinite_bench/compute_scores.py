@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 from __future__ import annotations
 
 import json

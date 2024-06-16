@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 from vllm import LLM, SamplingParams
 
 from minference import MInference

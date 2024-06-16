@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
+
 # flake8: noqa
 from .minference_configuration import MInferenceConfig
 from .models_patch import MInference

@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 from argparse import ArgumentParser, Namespace
 
 from eval_utils import DATA_NAME_TO_MAX_NEW_TOKENS

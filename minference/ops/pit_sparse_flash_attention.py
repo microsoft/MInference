@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 import numpy as np
 import pycuda.autoprimaryctx
 import torch

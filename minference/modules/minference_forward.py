@@ -1,10 +1,16 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 import inspect
 import json
 import os
 from importlib import import_module
 
 from transformers.models.llama.modeling_llama import *
-from vllm.attention.backends.flash_attn import *
+from transformers.utils.import_utils import _is_package_available
+
+if _is_package_available("vllm"):
+    from vllm.attention.backends.flash_attn import *
 
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention

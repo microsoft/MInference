@@ -1,3 +1,6 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 export TOKENIZERS_PARALLELISM=false
 
 mkdir -p results/long-ppl/
