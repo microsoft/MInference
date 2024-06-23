@@ -17,4 +17,10 @@ MODEL2PATH = {
     "microsoft/Phi-3-mini-128k-instruct": os.path.join(
         BASE_DIR, "Phi_3_mini_128k_instruct_kv_out_v32_fit_o_best_pattern.json"
     ),
+    "Qwen/Qwen2-7B-Instruct": os.path.join(
+        BASE_DIR, "Qwen2_7B_Instruct_128k_instruct_kv_out_v32_fit_o_best_pattern.json"
+    ),
+    "THUDM/glm-4-9b-chat-1m": os.path.join(
+        BASE_DIR, "GLM_4_9B_1M_instruct_kv_out_v32_fit_o_best_pattern.json"
+    ),
 }

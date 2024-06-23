@@ -14,12 +14,7 @@ import numpy as np
 import torch
 from absl.app import run
 from tqdm import tqdm
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    GenerationConfig,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 from vllm import LLM, SamplingParams
 
 from minference import MInference
@@ -204,7 +199,9 @@ class LLMNeedleHaystackTester:
             print(self.context_lengths)
             self.context_lengths = self.context_lengths[int(start) : int(end)]
             print(self.context_lengths)
-        self.tokenizer = AutoTokenizer.from_pretrained(config.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            config.model_name, trust_remote_code=config.trust_remote_code
+        )
         minference_patch = MInference(
             self.config.attn_type,
             self.config.model_name,
@@ -226,7 +223,11 @@ class LLMNeedleHaystackTester:
             self.generation_config = SamplingParams(temperature=0, max_tokens=64)
         else:
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.config.model_name, torch_dtype="auto", device_map="cuda", **kwargs
+                self.config.model_name,
+                torch_dtype="auto",
+                device_map="cuda",
+                trust_remote_code=config.trust_remote_code,
+                **kwargs,
             )
             self.model = minference_patch(self.model)
             self.generation_config = GenerationConfig(
@@ -382,11 +383,12 @@ class LLMNeedleHaystackTester:
                     input_tensor = self.tokenizer(
                         prompt, return_tensors="pt", return_attention_mask=False
                     ).to(self.model.device)
-                    outs = self.model.generate(
-                        **input_tensor,
-                        generation_config=self.generation_config,
-                        pad_token_id=self.tokenizer.eos_token_id,
-                    )
+                    with torch.no_grad():
+                        outs = self.model.generate(
+                            **input_tensor,
+                            generation_config=self.generation_config,
+                            pad_token_id=self.tokenizer.eos_token_id,
+                        )
                     new_tokens = outs[0, input_tensor["input_ids"].shape[-1] :]
                     out = self.tokenizer.decode(new_tokens, skip_special_tokens=True)
                 results.append(

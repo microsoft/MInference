@@ -58,6 +58,7 @@ def parse_args() -> Namespace:
     p.add_argument("--topk_dims_file_path", type=str, default=None)
     p.add_argument("--kv_cache_cpu", action="store_true")
     p.add_argument("--use_snapkv", action="store_true")
+    p.add_argument("--trust_remote_code", action="store_true")
     p.add_argument(
         "--attn_type",
         type=str,

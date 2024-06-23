@@ -408,6 +408,7 @@ results
 *.pt
 *.pkl
 !minference/configs/*
+figures
 
 __pycache__
 build/

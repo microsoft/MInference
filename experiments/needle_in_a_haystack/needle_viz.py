@@ -87,17 +87,17 @@ def plot_needle_viz(
     max_context_str = f"{max_context // 1000}K" if max_context >= 1000 else max_context
 
     # More aesthetics
-    if mode.lower() == " w/ ours":
-        name = "MInference"
-    elif mode.lower() == " w/ streamllm":
-        name = "StreamingLLM"
-    elif mode.lower() == " w/ infllm":
+    if mode.lower() == "ours":
+        name = " w/ MInference"
+    elif mode.lower() == "streamllm":
+        name = " w/ StreamingLLM"
+    elif mode.lower() == "infllm":
         name = " w/ InfLLM"
     else:
         name = ""
     if "Yi" in model_name:
         context = "200K"
-    elif "Phi" in model_name:
+    elif any(key in model_name for key in ["Phi", "Qwen2"]):
         context = "128K"
     else:
         context = "1M"

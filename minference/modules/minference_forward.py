@@ -23,6 +23,32 @@ LAST_Q_MASK = arange[None, None, :, None] >= arange[None, None, None, :]
 ROPE_TYPE = None
 SEARCH_MASK = None
 
+def set_rope_type(self):
+    global ROPE_TYPE
+    if ROPE_TYPE is not None:
+        return
+    if "seq_len" in inspect.signature(self.rotary_emb.forward).parameters:
+        ROPE_TYPE = "seq_len"
+    elif "max_seq_len" in inspect.signature(self.rotary_emb.forward).parameters:
+        ROPE_TYPE = "max_seq_len"
+    else:
+        ROPE_TYPE = "position_ids"
+
+def get_cos_sin(self, value_states, kv_seq_len, position_ids):
+    if ROPE_TYPE == "seq_len":
+        cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+    elif ROPE_TYPE == "max_seq_len":
+        cos = self.rotary_emb(kv_seq_len)
+        if position_ids is not None:
+            cos = cos[position_ids]
+        else:
+            cos = cos[None, :kv_seq_len]
+        sin = None
+    else:
+        cos, sin = self.rotary_emb(value_states, position_ids)
+    return cos, sin
+
+
 def init_minference_parameters(self):
     config = self.config.to_dict()
     self.starting_layer = config.get("starting_layer", 0)
@@ -76,11 +102,11 @@ def search_pattern(q, k, head):
         qk = torch.matmul(q[:,:,qk_idxs,:], k.transpose(2, 3))/ math.sqrt(head_dim) + attention_mask[:,:,qk_idxs]
         qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
         vertical = qk.sum(-2, keepdim=True)
-        vertical[...,:30] = 10000
+        vertical[...,:30] = torch.inf
         vertical_topk = torch.topk(-vertical, q_len - vertical_size, -1).indices
 
         slash = sum_all_diagonal_matrix(qk)[...,:-last_q + 1]
-        slash[...,-30:] = 10000
+        slash[...,-30:] = torch.inf
         slash_topk = slash
         slash = torch.topk(slash, slash_size, -1).indices - (q_len - 1)
         slash = torch.stack([torch.sparse.spdiags(torch.ones(slash_size, q_len), slash.cpu()[0][_], (q_len, q_len)).to_dense() for _ in range(1)]).to(q.device)
@@ -420,7 +446,8 @@ def minference_forward():
         else:
             qkv = self.qkv_proj(hidden_states)
             query_pos = self.num_heads * self.head_dim
-            query_states, key_states, value_states = torch.split(qkv, query_pos, -1)
+            key_value_pos = query_pos // self.num_key_value_groups
+            query_states, key_states, value_states = torch.split(qkv, [query_pos, key_value_pos, key_value_pos], -1)
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -435,14 +462,13 @@ def minference_forward():
                     "with a layer index."
                 )
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        global ROPE_TYPE
-        if ROPE_TYPE is None:
-            ROPE_TYPE = "seq_len" in inspect.signature(self.rotary_emb.forward).parameters
-        if ROPE_TYPE:
-            cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        set_rope_type(self)
+        cos, sin = get_cos_sin(self, value_states, kv_seq_len, position_ids)
+        if ROPE_TYPE == "max_seq_len":
+            query_states = apply_rotary_pos_emb(query_states, cos)
+            key_states = apply_rotary_pos_emb(key_states, cos)
         else:
-            cos, sin = self.rotary_emb(value_states, position_ids)
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
 
         if past_key_value is not None:
             cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
@@ -507,13 +533,8 @@ def minference_kv_cache_cpu_forward():
         if use_cache and past_key_value is not None:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
 
-        global ROPE_TYPE
-        if ROPE_TYPE is None:
-            ROPE_TYPE = "seq_len" in inspect.signature(self.rotary_emb.forward).parameters
-        if ROPE_TYPE:
-            cos, sin = self.rotary_emb(hidden_states, seq_len=kv_seq_len)
-        else:
-            cos, sin = self.rotary_emb(hidden_states, position_ids)
+        set_rope_type(self)
+        cos, sin = get_cos_sin(self, hidden_states, kv_seq_len, position_ids)
         cache_kwargs = {"sin": sin, "cos": cos}
 
         attn_out = torch.empty_like(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim)
@@ -526,18 +547,27 @@ def minference_kv_cache_cpu_forward():
             if "q_proj" in self.__dict__["_modules"]:
                 part_q = F.linear(hidden_states, self.q_proj.weight.view(self.num_heads, self.head_dim, hidden_dim)[head]).unsqueeze(2)
             else:
-                part_q = F.linear(hidden_states, self.qkv_proj.weight.view(3, self.num_heads, self.head_dim, hidden_dim)[0][head]).unsqueeze(2)
-            part_q = apply_rotary_pos_emb_single(part_q.transpose(1, 2), cos, sin, position_ids)
+                query_pos = self.num_heads * self.head_dim
+                part_q = F.linear(hidden_states, self.qkv_proj.weight[:query_pos].view(self.num_heads, self.head_dim, hidden_dim)[head]).unsqueeze(2)
+
+            if ROPE_TYPE == "max_seq_len":
+                part_q = apply_rotary_pos_emb(part_q.transpose(1, 2), cos)
+            else:
+                part_q = apply_rotary_pos_emb_single(part_q.transpose(1, 2), cos, sin, position_ids)
 
             if head % self.num_key_value_groups == 0:
                 if "q_proj" in self.__dict__["_modules"]:
                     part_k = F.linear(hidden_states, self.k_proj.weight.view(act_num_heads, self.head_dim, hidden_dim)[head // self.num_key_value_groups]).unsqueeze(2)
                     part_v = F.linear(hidden_states, self.v_proj.weight.view(act_num_heads, self.head_dim, hidden_dim)[head // self.num_key_value_groups]).unsqueeze(2).transpose(1, 2)
                 else:
-                    part_k = F.linear(hidden_states, self.qkv_proj.weight.view(3, act_num_heads, self.head_dim, hidden_dim)[1][head // self.num_key_value_groups]).unsqueeze(2)
-                    part_v = F.linear(hidden_states, self.qkv_proj.weight.view(3, act_num_heads, self.head_dim, hidden_dim)[2][head // self.num_key_value_groups]).unsqueeze(2).transpose(1, 2)
+                    query_pos = self.num_heads * self.head_dim
+                    part_k = F.linear(hidden_states, self.qkv_proj.weight[query_pos:].view(2, act_num_heads, self.head_dim, hidden_dim)[0][head // self.num_key_value_groups]).unsqueeze(2)
+                    part_v = F.linear(hidden_states, self.qkv_proj.weight[query_pos:].view(2, act_num_heads, self.head_dim, hidden_dim)[1][head // self.num_key_value_groups]).unsqueeze(2).transpose(1, 2)
 
-                part_k = apply_rotary_pos_emb_single(part_k.transpose(1, 2), cos, sin, position_ids)
+                if ROPE_TYPE == "max_seq_len":
+                    part_k = apply_rotary_pos_emb(part_k.transpose(1, 2), cos)
+                else:
+                    part_k = apply_rotary_pos_emb_single(part_k.transpose(1, 2), cos, sin, position_ids)
                 if use_cache and past_key_value is not None:
                     k[:,head // self.num_key_value_groups] = part_k.cpu()
                     v[:,head // self.num_key_value_groups] = part_v.cpu()
@@ -599,14 +629,13 @@ def minference_with_snapkv_forward():
                     kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
             else:
                 kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        global ROPE_TYPE
-        if ROPE_TYPE is None:
-            ROPE_TYPE = "seq_len" in inspect.signature(self.rotary_emb.forward).parameters
-        if ROPE_TYPE:
-            cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+        set_rope_type(self)
+        cos, sin = get_cos_sin(self, value_states, kv_seq_len, position_ids)
+        if ROPE_TYPE == "max_seq_len":
+            query_states = apply_rotary_pos_emb(query_states, cos)
+            key_states = apply_rotary_pos_emb(key_states, cos)
         else:
-            cos, sin = self.rotary_emb(value_states, position_ids)
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 

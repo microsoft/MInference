@@ -33,4 +33,5 @@ python experiments/needle_in_a_haystack/needle_test.py \
 python experiments/needle_in_a_haystack/needle_summary.py --output_path ./needle --run_name minference_LLaMA_1M
 
 # Visualization
+mkdir -p figures
 python experiments/needle_in_a_haystack/needle_viz.py --res_file ./needle/minference_LLaMA_1M.json --model_name LLaMA-3-8B-Instruct-1M --mode ours

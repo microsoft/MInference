@@ -6,7 +6,7 @@ You can use the following scripts to search for the optimal head sparse pattern:
 cd experiments/infinite_bench
 python run_infinitebench.py \
     --task kv_retrieval \
-    --model_name_or_path gradientai/Llama-3-8B-Instruct-Gradient-1048k \
+    --model_name_or_path gradientai/Llama-3-8B-Instruct-262k \
     --data_dir ./data \
     --output_dir ./results \
     --max_seq_length 30000 \

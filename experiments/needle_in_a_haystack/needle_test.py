@@ -27,6 +27,7 @@ class Config:
     pattern_path: str = "config/Llama_3_8B_Instruct_262k_kv_out_v32_best_pattern.json"
     jobs: str = None
     kv_cache_cpu: bool = False
+    trust_remote_code: bool = False
 
     def __post_init__(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -47,6 +48,7 @@ def main(
     max_length: int = 100000,
     min_length: int = 1000,
     kv_cache_cpu: bool = False,
+    trust_remote_code: bool = False,
 ):
     config = Config(
         model_name=model_name,
@@ -59,6 +61,7 @@ def main(
         context_lengths_min=min_length,
         context_lengths_max=max_length,
         kv_cache_cpu=kv_cache_cpu,
+        trust_remote_code=trust_remote_code,
     )
     kwargs = {
         "swap_space": 64,
@@ -96,6 +99,7 @@ if __name__ == "__main__":
             "streaming",
             "minference",
             "inf_llm",
+            "minference_with_dense",
         ],
     )
     args.add_argument("--output_path", type=str, default="results/needle/")
@@ -105,6 +109,7 @@ if __name__ == "__main__":
     args.add_argument("--max_length", type=int, default=100000)
     args.add_argument("--min_length", type=int, default=1000)
     args.add_argument("--kv_cache_cpu", action="store_true")
+    args.add_argument("--trust_remote_code", action="store_true")
     args = args.parse_args()
 
     main(
@@ -118,4 +123,5 @@ if __name__ == "__main__":
         max_length=args.max_length,
         min_length=args.min_length,
         kv_cache_cpu=args.kv_cache_cpu,
+        trust_remote_code=args.trust_remote_code,
     )

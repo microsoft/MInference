@@ -21,6 +21,7 @@ from .modules.minference_forward import (
     sum_all_diagonal_matrix,
 )
 from .ops.streaming_kernel import stream_llm_forward
+from .utils import patch_glm_4_1m
 
 
 class RotaryEmbeddingESM(torch.nn.Module):
@@ -750,6 +751,8 @@ def minference_patch(model, config):
     if config.use_snapkv:
         return minference_patch_with_snapkv(model)
 
+    model = patch_glm_4_1m(model)
+
     Attention = model.model.layers[0].self_attn.__class__
     Model = model.model.__class__
     DecoderLayer = model.model.layers[0].__class__
@@ -794,6 +797,8 @@ def minference_patch_kv_cache_cpu(model):
     transformers.cache_utils.DynamicCache.update = cpu_cache_update
     transformers.cache_utils.DynamicCache.get = cpu_cache_get
 
+    model = patch_glm_4_1m(model)
+
     Attention = model.model.layers[0].self_attn.__class__
     Model = model.model.__class__
     DecoderLayer = model.model.layers[0].__class__
@@ -834,6 +839,8 @@ def minference_patch_kv_cache_cpu(model):
 
 def minference_patch_with_snapkv(model):
     from transformers import LlamaForCausalLM
+
+    model = patch_glm_4_1m(model)
 
     Attention = model.model.layers[0].self_attn.__class__
     Model = model.model.__class__

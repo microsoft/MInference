@@ -114,10 +114,13 @@ if __name__ == "__main__":
     args.add_argument("--context_window", type=int, default=100000)
     args.add_argument("--run_benchmark", action="store_true")
     args.add_argument("--kv_cache_cpu", action="store_true")
+    args.add_argument("--trust_remote_code", action="store_true")
     args = args.parse_args()
 
     model_name = args.model_name
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, trust_remote_code=args.trust_remote_code
+    )
     if args.run_benchmark:
         run_benchmark(model_name)
     else:
@@ -125,6 +128,7 @@ if __name__ == "__main__":
             model_name,
             torch_dtype="auto",
             device_map="auto",
+            trust_remote_code=args.trust_remote_code,
         )
         attn_kwargs = {} if args.attn_type != "inf_llm" else {"dense_decoding": False}
         if args.attn_type != "hf":

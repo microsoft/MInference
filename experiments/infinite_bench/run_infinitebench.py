@@ -118,8 +118,11 @@ def load_model(
     max_seq_length: int = None,
     is_search: bool = False,
     use_snapkv: bool = False,
+    trust_remote_code: bool = False,
 ):
-    tok = AutoTokenizer.from_pretrained(model_name, resume_download=None)
+    tok = AutoTokenizer.from_pretrained(
+        model_name, resume_download=None, trust_remote_code=trust_remote_code
+    )
     tok.pad_token = tok.eos_token
     minference_patch = MInference(
         attn_type,
@@ -139,7 +142,9 @@ def load_model(
             max_model_len=max_seq_length,
         )
     else:
-        config = AutoConfig.from_pretrained(model_name, resume_download=None)
+        config = AutoConfig.from_pretrained(
+            model_name, resume_download=None, trust_remote_code=trust_remote_code
+        )
         if "LWM" in model_name:
             c = {
                 "theta": 10000000,
@@ -159,6 +164,7 @@ def load_model(
             torch_dtype="auto",
             device_map="cuda",
             resume_download=None,
+            trust_remote_code=trust_remote_code,
         )
     llm = minference_patch(llm)
 
@@ -191,6 +197,7 @@ if __name__ == "__main__":
         max_seq_length=max_seq_length,
         is_search=args.is_search,
         use_snapkv=args.use_snapkv,
+        trust_remote_code=args.trust_remote_code,
     )
     results = {}
 
