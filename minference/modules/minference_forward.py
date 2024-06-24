@@ -536,12 +536,13 @@ def minference_kv_cache_cpu_forward():
         set_rope_type(self)
         cos, sin = get_cos_sin(self, hidden_states, kv_seq_len, position_ids)
         cache_kwargs = {"sin": sin, "cos": cos}
+        kv_cache_cpu_device = self.config.kv_cache_cpu_device
 
         attn_out = torch.empty_like(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim)
         act_num_heads = self.num_heads // self.num_key_value_groups
         if use_cache:
-            k = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).cpu()
-            v = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).cpu()
+            k = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).to(kv_cache_cpu_device)
+            v = torch.zeros(bsz, act_num_heads, q_len, self.head_dim).to(hidden_states.dtype).to(kv_cache_cpu_device)
         part_k, part_v = None, None
         for head in range(self.num_heads):
             if "q_proj" in self.__dict__["_modules"]:
@@ -580,8 +581,8 @@ def minference_kv_cache_cpu_forward():
                 else:
                     part_k = apply_rotary_pos_emb_single(part_k.transpose(1, 2), cos, sin, position_ids)
                 if use_cache and past_key_value is not None:
-                    k[:,head // self.num_key_value_groups] = part_k.cpu()
-                    v[:,head // self.num_key_value_groups] = part_v.cpu()
+                    k[:,head // self.num_key_value_groups] = part_k.to(kv_cache_cpu_device)
+                    v[:,head // self.num_key_value_groups] = part_v.to(kv_cache_cpu_device)
                     part_k, part_v = past_key_value.get(part_k, part_v, self.layer_idx, head // self.num_key_value_groups, cache_kwargs)
 
             if self.layer_idx >= self.starting_layer:

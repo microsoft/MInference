@@ -10,16 +10,19 @@
 <p align="center">
     | <a href="https://llmlingua.com/"><b>Project Page</b></a> |
     <a href="https://arxiv.org/abs/2406."><b>Paper</b></a> |
-    <a href="https://huggingface.co/spaces/microsoft/MInference"><b>Demo</b></a> |
+    <a href="https://huggingface.co/spaces/microsoft/MInference"><b>HF Demo</b></a> |
 </p>
 
 https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-7123c81d6b19
+
+## News
+- 🧩 We will present **MInference 1.0** at the _**Microsoft Booth**_ and _**ES-FoMo**_ at ICML'24. See you in Vienna!
 
 ## TL;DR
 
 **MInference 1.0** leverages the dynamic sparse nature of LLMs' attention, which exhibits some static patterns, to speed up the pre-filling for long-context LLMs. It first determines offline which sparse pattern each head belongs to, then approximates the sparse index online and dynamically computes attention with the optimal custom kernels. This approach achieves up to a **10x speedup** for pre-filling on an A100 while maintaining accuracy.
 
-- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2406.) (Under Review)<br>
+- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2406.) (Under Review, ES-FoMo @ ICML'24)<br>
   _Huiqiang Jiang†, Yucheng Li†, Chengruidong Zhang†, Qianhui Wu, Xufang Luo, Surin Ahn, Zhenhua Han, Amir H. Abdi, Dongsheng Li, Chin-Yew Lin, Yuqing Yang and Lili Qiu_
 
 

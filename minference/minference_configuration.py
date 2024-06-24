@@ -25,6 +25,7 @@ class MInferenceConfig:
         config_path: str = None,
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
+        kv_cache_cpu_device: str = "cpu",
         use_snapkv: bool = False,
         is_search: bool = False,
         attn_kwargs: dict = {},
@@ -40,6 +41,7 @@ class MInferenceConfig:
         self.is_search = is_search
         self.starting_layer = starting_layer
         self.kv_cache_cpu = kv_cache_cpu
+        self.kv_cache_cpu_device = kv_cache_cpu_device
         self.use_snapkv = use_snapkv
         self.attn_kwargs = attn_kwargs
 

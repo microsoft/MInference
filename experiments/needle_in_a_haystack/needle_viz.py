@@ -29,7 +29,9 @@ def plot_needle_viz(
     mode="ours",
     output_path="figures/",
 ):
-    def get_context_size(x):
+    def get_context_size(x, is_128k: bool = False):
+        if is_128k:
+            return f"{round(x / 1000)}K"
         if x > 990000:
             return f"{round(x / 1000000)}M"
         if x <= 10000:
@@ -109,7 +111,7 @@ def plot_needle_viz(
 
     # Centering x-ticks
     xtick_labels = pivot_table.columns.values
-    xtick_labels = [get_context_size(x) for x in xtick_labels]
+    xtick_labels = [get_context_size(x, context == "128K") for x in xtick_labels]
     ax.set_xticks(np.arange(len(xtick_labels)) + 0.5, minor=False)
     ax.set_xticklabels(xtick_labels)
 

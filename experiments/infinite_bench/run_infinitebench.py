@@ -119,6 +119,8 @@ def load_model(
     is_search: bool = False,
     use_snapkv: bool = False,
     trust_remote_code: bool = False,
+    kv_cache_cpu: bool = False,
+    kv_cache_cpu_device: str = "cpu",
 ):
     tok = AutoTokenizer.from_pretrained(
         model_name, resume_download=None, trust_remote_code=trust_remote_code
@@ -131,6 +133,8 @@ def load_model(
         starting_layer=starting_layer,
         use_snapkv=use_snapkv,
         is_search=is_search,
+        kv_cache_cpu=kv_cache_cpu,
+        kv_cache_cpu_device=kv_cache_cpu_device,
     )
 
     if attn_type == "vllm":
@@ -198,6 +202,8 @@ if __name__ == "__main__":
         is_search=args.is_search,
         use_snapkv=args.use_snapkv,
         trust_remote_code=args.trust_remote_code,
+        kv_cache_cpu=args.kv_cache_cpu,
+        kv_cache_cpu_device=args.kv_cache_cpu_device,
     )
     results = {}
 

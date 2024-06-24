@@ -23,6 +23,8 @@ from .modules.minference_forward import (
 from .ops.streaming_kernel import stream_llm_forward
 from .utils import patch_glm_4_1m
 
+KV_CACHE_CPU_DEVICE = "cpu"
+
 
 class RotaryEmbeddingESM(torch.nn.Module):
     """
@@ -747,6 +749,9 @@ def minference_patch(model, config):
     from transformers import LlamaForCausalLM
 
     if config.kv_cache_cpu:
+        global KV_CACHE_CPU_DEVICE
+        KV_CACHE_CPU_DEVICE = config.kv_cache_cpu_device
+        model.config.kv_cache_cpu_device = config.kv_cache_cpu_device
         return minference_patch_kv_cache_cpu(model)
     if config.use_snapkv:
         return minference_patch_with_snapkv(model)
@@ -1246,14 +1251,14 @@ def cpu_cache_update(
 
     # Update the cache
     if len(self.key_cache) <= layer_idx:
-        self.key_cache.append(key_states.cpu())
-        self.value_cache.append(value_states.cpu())
+        self.key_cache.append(key_states.to(KV_CACHE_CPU_DEVICE))
+        self.value_cache.append(value_states.to(KV_CACHE_CPU_DEVICE))
     else:
         self.key_cache[layer_idx] = torch.cat(
-            [self.key_cache[layer_idx], key_states.cpu()], dim=-2
+            [self.key_cache[layer_idx], key_states.to(KV_CACHE_CPU_DEVICE)], dim=-2
         )
         self.value_cache[layer_idx] = torch.cat(
-            [self.value_cache[layer_idx], value_states.cpu()], dim=-2
+            [self.value_cache[layer_idx], value_states.to(KV_CACHE_CPU_DEVICE)], dim=-2
         )
 
 
@@ -1274,7 +1279,7 @@ def cpu_cache_get(
     # Update the cache
     if len(self.key_cache) <= layer_idx:
         return key_states, value_states
-    else:
+    elif KV_CACHE_CPU_DEVICE == "cpu":
         key_states = torch.cat(
             [self.key_cache[layer_idx][:, head_idx : head_idx + 1].cuda(), key_states],
             dim=-2,
@@ -1287,3 +1292,15 @@ def cpu_cache_get(
             dim=-2,
         )
         return key_states, value_states
+    key_states = torch.cat(
+        [self.key_cache[layer_idx][:, head_idx : head_idx + 1], key_states],
+        dim=-2,
+    )
+    value_states = torch.cat(
+        [
+            self.value_cache[layer_idx][:, head_idx : head_idx + 1],
+            value_states,
+        ],
+        dim=-2,
+    )
+    return key_states, value_states

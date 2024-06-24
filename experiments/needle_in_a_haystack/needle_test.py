@@ -28,6 +28,7 @@ class Config:
     jobs: str = None
     kv_cache_cpu: bool = False
     trust_remote_code: bool = False
+    kv_cache_cpu_device: str = "cpu"
 
     def __post_init__(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -49,6 +50,7 @@ def main(
     min_length: int = 1000,
     kv_cache_cpu: bool = False,
     trust_remote_code: bool = False,
+    kv_cache_cpu_device: str = "cpu",
 ):
     config = Config(
         model_name=model_name,
@@ -62,6 +64,7 @@ def main(
         context_lengths_max=max_length,
         kv_cache_cpu=kv_cache_cpu,
         trust_remote_code=trust_remote_code,
+        kv_cache_cpu_device=kv_cache_cpu_device,
     )
     kwargs = {
         "swap_space": 64,
@@ -109,6 +112,7 @@ if __name__ == "__main__":
     args.add_argument("--max_length", type=int, default=100000)
     args.add_argument("--min_length", type=int, default=1000)
     args.add_argument("--kv_cache_cpu", action="store_true")
+    args.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
     args.add_argument("--trust_remote_code", action="store_true")
     args = args.parse_args()
 
@@ -124,4 +128,5 @@ if __name__ == "__main__":
         min_length=args.min_length,
         kv_cache_cpu=args.kv_cache_cpu,
         trust_remote_code=args.trust_remote_code,
+        kv_cache_cpu_device=args.kv_cache_cpu_device,
     )

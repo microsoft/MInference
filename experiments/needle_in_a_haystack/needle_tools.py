@@ -208,6 +208,7 @@ class LLMNeedleHaystackTester:
             self.config.pattern_path,
             starting_layer=0,
             kv_cache_cpu=self.config.kv_cache_cpu,
+            kv_cache_cpu_device=self.config.kv_cache_cpu_device,
             attn_kwargs=(
                 {} if self.config.attn_type != "inf_llm" else {"dense_decoding": False}
             ),
