@@ -546,9 +546,13 @@ def minference_kv_cache_cpu_forward():
         for head in range(self.num_heads):
             if "q_proj" in self.__dict__["_modules"]:
                 part_q = F.linear(hidden_states, self.q_proj.weight.view(self.num_heads, self.head_dim, hidden_dim)[head]).unsqueeze(2)
+                if self.q_proj.bias is not None:
+                    part_q += self.q_proj.bias.view(self.num_heads, self.head_dim)[head]
             else:
                 query_pos = self.num_heads * self.head_dim
                 part_q = F.linear(hidden_states, self.qkv_proj.weight[:query_pos].view(self.num_heads, self.head_dim, hidden_dim)[head]).unsqueeze(2)
+                if self.qkv_proj.bias is not None:
+                    part_q += self.qkv_proj.bias[:query_pos].view(self.num_heads, self.head_dim)[head]
 
             if ROPE_TYPE == "max_seq_len":
                 part_q = apply_rotary_pos_emb(part_q.transpose(1, 2), cos)
@@ -559,10 +563,17 @@ def minference_kv_cache_cpu_forward():
                 if "q_proj" in self.__dict__["_modules"]:
                     part_k = F.linear(hidden_states, self.k_proj.weight.view(act_num_heads, self.head_dim, hidden_dim)[head // self.num_key_value_groups]).unsqueeze(2)
                     part_v = F.linear(hidden_states, self.v_proj.weight.view(act_num_heads, self.head_dim, hidden_dim)[head // self.num_key_value_groups]).unsqueeze(2).transpose(1, 2)
+                    if self.k_proj.bias is not None:
+                        part_k += self.k_proj.bias.view(act_num_heads, self.head_dim)[head // self.num_key_value_groups]
+                    if self.v_proj.bias is not None:
+                        part_v += self.v_proj.bias.view(act_num_heads, self.head_dim)[head // self.num_key_value_groups]
                 else:
                     query_pos = self.num_heads * self.head_dim
                     part_k = F.linear(hidden_states, self.qkv_proj.weight[query_pos:].view(2, act_num_heads, self.head_dim, hidden_dim)[0][head // self.num_key_value_groups]).unsqueeze(2)
                     part_v = F.linear(hidden_states, self.qkv_proj.weight[query_pos:].view(2, act_num_heads, self.head_dim, hidden_dim)[1][head // self.num_key_value_groups]).unsqueeze(2).transpose(1, 2)
+                    if self.qkv_proj.bias is not None:
+                        part_k += self.qkv_proj.bias[query_pos:].view(2, act_num_heads, self.head_dim)[0][head // self.num_key_value_groups]
+                        part_v += self.qkv_proj.bias[query_pos:].view(2, act_num_heads, self.head_dim)[1][head // self.num_key_value_groups]
 
                 if ROPE_TYPE == "max_seq_len":
                     part_k = apply_rotary_pos_emb(part_k.transpose(1, 2), cos)
