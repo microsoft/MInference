@@ -361,6 +361,26 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
 
         return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
 
+    def vertical_and_slash_kernel_extend(q, k, v, vertical_size, slash_size):
+        vertical_size, slash_size  = min(q_len, max(vertical_size + 100, 30)), min(q_len, max(slash_size, 50))
+        last_q = min(64, q_len)
+        last_start = 100
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q-last_start:-last_start,:], k)
+        qk[:, :, :, -last_start:] = -torch.inf
+        qk[:, :, :, -last_q-last_start:-last_start] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q-last_start:-last_start], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
+        vertical = qk.sum(-2, keepdim=True)
+        vertical[...,:30] = torch.inf
+        vertical[...,-100:] = torch.inf
+        vertical_topk = torch.topk(vertical, vertical_size, -1).indices
+
+        slash = sum_all_diagonal_matrix(qk)[...,:-last_q + 1]
+        slash[...,-100:] = torch.inf
+        slash_topk = slash
+        slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
+
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
+
     def vertical_and_slash_kernel_static(q, k, v, vertical_size, slash_size):
         if "vs" in self.__dict__:
             vertical_topk, slash = self.vs
@@ -536,7 +556,7 @@ def minference_kv_cache_cpu_forward():
         set_rope_type(self)
         cos, sin = get_cos_sin(self, hidden_states, kv_seq_len, position_ids)
         cache_kwargs = {"sin": sin, "cos": cos}
-        kv_cache_cpu_device = self.config.kv_cache_cpu_device
+        kv_cache_cpu_device = self.config.to_dict().get("kv_cache_cpu_device", "cpu")
 
         attn_out = torch.empty_like(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim)
         act_num_heads = self.num_heads // self.num_key_value_groups
