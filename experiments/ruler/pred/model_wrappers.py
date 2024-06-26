@@ -72,30 +72,71 @@ class HuggingFaceModel:
 
 
 class MInferenceModel:
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+    def __init__(
+        self,
+        name_or_path: str,
+        config_path: str,
+
+        do_sample: bool = False,
+        repetition_penalty: float = 1.0,
+        temperature: float = 0.0,
+        top_k: int = 32,
+        top_p: float = 0.9,
+        stop: Optional[List[str]] = None,
+        max_new_tokens: int = 100,
+
+        starting_layer: int = -1,
+        kv_cache_cpu: bool = False,
+        kv_cache_cpu_device: str = None,
+        use_snapkv: bool = False,
+        trust_remote_code: bool = False,
+    ) -> None:
+        from transformers import (AutoConfig,
+                                  AutoModelForCausalLM,
+                                  AutoTokenizer,
+                                  GenerationConfig)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
+            name_or_path, trust_remote_code=True, resume_download=None,
         )
         self.model = AutoModelForCausalLM.from_pretrained(
             name_or_path,
             torch_dtype="auto",
             device_map="auto",
+            resume_download=None,
+            trust_remote_code=trust_remote_code,
         )
         minference_patch = MInference(
-            "minference", name_or_path, None, starting_layer=0
+            "minference",
+            name_or_path,
+            config_path=config_path,
+            starting_layer=starting_layer,
+            use_snapkv=use_snapkv,
+            kv_cache_cpu=kv_cache_cpu,
+            kv_cache_cpu_device=kv_cache_cpu_device,
+            is_search=False,
         )
         self.model = minference_patch.patch_model(self.model)
 
         self.pipeline = None
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
+        generation_config = GenerationConfig(
+            do_sample=do_sample,
+            repetition_penalty=repetition_penalty,
+            max_new_tokens=max_new_tokens,
+        )
+        if do_sample:
+            generation_config.top_k = top_k
+            generation_config.top_p = top_p
+            generation_config.temperature = temperature
+        
+        self.generation_config = generation_config
+
+        self.stop = stop
 
     def __call__(self, prompt: str, **kwargs) -> Dict[str, List[str]]:
         torch.cuda.empty_cache()
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        output = self.model.generate(**inputs, **self.generation_kwargs)
+        output = self.model.generate(**inputs, generation_config = self.generation_config)
         generated_text = self.tokenizer.decode(
             output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
         )
@@ -108,26 +149,6 @@ class MInferenceModel:
             for s in self.stop:
                 generated_text = generated_text.split(s)[0]
         return {"text": [generated_text]}
-
-
-class Dilated1(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        minference_patch = MInference("dilated1", name_or_path, None, starting_layer=0)
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
 
 
 class InfLLM(MInferenceModel):
@@ -168,141 +189,6 @@ class InfLLM(MInferenceModel):
             for s in self.stop:
                 generated_text = generated_text.split(s)[0]
         return {"text": [generated_text]}
-
-
-class Dilated2(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        minference_patch = MInference("dilated2", name_or_path, None, starting_layer=0)
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
-
-
-class YiStatic(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        self.model.config.static_pattern = True
-        minference_patch = MInference(
-            "minference", name_or_path, None, starting_layer=0
-        )
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
-
-
-class LlamaStatic(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        self.model.config.static_pattern = True
-        minference_patch = MInference(
-            "minference", name_or_path, None, starting_layer=0
-        )
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
-
-
-class MInferenceOP(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        self.model.config.static_pattern = True
-        minference_patch = MInference(
-            "minference", name_or_path, None, starting_layer=0
-        )
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
-
-
-class MInferenceOPYi(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        self.model.config.static_pattern = True
-        minference_patch = MInference(
-            "minference", name_or_path, None, starting_layer=0
-        )
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
-
-
-class OPYiHalfV2(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
-        )
-        self.model = AutoModelForCausalLM.from_pretrained(
-            name_or_path,
-            torch_dtype="auto",
-            device_map="auto",
-        )
-        self.model.config.static_pattern = True
-        minference_patch = MInference(
-            "minference", name_or_path, None, starting_layer=0
-        )
-        self.model = minference_patch.patch_model(self.model)
-        self.pipeline = None
-
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
 
 
 class Streaming(MInferenceModel):

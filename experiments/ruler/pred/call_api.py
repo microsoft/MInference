@@ -40,16 +40,8 @@ SERVER_TYPES = (
     "openai",
     "gemini",
     "hf",
-    "mamba",
     "minference",
-    "dilated1",
-    "dilated2",
     "streaming",
-    "MInference6KoP",
-    "MInferenceOPYi",
-    "LlamaStatic",
-    "YiStatic",
-    "OPYiHalfV2",
     "InfLLM",
 )
 
@@ -108,6 +100,14 @@ parser.add_argument("--stop_words", type=str, default="")
 parser.add_argument("--sliding_window_size", type=int)
 parser.add_argument("--threads", type=int, default=4)
 
+# MInference
+parser.add_argument("--config_path", type=str)
+parser.add_argument("--starting_layer", type=int, default=-1)
+parser.add_argument("--kv_cache_cpu", action="store_true")
+parser.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
+parser.add_argument("--use_snapkv", action="store_true")
+parser.add_argument("--trust_remote_code", action="store_true")
+
 args = parser.parse_args()
 args.stop_words = list(filter(None, args.stop_words.split(",")))
 # if args.server_type == 'hf' or args.server_type == 'gemini' or args.server_type == 'minference':
@@ -115,13 +115,7 @@ if args.server_type in [
     "hf",
     "gemini",
     "minference",
-    "dilated1",
-    "dilated2",
     "streaming",
-    "MInference6KoP",
-    "MInference6KOPYi",
-    "LlamaStatic",
-    "YiStatic",
     "InfLLM",
 ]:
     args.threads = 1
@@ -206,6 +200,7 @@ def get_llm(tokens_to_generate):
 
         llm = MInferenceModel(
             name_or_path=args.model_name_or_path,
+
             do_sample=args.temperature > 0,
             repetition_penalty=1,
             temperature=args.temperature,
@@ -213,104 +208,13 @@ def get_llm(tokens_to_generate):
             top_p=args.top_p,
             stop=args.stop_words,
             max_new_tokens=tokens_to_generate,
-        )
 
-    elif args.server_type == "MInference6KoP":
-        from model_wrappers import MInferenceOP
-
-        llm = MInferenceOP(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "MInference6KOPYi":
-        from model_wrappers import MInferenceOPYi
-
-        llm = MInferenceOPYi(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "OPYiHalfV2":
-        from model_wrappers import OPYiHalfV2
-
-        llm = OPYiHalfV2(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "LlamaStatic":
-        from model_wrappers import LlamaStatic
-
-        llm = LlamaStatic(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "YiStatic":
-        from model_wrappers import YiStatic
-
-        llm = YiStatic(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "dilated1":
-        from model_wrappers import Dilated1
-
-        llm = Dilated1(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "dilated2":
-        from model_wrappers import Dilated2
-
-        llm = Dilated2(
-            name_or_path=args.model_name_or_path,
-            do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
+            config_path=args.config_path,
+            kv_cache_cpu=args.kv_cache_cpu,
+            kv_cache_cpu_device=args.kv_cache_cpu_device,
+            use_snapkv=args.use_snapkv,
+            trust_remote_code=args.trust_remote_code,
+            starting_layer=args.starting_layer,
         )
 
     elif args.server_type == "InfLLM":
@@ -327,27 +231,12 @@ def get_llm(tokens_to_generate):
             max_new_tokens=tokens_to_generate,
         )
 
-    elif args.server_type == "minference":
+    elif args.server_type == "streaming":
         from model_wrappers import Streaming
 
         llm = Streaming(
             name_or_path=args.model_name_or_path,
             do_sample=args.temperature > 0,
-            repetition_penalty=1,
-            temperature=args.temperature,
-            top_k=args.top_k,
-            top_p=args.top_p,
-            stop=args.stop_words,
-            max_new_tokens=tokens_to_generate,
-        )
-
-    elif args.server_type == "mamba":
-        from model_wrappers import MambaModel
-
-        # mamba uses its own generation function, do not pass in do_sample
-        # https://github.com/state-spaces/mamba/blob/009bec5ee37f586844a3fc89c040a9c1a9d8badf/mamba_ssm/utils/generation.py#L121
-        llm = MambaModel(
-            name_or_path=args.model_name_or_path,
             repetition_penalty=1,
             temperature=args.temperature,
             top_k=args.top_k,
