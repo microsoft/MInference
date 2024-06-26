@@ -3,7 +3,7 @@
         <img src="images/MInference_logo.png" alt="MInference" width="100" align="left">
     </div>
     <div style="flex-grow: 1;" align="center">
-        <h2 align="center">MInference: Million-Tokens Prompt Inference for LLMs</h2>
+        <h2 align="center">MInference: Million-Tokens Prompt Inference for Long-context LLMs</h2>
     </div>
 </div>
 
