@@ -7,15 +7,18 @@ from .configs.model2path import MODEL2PATH
 
 
 class MInferenceConfig:
-    ATTENTION_TYPES = [
+    MINFERENCE_ATTENTION_TYPES = [
         "minference",
+        "vllm",
+    ]
+    STASTIC_ATTENTION_TYPES = [
         "minference_with_dense",
         "static",
         "dilated1",
         "dilated2",
         "streaming",
         "inf_llm",
-        "vllm",
+        "hf",
     ]
 
     def __init__(
@@ -33,7 +36,7 @@ class MInferenceConfig:
     ):
         super(MInferenceConfig, self).__init__()
         assert (
-            attn_type in self.ATTENTION_TYPES
+            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.STASTIC_ATTENTION_TYPES
         ), f"The attention_type {attn_type} you specified is not supported."
         self.attn_type = attn_type
         self.config_path = self.update_config_path(config_path, model_name)
@@ -46,7 +49,7 @@ class MInferenceConfig:
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):
-        if config_path is not None:
+        if config_path is not None or self.attn_type in self.STASTIC_ATTENTION_TYPES:
             return config_path
         assert (
             model_name in MODEL2PATH

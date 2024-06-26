@@ -1,3 +1,15 @@
+# Experimemts
+
+- [Offline Kernel-Aware Sparse Pattern Search](#Offline-Kernel-Aware-Sparse-Pattern-Search)
+- [MInference Benchmark Experiments](#MInference-Benchmark-Experiments)
+    - [End-to-End Benchmark](#End-to-End-Benchmark)
+    - [Micro-Benchmark](#Micro-Benchmark)
+- [MInference Downstream Tasks Experiments](#MInference-Downstream-Tasks-Experiments)
+    - [InfiniteBench](#InfiniteBench)
+    - [RULER](#RULER)
+    - [PPL](#PPL)
+    - [Needle in A Haystack](#Needle-in-A-Haystack)
+
 ## Offline Kernel-Aware Sparse Pattern Search
 
 You can use the following scripts to search for the optimal head sparse pattern:
@@ -19,7 +31,8 @@ python run_infinitebench.py \
 
 ## MInference Benchmark Experiments
 
-Note: All experiments were run on a single A100 GPU with 80GB of VRAM.
+> [!NOTE]
+> All experiments were run on a single A100 GPU with 80GB of VRAM.
 
 Environment parameters:
 - CUDA 12.3
@@ -62,12 +75,16 @@ python experiments/benchmarks/benchmark_e2e.py --run_benchmark
 1000K   1765.56387      107.85639       328.58551       179.12031
 ```
 
+> [!TIP]
+> Based on our tests, **a single A100 can support up to 1.8M** context prompts during the pre-filling stage using LLaMA-3-8B-4M with **bf16**.
+
 ### Micro-Benchmark
 
 
 ## MInference Downstream Tasks Experiments
 
-Note: All of these experiments were run on one A100 GPUs with 80GB of VRAM. You may need to modify commands to fit your own computing environment (e.g., changing the batch size, the max memory per GPU, the number of GPUs, etc)
+> [!NOTE]
+> All of these experiments were run on one A100 GPUs with 80GB of VRAM. You may need to modify commands to fit your own computing environment (e.g., changing the batch size, the max memory per GPU, the number of GPUs, etc)
 
 ### InfiniteBench
 
@@ -78,7 +95,7 @@ InfiniteBench consists of the following tasks: `kv_retrieval`, `longbook_choice_
 1. Run InfiniteBench with `MInference`:
 
 ```bash
-bash experiments/infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 128000 -1 minference
+bash experiments/infinite_bench/run_infinitebench.sh gradientai/Llama-3-8B-Instruct-262k 160000 -1 minference
 ```
 
 2. Experimental results

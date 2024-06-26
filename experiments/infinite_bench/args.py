@@ -70,6 +70,7 @@ def parse_args() -> Namespace:
             "inf_llm",
             "flash_attn",
             "minference",
+            "minference_with_dense",
             "dilated1",
             "dilated2",
         ],

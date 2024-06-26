@@ -6,6 +6,8 @@ import os
 from .minference_configuration import MInferenceConfig
 from .patch import minference_patch, minference_patch_vllm, patch_hf
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 
 class MInference:
     def __init__(
@@ -76,6 +78,8 @@ class MInference:
                 attn_type="streaming",
                 attn_kwargs={"n_local": 3968, "n_init": 128, **self.config.attn_kwargs},
             )
+        elif self.config.attn_type == "hf":
+            pass
         elif self.config.attn_type == "inf_llm":
             model = patch_hf(
                 model,
