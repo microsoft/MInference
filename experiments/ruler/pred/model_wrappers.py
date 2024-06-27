@@ -97,12 +97,12 @@ class MInferenceModel:
                                   GenerationConfig)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True, resume_download=None,
+            name_or_path, trust_remote_code=trust_remote_code, resume_download=None,
         )
-        self.model = AutoModelForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
             name_or_path,
             torch_dtype="auto",
-            device_map="auto",
+            device_map="cuda",
             resume_download=None,
             trust_remote_code=trust_remote_code,
         )
@@ -116,7 +116,7 @@ class MInferenceModel:
             kv_cache_cpu_device=kv_cache_cpu_device,
             is_search=False,
         )
-        self.model = minference_patch.patch_model(self.model)
+        self.model = minference_patch(model)
 
         self.pipeline = None
         generation_config = GenerationConfig(
@@ -135,7 +135,7 @@ class MInferenceModel:
 
     def __call__(self, prompt: str, **kwargs) -> Dict[str, List[str]]:
         torch.cuda.empty_cache()
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = self.tokenizer(prompt, return_tensors="pt", return_attention_mask=False).to(self.model.device)
         output = self.model.generate(**inputs, generation_config = self.generation_config)
         generated_text = self.tokenizer.decode(
             output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True

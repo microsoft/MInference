@@ -136,7 +136,7 @@ python -c "import nltk; nltk.download('punkt')"
 
 ```bash
 # under the experiments/ruler/ directory
-bash run.sh llama-3-262k-minference synthetic
+bash run.sh
 ```
 
 The default output dir `results/ruler`, you use `ROOT_DIR` in `run.sh` to change the output dir.

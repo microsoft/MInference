@@ -39,17 +39,21 @@ TOP_K="32"
 MODEL_NAME="THUDM/glm-4-9b-chat-1m"
 BENCHMARK="synthetic"
 MODEL_TEMPLATE_TYPE="base"
+# MODEL_FRAMEWORK="minference"
 MODEL_FRAMEWORK="minference"
 
 # MInference
-CONFIG_PATH="GLM_4_9B_1M_instruct_kv_out_v32_fit_o_best_pattern.json"
 STARTING_LAYER=-1
 KV_CACHE_CPU="false"
 USE_SNAPKV="false"
 TRUST_REMOTE_CODE="true"
 
 if [ "${MODEL_FRAMEWORK}" == "minference" ]; then
-    MINFERENCE_PARAMS="--config_path ${CONFIG_PATH} --starting_layer ${STARTING_LAYER}"
+    MINFERENCE_PARAMS="--starting_layer ${STARTING_LAYER}"
+
+    if [ -n "${CONFIG_PATH}" ]; then
+        MINFERENCE_PARAMS="${MINFERENCE_PARAMS} --config_path ${CONFIG_PATH}"
+    fi
 
     if [ "${KV_CACHE_CPU}" == "true" ]; then
         MINFERENCE_PARAMS="${MINFERENCE_PARAMS} --kv_cache_cpu --kv_cache_cpu_device cpu"

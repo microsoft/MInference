@@ -54,9 +54,6 @@ def init_minference_parameters(self):
     self.starting_layer = config.get("starting_layer", 0)
     self.is_search = config.get("is_search", False)
 
-    # self.n_init = config.get("n_init", 128)
-    # self.n_local = config.get("n_local", 3968)
-
     self.ne_inf = None
     self.config_path = config.get("config_path", "")
     if os.path.exists(self.config_path) and self.layer_idx < len(json.load(open(self.config_path))):

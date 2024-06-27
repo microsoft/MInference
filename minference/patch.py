@@ -231,6 +231,8 @@ def hf_437_prepare_inputs_for_generation(
         position_ids.masked_fill_(attention_mask == 0, 1)
         if past_key_values:
             position_ids = position_ids[:, -input_ids.shape[1] :]
+    elif past_key_values is not None and past_length < position_ids.shape[1]:
+        position_ids = position_ids[:, past_length:]
 
     # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
     if inputs_embeds is not None and past_key_values is None:
