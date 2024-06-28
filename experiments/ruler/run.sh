@@ -3,14 +3,16 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 export TOKENIZERS_PARALLELISM=false
+RULER_PATH=$(dirname $0)
+python -c "import nltk; nltk.download('punkt')"
 
 SEQ_LENGTHS=(
     4096
-    8192
-    16384
-    32768
-    65536
-    131072
+    # 8192
+    # 16384
+    # 32768
+    # 65536
+    # 131072
 )
 
 TASKS=(
@@ -30,17 +32,16 @@ TASKS=(
 )
 
 # Experiment Setup
-NUM_SAMPLES=10
+NUM_SAMPLES=25
 TEMPERATURE="0.0"
 TOP_P="1.0"
 TOP_K="32"
 
 # The model
-MODEL_NAME="THUDM/glm-4-9b-chat-1m"
+MODEL_NAME=$1
 BENCHMARK="synthetic"
 MODEL_TEMPLATE_TYPE="base"
-# MODEL_FRAMEWORK="minference"
-MODEL_FRAMEWORK="minference"
+MODEL_FRAMEWORK=$2
 
 # MInference
 STARTING_LAYER=-1
@@ -55,24 +56,24 @@ if [ "${MODEL_FRAMEWORK}" == "minference" ]; then
         MINFERENCE_PARAMS="${MINFERENCE_PARAMS} --config_path ${CONFIG_PATH}"
     fi
 
-    if [ "${KV_CACHE_CPU}" == "true" ]; then
-        MINFERENCE_PARAMS="${MINFERENCE_PARAMS} --kv_cache_cpu --kv_cache_cpu_device cpu"
-    fi
-
     if [ "${USE_SNAPKV}" == "true" ]; then
         MINFERENCE_PARAMS="${MINFERENCE_PARAMS} --use_snapkv"
-    fi
-
-    if [ "${TRUST_REMOTE_CODE}" == "true" ]; then
-        MINFERENCE_PARAMS="${MINFERENCE_PARAMS} --trust_remote_code"
     fi
 
     echo "MInference enabled with params: ${MINFERENCE_PARAMS}"
 fi
 
+if [ "${TRUST_REMOTE_CODE}" == "true" ]; then
+    EXTRA_PARAMS="${EXTRA_PARAMS} --trust_remote_code"
+fi
+
+if [ "${KV_CACHE_CPU}" == "true" ]; then
+    EXTRA_PARAMS="${EXTRA_PARAMS} --kv_cache_cpu --kv_cache_cpu_device cpu"
+fi
+
 # Gpu and output path
 GPUS="1" # GPU size for tensor_parallel.
-ROOT_DIR="results/ruler/" # the path that stores generated task samples and model predictions.
+ROOT_DIR=$3 # the path that stores generated task samples and model predictions.
 
 for MAX_SEQ_LENGTH in "${SEQ_LENGTHS[@]}"; do
 
@@ -83,7 +84,7 @@ for MAX_SEQ_LENGTH in "${SEQ_LENGTHS[@]}"; do
     mkdir -p ${PRED_DIR}
 
     for TASK in "${TASKS[@]}"; do
-        python data/prepare.py \
+        python ${RULER_PATH}/data/prepare.py \
             --save_dir ${DATA_DIR} \
             --benchmark ${BENCHMARK} \
             --task ${TASK} \
@@ -94,7 +95,7 @@ for MAX_SEQ_LENGTH in "${SEQ_LENGTHS[@]}"; do
             --num_samples ${NUM_SAMPLES} \
             ${REMOVE_NEWLINE_TAB}
 
-        python pred/call_api.py \
+        python ${RULER_PATH}/pred/call_api.py \
             --data_dir ${DATA_DIR} \
             --save_dir ${PRED_DIR} \
             --benchmark ${BENCHMARK} \
@@ -105,10 +106,11 @@ for MAX_SEQ_LENGTH in "${SEQ_LENGTHS[@]}"; do
             --top_k ${TOP_K} \
             --top_p ${TOP_P} \
             ${MINFERENCE_PARAMS} \
+            ${EXTRA_PARAMS} \
             ${STOP_WORDS}
     done
 
-    python eval/evaluate.py \
+    python ${RULER_PATH}/eval/evaluate.py \
         --data_dir ${PRED_DIR} \
         --benchmark ${BENCHMARK}
 done

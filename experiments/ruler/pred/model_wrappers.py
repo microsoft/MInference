@@ -8,8 +8,6 @@ from typing import Dict, List, Optional
 import requests
 import torch
 
-from minference import MInference
-
 
 class HuggingFaceModel:
     def __init__(self, name_or_path: str, **generation_kwargs) -> None:
@@ -91,6 +89,7 @@ class MInferenceModel:
         use_snapkv: bool = False,
         trust_remote_code: bool = False,
     ) -> None:
+        from minference import MInference
         from transformers import (AutoConfig,
                                   AutoModelForCausalLM,
                                   AutoTokenizer,
@@ -154,6 +153,7 @@ class MInferenceModel:
 class InfLLM(MInferenceModel):
     def __init__(self, name_or_path: str, **generation_kwargs) -> None:
         from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+        from minference import MInference
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             name_or_path, trust_remote_code=True
@@ -162,6 +162,8 @@ class InfLLM(MInferenceModel):
             name_or_path,
             torch_dtype="auto",
             device_map="auto",
+            resume_download=None,
+            trust_remote_code=True,
         )
         minference_patch = MInference("inf_llm", name_or_path, None, starting_layer=0)
         self.model = minference_patch.patch_model(self.model)
@@ -192,25 +194,66 @@ class InfLLM(MInferenceModel):
 
 
 class Streaming(MInferenceModel):
-    def __init__(self, name_or_path: str, **generation_kwargs) -> None:
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+    def __init__(
+        self,
+        name_or_path: str,
+        config_path: str,
 
+        do_sample: bool = False,
+        repetition_penalty: float = 1.0,
+        temperature: float = 0.0,
+        top_k: int = 32,
+        top_p: float = 0.9,
+        stop: Optional[List[str]] = None,
+        max_new_tokens: int = 100,
+
+        starting_layer: int = -1,
+        kv_cache_cpu: bool = False,
+        kv_cache_cpu_device: str = None,
+        use_snapkv: bool = False,
+        trust_remote_code: bool = False,
+    ) -> None:
+        from minference import MInference
+        from transformers import (AutoConfig,
+                                AutoModelForCausalLM,
+                                AutoTokenizer,
+                                GenerationConfig)
         self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=True
+            name_or_path, trust_remote_code=trust_remote_code, resume_download=None,
         )
-        self.model = AutoModelForCausalLM.from_pretrained(
+        model = AutoModelForCausalLM.from_pretrained(
             name_or_path,
             torch_dtype="auto",
-            device_map="auto",
+            device_map="cuda",
+            resume_download=None,
+            trust_remote_code=trust_remote_code,
         )
-        self.model.config.static_pattern = True
-        minference_patch = MInference("streaming", name_or_path, None, starting_layer=0)
-        self.model = minference_patch.patch_model(self.model)
+        minference_patch = MInference(
+            "streaming",
+            name_or_path,
+            config_path=config_path,
+            starting_layer=starting_layer,
+            use_snapkv=use_snapkv,
+            kv_cache_cpu=kv_cache_cpu,
+            kv_cache_cpu_device=kv_cache_cpu_device,
+            is_search=False,
+        )
+        self.model = minference_patch(model)
+
         self.pipeline = None
+        generation_config = GenerationConfig(
+            do_sample=do_sample,
+            repetition_penalty=repetition_penalty,
+            max_new_tokens=max_new_tokens,
+        )
+        if do_sample:
+            generation_config.top_k = top_k
+            generation_config.top_p = top_p
+            generation_config.temperature = temperature
+        
+        self.generation_config = generation_config
 
-        self.generation_kwargs = generation_kwargs
-        self.stop = self.generation_kwargs.pop("stop")
-
+        self.stop = stop
 
 class MambaModel:
     def __init__(self, name_or_path: str, **generation_kwargs) -> None:

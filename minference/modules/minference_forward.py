@@ -56,7 +56,11 @@ def init_minference_parameters(self):
 
     self.ne_inf = None
     self.config_path = config.get("config_path", "")
-    if os.path.exists(self.config_path) and self.layer_idx < len(json.load(open(self.config_path))):
+    if (
+        self.config_path is not None and 
+        os.path.exists(self.config_path) and 
+        self.layer_idx < len(json.load(open(self.config_path)))
+    ):
         self.best_pattern = {int(ii): jj for ii, jj in json.load(open(self.config_path))[self.layer_idx].items()}
     else:
         self.best_pattern = {}
@@ -407,6 +411,9 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
     q_len = q.shape[2]
     bsz = q.shape[0]
 
+    if q_len == 1:
+        return dense(q, k, v)
+
     if self.config.to_dict().get("dilated1", False):
         return dialted(q, k, v, 'dilated1')
     if self.config.to_dict().get("dilated2", False):
@@ -422,9 +429,6 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         return vertical_and_slash_kernel_static(q, k, v, vertical_size, slash_size)
     if self.config.to_dict().get("vs_only", False):
         return vertical_and_slash_kernel(q, k, v, vertical_size, slash_size)
-
-    if q_len == 1:
-        return dense(q, k, v)
 
     fc = {
         "stream_llm": streaming_forward,

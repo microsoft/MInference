@@ -236,6 +236,7 @@ def get_llm(tokens_to_generate):
 
         llm = Streaming(
             name_or_path=args.model_name_or_path,
+
             do_sample=args.temperature > 0,
             repetition_penalty=1,
             temperature=args.temperature,
@@ -243,6 +244,13 @@ def get_llm(tokens_to_generate):
             top_p=args.top_p,
             stop=args.stop_words,
             max_new_tokens=tokens_to_generate,
+
+            config_path=args.config_path,
+            kv_cache_cpu=args.kv_cache_cpu,
+            kv_cache_cpu_device=args.kv_cache_cpu_device,
+            use_snapkv=args.use_snapkv,
+            trust_remote_code=args.trust_remote_code,
+            starting_layer=args.starting_layer,
         )
 
     else:
