@@ -49,7 +49,9 @@ class MInferenceConfig:
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):
-        if config_path is not None or self.attn_type in self.STASTIC_ATTENTION_TYPES:
+        if self.attn_type in self.STASTIC_ATTENTION_TYPES:
+            return ""
+        if config_path is not None:
             return config_path
         assert (
             model_name in MODEL2PATH

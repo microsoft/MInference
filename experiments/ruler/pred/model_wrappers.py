@@ -74,7 +74,6 @@ class MInferenceModel:
         self,
         name_or_path: str,
         config_path: str,
-
         do_sample: bool = False,
         repetition_penalty: float = 1.0,
         temperature: float = 0.0,
@@ -82,21 +81,25 @@ class MInferenceModel:
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
         max_new_tokens: int = 100,
-
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = None,
         use_snapkv: bool = False,
         trust_remote_code: bool = False,
     ) -> None:
+        from transformers import (
+            AutoConfig,
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            GenerationConfig,
+        )
+
         from minference import MInference
-        from transformers import (AutoConfig,
-                                  AutoModelForCausalLM,
-                                  AutoTokenizer,
-                                  GenerationConfig)
 
         self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=trust_remote_code, resume_download=None,
+            name_or_path,
+            trust_remote_code=trust_remote_code,
+            resume_download=None,
         )
         model = AutoModelForCausalLM.from_pretrained(
             name_or_path,
@@ -127,15 +130,17 @@ class MInferenceModel:
             generation_config.top_k = top_k
             generation_config.top_p = top_p
             generation_config.temperature = temperature
-        
+
         self.generation_config = generation_config
 
         self.stop = stop
 
     def __call__(self, prompt: str, **kwargs) -> Dict[str, List[str]]:
         torch.cuda.empty_cache()
-        inputs = self.tokenizer(prompt, return_tensors="pt", return_attention_mask=False).to(self.model.device)
-        output = self.model.generate(**inputs, generation_config = self.generation_config)
+        inputs = self.tokenizer(
+            prompt, return_tensors="pt", return_attention_mask=False
+        ).to(self.model.device)
+        output = self.model.generate(**inputs, generation_config=self.generation_config)
         generated_text = self.tokenizer.decode(
             output[0][inputs.input_ids.shape[1] :], skip_special_tokens=True
         )
@@ -153,6 +158,7 @@ class MInferenceModel:
 class InfLLM(MInferenceModel):
     def __init__(self, name_or_path: str, **generation_kwargs) -> None:
         from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
         from minference import MInference
 
         self.tokenizer = AutoTokenizer.from_pretrained(
@@ -198,7 +204,6 @@ class Streaming(MInferenceModel):
         self,
         name_or_path: str,
         config_path: str,
-
         do_sample: bool = False,
         repetition_penalty: float = 1.0,
         temperature: float = 0.0,
@@ -206,20 +211,25 @@ class Streaming(MInferenceModel):
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
         max_new_tokens: int = 100,
-
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = None,
         use_snapkv: bool = False,
         trust_remote_code: bool = False,
     ) -> None:
+        from transformers import (
+            AutoConfig,
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            GenerationConfig,
+        )
+
         from minference import MInference
-        from transformers import (AutoConfig,
-                                AutoModelForCausalLM,
-                                AutoTokenizer,
-                                GenerationConfig)
+
         self.tokenizer = AutoTokenizer.from_pretrained(
-            name_or_path, trust_remote_code=trust_remote_code, resume_download=None,
+            name_or_path,
+            trust_remote_code=trust_remote_code,
+            resume_download=None,
         )
         model = AutoModelForCausalLM.from_pretrained(
             name_or_path,
@@ -250,10 +260,11 @@ class Streaming(MInferenceModel):
             generation_config.top_k = top_k
             generation_config.top_p = top_p
             generation_config.temperature = temperature
-        
+
         self.generation_config = generation_config
 
         self.stop = stop
+
 
 class MambaModel:
     def __init__(self, name_or_path: str, **generation_kwargs) -> None:

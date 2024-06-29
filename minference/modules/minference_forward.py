@@ -57,8 +57,8 @@ def init_minference_parameters(self):
     self.ne_inf = None
     self.config_path = config.get("config_path", "")
     if (
-        self.config_path is not None and 
-        os.path.exists(self.config_path) and 
+        self.config_path is not None and
+        os.path.exists(self.config_path) and
         self.layer_idx < len(json.load(open(self.config_path)))
     ):
         self.best_pattern = {int(ii): jj for ii, jj in json.load(open(self.config_path))[self.layer_idx].items()}

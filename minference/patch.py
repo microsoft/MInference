@@ -84,7 +84,9 @@ class RotaryEmbeddingESM(torch.nn.Module):
             t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
             freqs = torch.outer(t * self.distance_scale, self.inv_freq).float()
             if self.is_glm4:
-                cache = torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1).bfloat16()
+                cache = torch.stack(
+                    [torch.cos(freqs), torch.sin(freqs)], dim=-1
+                ).bfloat16()
                 self._cos_cached, self._sin_cached = cache, None
             else:
                 emb = torch.cat((freqs, freqs), dim=-1)
@@ -109,7 +111,9 @@ class RotaryEmbeddingESM(torch.nn.Module):
             t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
             freqs = torch.outer(t * self.distance_scale, self.inv_freq)
             if self.is_glm4:
-                cache = torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1).bfloat16()
+                cache = torch.stack(
+                    [torch.cos(freqs), torch.sin(freqs)], dim=-1
+                ).bfloat16()
                 self._cos_cached, self._sin_cached = cache, None
             else:
                 emb = torch.cat((freqs, freqs), dim=-1)
@@ -157,8 +161,11 @@ class RotaryEmbeddingESM(torch.nn.Module):
             ),
         )
 
+
 @torch.jit.script
-def apply_rotary_pos_emb_glm4(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
+def apply_rotary_pos_emb_glm4(
+    x: torch.Tensor, rope_cache: torch.Tensor
+) -> torch.Tensor:
     # x: [b, np, sq, hn]
     b, np, sq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
     rot_dim = rope_cache.shape[-2] * 2
@@ -203,16 +210,37 @@ def huggingface_forward(forward):
         if "q_proj" not in self.__dict__["_modules"]:
             query_pos = self.num_heads * self.head_dim
             key_value_pos = query_pos // self.num_key_value_groups
-            self.q_proj = torch.nn.Linear(hidden_states.size(-1), query_pos, device=hidden_states.device, dtype=hidden_states.dtype)
-            self.k_proj = torch.nn.Linear(hidden_states.size(-1), key_value_pos, device=hidden_states.device, dtype=hidden_states.dtype)
-            self.v_proj = torch.nn.Linear(hidden_states.size(-1), key_value_pos, device=hidden_states.device, dtype=hidden_states.dtype)
+            self.q_proj = torch.nn.Linear(
+                hidden_states.size(-1),
+                query_pos,
+                device=hidden_states.device,
+                dtype=hidden_states.dtype,
+            )
+            self.k_proj = torch.nn.Linear(
+                hidden_states.size(-1),
+                key_value_pos,
+                device=hidden_states.device,
+                dtype=hidden_states.dtype,
+            )
+            self.v_proj = torch.nn.Linear(
+                hidden_states.size(-1),
+                key_value_pos,
+                device=hidden_states.device,
+                dtype=hidden_states.dtype,
+            )
 
             self.q_proj.weight.copy_(self.qkv_proj.weight[:query_pos, :])
-            self.k_proj.weight.copy_(self.qkv_proj.weight[query_pos : query_pos + key_value_pos, :])
-            self.v_proj.weight.copy_(self.qkv_proj.weight[query_pos + key_value_pos :, :])
+            self.k_proj.weight.copy_(
+                self.qkv_proj.weight[query_pos : query_pos + key_value_pos, :]
+            )
+            self.v_proj.weight.copy_(
+                self.qkv_proj.weight[query_pos + key_value_pos :, :]
+            )
 
             self.q_proj.bias.copy_(self.qkv_proj.bias[:query_pos])
-            self.k_proj.bias.copy_(self.qkv_proj.bias[query_pos : query_pos + key_value_pos])
+            self.k_proj.bias.copy_(
+                self.qkv_proj.bias[query_pos : query_pos + key_value_pos]
+            )
             self.v_proj.bias.copy_(self.qkv_proj.bias[query_pos + key_value_pos :])
 
             del self.qkv_proj

@@ -141,7 +141,7 @@ def split_retrieval_answer(pred: str):
 
 
 def get_score_one_kv_retrieval(pred, label, model_name: str) -> bool:
-    for c in ["\n", ":", '"', "'", ".", ",", "?", "!", "{", "}", "</s>"]:
+    for c in ["\n", ":", '"', "'", ".", ",", "?", "!", "{", "}", "</s>", "The", "To"]:
         pred = pred.replace(c, " ")
     words = pred.split()
     return label in words
@@ -224,7 +224,7 @@ def get_score_one_math_find(pred, label, model_name: str) -> bool:
         if first_num is None:
             return False
         first_num = first_num.group(0).strip()
-        return int(first_num) == label
+        return int(float(first_num)) == label
     elif isinstance(label, float):
         # Find first float or int
         first_float = re.search(r"\d+\.\d+|\d+", pred)
