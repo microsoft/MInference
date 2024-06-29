@@ -38,6 +38,7 @@ class RotaryEmbeddingESM(torch.nn.Module):
         dim: int,
         base: Union[int, float] = 10000,
         distance_scale: Union[int, float] = 1,
+        is_glm4: bool = False,
     ):
         super().__init__()
         self.base = base
@@ -52,6 +53,8 @@ class RotaryEmbeddingESM(torch.nn.Module):
         self._seq_len_cached = -1
         self._cos_cached = None
         self._sin_cached = None
+        self.is_glm4 = is_glm4
+        self.dim = dim
 
     def rotate_half(self, x):
         x1, x2 = x.chunk(2, dim=-1)
@@ -59,6 +62,9 @@ class RotaryEmbeddingESM(torch.nn.Module):
 
     def apply_rotary_pos_emb(self, x, length, right, cos, sin):
         dtype = x.dtype
+        if self.is_glm4:
+            cos = cos[right - length : right, ...]
+            return apply_rotary_pos_emb_glm4(x, cos)
         if cos.dim() == 2:
             cos = cos[right - length : right, :]
             sin = sin[right - length : right, :]
@@ -76,17 +82,21 @@ class RotaryEmbeddingESM(torch.nn.Module):
         if seq_len > self._seq_len_cached:
             self._seq_len_cached = seq_len
             t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
-            freqs = torch.outer(t * self.distance_scale, self.inv_freq)
-            emb = torch.cat((freqs, freqs), dim=-1)
-            if x.dim() == 2:
-                self._cos_cached = emb.cos()
-                self._sin_cached = emb.sin()
-            elif x.dim() == 3:
-                self._cos_cached = emb.cos()[None, :, :]
-                self._sin_cached = emb.sin()[None, :, :]
-            elif x.dim() == 4:
-                self._cos_cached = emb.cos()[None, None, :, :]
-                self._sin_cached = emb.sin()[None, None, :, :]
+            freqs = torch.outer(t * self.distance_scale, self.inv_freq).float()
+            if self.is_glm4:
+                cache = torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1).bfloat16()
+                self._cos_cached, self._sin_cached = cache, None
+            else:
+                emb = torch.cat((freqs, freqs), dim=-1)
+                if x.dim() == 2:
+                    self._cos_cached = emb.cos()
+                    self._sin_cached = emb.sin()
+                elif x.dim() == 3:
+                    self._cos_cached = emb.cos()[None, :, :]
+                    self._sin_cached = emb.sin()[None, :, :]
+                elif x.dim() == 4:
+                    self._cos_cached = emb.cos()[None, None, :, :]
+                    self._sin_cached = emb.sin()[None, None, :, :]
         return self._cos_cached, self._sin_cached
 
     def _update_cos_sin_tables_len(self, seq_len, device, dim=None):
@@ -98,22 +108,28 @@ class RotaryEmbeddingESM(torch.nn.Module):
             self._seq_len_cached = seq_len
             t = torch.arange(seq_len, device=device).type_as(self.inv_freq)
             freqs = torch.outer(t * self.distance_scale, self.inv_freq)
-            emb = torch.cat((freqs, freqs), dim=-1)
-            if dim == 2:
-                self._cos_cached = emb.cos()
-                self._sin_cached = emb.sin()
-            elif dim == 3:
-                self._cos_cached = emb.cos()[None, :, :]
-                self._sin_cached = emb.sin()[None, :, :]
-            elif dim == 4:
-                self._cos_cached = emb.cos()[None, None, :, :]
-                self._sin_cached = emb.sin()[None, None, :, :]
+            if self.is_glm4:
+                cache = torch.stack([torch.cos(freqs), torch.sin(freqs)], dim=-1).bfloat16()
+                self._cos_cached, self._sin_cached = cache, None
+            else:
+                emb = torch.cat((freqs, freqs), dim=-1)
+                if dim == 2:
+                    self._cos_cached = emb.cos()
+                    self._sin_cached = emb.sin()
+                elif dim == 3:
+                    self._cos_cached = emb.cos()[None, :, :]
+                    self._sin_cached = emb.sin()[None, :, :]
+                elif dim == 4:
+                    self._cos_cached = emb.cos()[None, None, :, :]
+                    self._sin_cached = emb.sin()[None, None, :, :]
 
         return self._cos_cached, self._sin_cached
 
     def apply_rotary_pos_emb_one_angle(self, x: torch.Tensor, index):
         dtype = x.dtype
-        cos, sin = self._update_cos_sin_tables_len(index, x.device)
+        cos, sin = self._update_cos_sin_tables_len(max(index, x.shape[-2]), x.device)
+        if self.is_glm4:
+            return apply_rotary_pos_emb_glm4(x, cos)
         if cos.dim() == 2:
             cos = cos[index - 1 : index, :]
             sin = sin[index - 1 : index, :]
@@ -141,6 +157,27 @@ class RotaryEmbeddingESM(torch.nn.Module):
             ),
         )
 
+@torch.jit.script
+def apply_rotary_pos_emb_glm4(x: torch.Tensor, rope_cache: torch.Tensor) -> torch.Tensor:
+    # x: [b, np, sq, hn]
+    b, np, sq, hn = x.size(0), x.size(1), x.size(2), x.size(3)
+    rot_dim = rope_cache.shape[-2] * 2
+    x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
+    # truncate to support variable sizes
+    # import ipdb;ipdb.set_trace()
+    rope_cache = rope_cache[:sq]
+    xshaped = x.reshape(b, np, sq, rot_dim // 2, 2)
+    rope_cache = rope_cache.view(-1, 1, sq, xshaped.size(3), 2)
+    x_out2 = torch.stack(
+        [
+            xshaped[..., 0] * rope_cache[..., 0] - xshaped[..., 1] * rope_cache[..., 1],
+            xshaped[..., 1] * rope_cache[..., 0] + xshaped[..., 0] * rope_cache[..., 1],
+        ],
+        -1,
+    )
+    x_out2 = x_out2.flatten(3)
+    return torch.cat((x_out2, x_pass), dim=-1)
+
 
 ATTN_FORWRAD = {
     "streaming": stream_llm_forward,
@@ -161,6 +198,25 @@ def huggingface_forward(forward):
         **kwargs,
     ):
         assert not output_attentions
+
+        # for GLM-4
+        if "q_proj" not in self.__dict__["_modules"]:
+            query_pos = self.num_heads * self.head_dim
+            key_value_pos = query_pos // self.num_key_value_groups
+            self.q_proj = torch.nn.Linear(hidden_states.size(-1), query_pos, device=hidden_states.device, dtype=hidden_states.dtype)
+            self.k_proj = torch.nn.Linear(hidden_states.size(-1), key_value_pos, device=hidden_states.device, dtype=hidden_states.dtype)
+            self.v_proj = torch.nn.Linear(hidden_states.size(-1), key_value_pos, device=hidden_states.device, dtype=hidden_states.dtype)
+
+            self.q_proj.weight.copy_(self.qkv_proj.weight[:query_pos, :])
+            self.k_proj.weight.copy_(self.qkv_proj.weight[query_pos : query_pos + key_value_pos, :])
+            self.v_proj.weight.copy_(self.qkv_proj.weight[query_pos + key_value_pos :, :])
+
+            self.q_proj.bias.copy_(self.qkv_proj.bias[:query_pos])
+            self.k_proj.bias.copy_(self.qkv_proj.bias[query_pos : query_pos + key_value_pos])
+            self.v_proj.bias.copy_(self.qkv_proj.bias[query_pos + key_value_pos :])
+
+            del self.qkv_proj
+
         ret = forward(
             self,
             hidden_states,
@@ -231,8 +287,6 @@ def hf_437_prepare_inputs_for_generation(
         position_ids.masked_fill_(attention_mask == 0, 1)
         if past_key_values:
             position_ids = position_ids[:, -input_ids.shape[1] :]
-    elif past_key_values is not None and past_length < position_ids.shape[1]:
-        position_ids = position_ids[:, past_length:]
 
     # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
     if inputs_embeds is not None and past_key_values is None:
@@ -1144,7 +1198,9 @@ def patch_hf(
         )
 
     forward = huggingface_forward(ATTN_FORWRAD[attn_type](**attn_kwargs))
+    model = patch_glm_4_1m(model)
 
+    is_glm4 = False
     if isinstance(model, LlamaForCausalLM):
         Attention = model.model.layers[0].self_attn.__class__
         Model = model.model.__class__
@@ -1160,20 +1216,28 @@ def patch_hf(
     elif model.__class__.__name__ == "Phi3ForCausalLM":
         Attention = model.model.layers[0].self_attn.__class__
         Model = model.model.__class__
+    elif model.__class__.__name__ == "ChatGLMForConditionalGeneration":
+        Attention = model.model.layers[0].self_attn.__class__
+        Model = model.model.__class__
+        base = model.model.layers[0].self_attn.rotary_emb.rope_ratio * 10000
+        is_glm4 = True
     else:
         raise ValueError("Only supports llama, mistral and qwen2 models.")
 
     hf_rope = model.model.layers[0].self_attn.rotary_emb
     base = base if base is not None else hf_rope.base
     distance_scale = distance_scale if distance_scale is not None else 1.0
-    rope = RotaryEmbeddingESM(hf_rope.dim, base, distance_scale)
+    rope = RotaryEmbeddingESM(hf_rope.dim, base, distance_scale, is_glm4=is_glm4)
     model.model.position_bias = rope
     model.model.hf_position_bias = hf_rope
+    DecoderLayer = model.model.layers[0].__class__
 
     def set_forward(m):
         if isinstance(m, Attention):
             m._old_forward = m.forward
             m.forward = forward.__get__(m, Attention)
+        if isinstance(m, DecoderLayer):
+            m.forward = forward_llama_decoder_layer.__get__(m, DecoderLayer)
 
     model.apply(set_forward)
 
@@ -1183,10 +1247,11 @@ def patch_hf(
     )
     model.model._old_forward = model.model.forward
     model.model.forward = model_forward.__get__(model.model, Model)
+    model.forward = forward_llama_for_causal_lm.__get__(model, model.__class__)
 
     if attn_type == "inf_llm":
         tokenizer = transformers.AutoTokenizer.from_pretrained(
-            model.config._name_or_path
+            model.config._name_or_path, trust_remote_code=True
         )
         model = InfLLMGenerator(model, tokenizer)
 
