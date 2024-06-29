@@ -91,8 +91,9 @@ Firstly, attention is dynamically sparse, a characteristic inherent to the mecha
 
 **Q3: Does this dynamic sparse attention pattern only exist in Auto-regressive LMs or RoPE based LLMs?**
 
-Similar vertical and slash line sparse patterns were discovered during the BERT era [1]. Our analysis of T5's attention patterns, shown in the figure, reveals these patterns persist across different heads, even in bidirectional attention.<br/>
+Similar vertical and slash line sparse patterns have been discovered in BERT[1] and multi-modal LLMs[2]. Our analysis of T5's attention patterns, shown in the figure, reveals these patterns persist across different heads, even in bidirectional attention.<br/>
 [1] SparseBERT: Rethinking the Importance Analysis in Self-Attention, ICML 2021.<br/>
+[2] LOOK-M: Look-Once Optimization in KV Cache for Efficient Multimodal Long-Context Inference, 2024.<br/>
 <div style="text-align: center;">
     <img src="images/t5_sparse_pattern.png" width="600px" style="margin:auto;border-radius: 5px;display: inline-block;padding: 0 0 0 10px;" alt=''>
 </div>
