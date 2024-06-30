@@ -1,11 +1,10 @@
-<div style="display: flex; align-items: center;">
-    <div style="width: 100px; margin-right: 10px; height:auto;" align="left">
-        <img src="images/MInference_logo.png" alt="MInference" width="100" align="left">
-    </div>
-    <div style="flex-grow: 1;" align="center">
-        <h2 align="center">MInference: Million-Tokens Prompt Inference for Long-context LLMs</h2>
-    </div>
-</div>
+<p align="center">
+  <picture>
+    <img alt="vLLM" src="images/MInference_logo.png" width=55%>
+  </picture>
+</p>
+
+<h2 align="center">MInference: Million-Tokens Prompt Inference for Long-context LLMs</h2>
 
 <p align="center">
     | <a href="https://llmlingua.com/"><b>Project Page</b></a> |
