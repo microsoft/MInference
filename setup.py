@@ -2,10 +2,12 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 import os
+import subprocess
 
 import torch
+from packaging.version import Version, parse
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from torch.utils.cpp_extension import CUDA_HOME, BuildExtension, CUDAExtension
 
 # PEP0440 compatible formatted version, see:
 # https://www.python.org/dev/peps/pep-0440/
@@ -44,6 +46,42 @@ QUANLITY_REQUIRES = [
 ]
 DEV_REQUIRES = INSTALL_REQUIRES + QUANLITY_REQUIRES
 
+MAIN_CUDA_VERSION = "12.1"
+
+
+def _is_cuda() -> bool:
+    return torch.version.cuda is not None
+
+
+def get_nvcc_cuda_version() -> Version:
+    """Get the CUDA version from nvcc.
+
+    Adapted from https://github.com/NVIDIA/apex/blob/8b7a1ff183741dd8f9b87e7bafd04cfde99cea28/setup.py
+    """
+    assert CUDA_HOME is not None, "CUDA_HOME is not set"
+    nvcc_output = subprocess.check_output(
+        [CUDA_HOME + "/bin/nvcc", "-V"], universal_newlines=True
+    )
+    output = nvcc_output.split()
+    release_idx = output.index("release") + 1
+    nvcc_cuda_version = parse(output[release_idx].split(",")[0])
+    return nvcc_cuda_version
+
+
+def get_minference_version() -> str:
+    version = VERSION["VERSION"]
+
+    if _is_cuda():
+        cuda_version = str(get_nvcc_cuda_version())
+        if cuda_version != MAIN_CUDA_VERSION:
+            cuda_version_str = cuda_version.replace(".", "")[:3]
+            version += f"+cu{cuda_version_str}"
+    else:
+        raise RuntimeError("Unknown runtime environment")
+
+    return version
+
+
 ext_modules = [
     CUDAExtension(
         name="minference.cuda",
@@ -57,7 +95,7 @@ ext_modules = [
 
 setup(
     name="minference",
-    version=VERSION["VERSION"],
+    version=get_minference_version(),
     author="The MInference team",
     author_email="hjiang@microsoft.com",
     description="To speed up Long-context LLMs' inference, approximate and dynamic sparse calculate the attention, which reduces inference latency by up to 10x for pre-filling on an A100 while maintaining accuracy.",

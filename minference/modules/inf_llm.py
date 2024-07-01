@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
+# Refer to the code in https://github.com/thunlp/InfLLM/blob/main/inf_llm/attention/context_manager.py
 
 from copy import deepcopy
 from typing import Optional, Tuple

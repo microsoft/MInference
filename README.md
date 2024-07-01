@@ -7,7 +7,7 @@
 <h2 align="center">MInference: Million-Tokens Prompt Inference for Long-context LLMs</h2>
 
 <p align="center">
-    | <a href="https://llmlingua.com/"><b>Project Page</b></a> |
+    | <a href="https://aka.ms/MInference"><b>Project Page</b></a> |
     <a href="https://arxiv.org/abs/2406."><b>Paper</b></a> |
     <a href="https://huggingface.co/spaces/microsoft/MInference"><b>HF Demo</b></a> |
 </p>
@@ -72,6 +72,15 @@ llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128000)
 +llm = minference_patch(llm)
 
 outputs = llm.generate(prompts, sampling_params)
+```
+
+using only the kernel,
+```python
+from minference import vertical_slash_sparse_attention, block_sparse_attention, streaming_forward
+
+attntion_outputs = vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
+attntion_outputs = block_sparse_attention(q, k, v, topk)
+attntion_outputs = streaming_forward(q, k, v, init_num, local_window_num)
 ```
 
 ## FAQ
