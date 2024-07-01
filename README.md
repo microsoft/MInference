@@ -78,10 +78,12 @@ using only the kernel,
 ```python
 from minference import vertical_slash_sparse_attention, block_sparse_attention, streaming_forward
 
-attntion_outputs = vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
-attntion_outputs = block_sparse_attention(q, k, v, topk)
-attntion_outputs = streaming_forward(q, k, v, init_num, local_window_num)
+attn_output = vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
+attn_output = block_sparse_attention(q, k, v, topk)
+attn_output = streaming_forward(q, k, v, init_num, local_window_num)
 ```
+
+For more details, please refer to our [Examples](./examples/) and [Experiments](./experiments/).
 
 ## FAQ
 
