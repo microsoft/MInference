@@ -11,6 +11,9 @@ MODEL2PATH = {
     "gradientai/Llama-3-8B-Instruct-Gradient-1048k": os.path.join(
         BASE_DIR, "Llama_3_8B_Instruct_262k_kv_out_v32_fit_o_best_pattern.json"
     ),
+    "gradientai/Llama-3-8B-Instruct-Gradient-4194k": os.path.join(
+        BASE_DIR, "Llama_3_8B_Instruct_262k_kv_out_v32_fit_o_best_pattern.json"
+    ),
     "01-ai/Yi-9B-200K": os.path.join(
         BASE_DIR, "Yi_9B_200k_kv_out_v32_fit_o_best_pattern.json"
     ),
@@ -24,3 +27,7 @@ MODEL2PATH = {
         BASE_DIR, "GLM_4_9B_1M_instruct_kv_out_v32_fit_o_best_pattern.json"
     ),
 }
+
+
+def get_support_models():
+    return list(MODEL2PATH.keys())

@@ -43,6 +43,25 @@ To get started with MInference, simply install it using pip:
 pip install minference
 ```
 
+### Supported Models
+
+General *MInference* **supports any decoding LLMs**, including LLaMA-style models, and Phi models.
+We have adapted nearly all open-source long-context LLMs available in the market.
+If your model is not on the supported list, feel free to let us know in the issues, or you can follow [the guide](./experiments/) to manually generate the sparse heads config.
+
+You can get the complete list of supported LLMs by running:
+```python
+from minference import get_support_models
+get_support_models()
+```
+
+Currently, we support the following LLMs:
+- LLaMA-3: [gradientai/Llama-3-8B-Instruct-262k](https://huggingface.co/gradientai/Llama-3-8B-Instruct-262k), [gradientai/Llama-3-8B-Instruct-Gradient-1048k](https://huggingface.co/gradientai/Llama-3-8B-Instruct-Gradient-1048k), [gradientai/Llama-3-8B-Instruct-Gradient-4194k](https://huggingface.co/gradientai/Llama-3-8B-Instruct-Gradient-4194k)
+- GLM-4: [THUDM/glm-4-9b-chat-1m](https://huggingface.co/THUDM/glm-4-9b-chat-1m)
+- Yi: [01-ai/Yi-9B-200K](https://huggingface.co/01-ai/Yi-9B-200K)
+- Phi-3: [microsoft/Phi-3-mini-128k-instruct](https://huggingface.co/microsoft/Phi-3-mini-128k-instruct)
+- Qwen2: [Qwen/Qwen2-7B-Instruct](https://huggingface.co/Qwen/Qwen2-7B-Instruct)
+
 ### How to use MInference
 
 for HF,
