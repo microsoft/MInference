@@ -1090,7 +1090,7 @@ def minference_patch_vllm(
 
     llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(update_module)
 
-    print("Patched model for minference with VLLM..")
+    print("Patched model for minference with vLLM..")
     return llm
 
 

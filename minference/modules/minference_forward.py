@@ -784,20 +784,15 @@ def minference_vllm_forward(
             shape = [num_tokens, num_heads * head_size]
         """
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
-        def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
-            """
-            This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
-            num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
-            """
-            slen, num_key_value_heads, head_dim = hidden_states.shape
+        def repeat_kv(hidden_states, n_rep):
+            sqlen, num_head, head_dim = hidden_states.shape
             if n_rep == 1:
                 return hidden_states
-            hidden_states = hidden_states[:, None, :, :].expand(slen, n_rep, num_key_value_heads, head_dim)
-            return hidden_states.reshape(slen, num_key_value_heads * n_rep, head_dim)
+            hidden_states = hidden_states[:, :, None, :].expand(sqlen, num_head, n_rep, head_dim)
+            return hidden_states.reshape(sqlen, num_head * n_rep, head_dim)
 
         def minference_prefill_func(
             q, k, v,
-
         ):
             # (seq_len, num_heads, head_size)
             if q.size(-2) != k.size(-2):
