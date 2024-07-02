@@ -1,0 +1,129 @@
+ # This workflows will build and upload a Python Package using Twine when a release is published
+# Conda-forge bot will pick up new PyPI version and automatically create new version
+# For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+
+# Needed to create release and upload assets
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Retrieve tag and create release
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract branch info
+        shell: bash
+        run: |
+          echo "release_tag=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: "actions/github-script@v6"
+        env:
+          RELEASE_TAG: ${{ env.release_tag }}
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+          script: |
+            const script = require('.github/workflows/scripts/create_release.js')
+            await script(github, context, core)
+
+  wheel:
+    name: Build Wheel
+    runs-on: ${{ matrix.os }}
+    needs: release
+
+    strategy:
+      fail-fast: false
+      matrix:
+          os: ['ubuntu-20.04']
+          python-version: ['3.8', '3.9', '3.10', '3.11']
+          pytorch-version: ['2.3.0']  # Must be the most recent version that meets requirements-cuda.txt.
+          cuda-version: ['11.8', '12.1']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          create-symlink: true
+          key: ${{ github.job }}-${{ matrix.python-version }}-${{ matrix.cuda-version }}
+
+      - name: Set up Linux Env
+        if: ${{ runner.os == 'Linux' }}
+        run: |
+          bash -x .github/workflows/scripts/env.sh
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+            python-version: ${{ matrix.python-version }}
+
+      - name: Install CUDA ${{ matrix.cuda-version }}
+        run: |
+          bash -x .github/workflows/scripts/cuda-install.sh ${{ matrix.cuda-version }} ${{ matrix.os }}
+
+      - name: Install PyTorch ${{ matrix.pytorch-version }} with CUDA ${{ matrix.cuda-version }}
+        run: |
+          bash -x .github/workflows/scripts/pytorch-install.sh ${{ matrix.python-version }} ${{ matrix.pytorch-version }} ${{ matrix.cuda-version }}
+
+      - name: Build wheel
+        shell: bash
+        env:
+          CMAKE_BUILD_TYPE: Release # do not compile with debug symbol to reduce wheel size
+        run: |
+          bash -x .github/workflows/scripts/build.sh ${{ matrix.python-version }} ${{ matrix.cuda-version }}
+          wheel_name=$(ls dist/*whl | xargs -n 1 basename)
+          asset_name=${wheel_name//"linux"/"manylinux1"}
+          echo "wheel_name=${wheel_name}" >> $GITHUB_ENV
+          echo "asset_name=${asset_name}" >> $GITHUB_ENV
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.release.outputs.upload_url }}
+          asset_path: ./dist/${{ env.wheel_name }}
+          asset_name: ${{ env.asset_name }}
+          asset_content_type: application/*
+      - name: Store the distribution packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.asset_name }}
+          path: ./dist/${{ env.wheel_name }}
+
+  # publish-to-pypi:
+  #   name: >-
+  #     Publish Python 🐍 distribution 📦 to PyPI
+  #   if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
+  #   needs: wheel
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     id-token: write  # IMPORTANT: mandatory for trusted publishing
+
+  #   steps:
+  #   - name: Download all the dists
+  #     uses: actions/download-artifact@v4
+  #     with:
+  #       path: dist/
+  #   - name: Pick the whl files
+  #     run: for file in dist/*;do mv $file ${file}1; done && cp dist/*/*.whl dist/ && rm -rf dist/*.whl1 && rm -rf dist/*+cu*
+  #   - name: Display structure of downloaded files
+  #     run: ls -R dist/
+  #   - name: Publish distribution 📦 to PyPI
+  #     uses: pypa/gh-action-pypi-publish@release/v1

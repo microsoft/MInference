@@ -1,0 +1,160 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
+TEMPERATURE="0.0" # greedy
+TOP_P="1.0"
+TOP_K="32"
+SEQ_LENGTHS=(
+    4096
+    8192
+    16384
+    32768
+    65536
+    131072
+)
+
+MODEL_SELECT() {
+    MODEL_NAME=$1
+    MODEL_DIR=$2
+    ENGINE_DIR=$3
+
+    case $MODEL_NAME in
+        llama2-7b-chat)
+            MODEL_PATH="${MODEL_DIR}/llama2-7b-chat-hf"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="vllm"
+            ;;
+        llama-3-262k)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="vllm"
+            ;;
+        llama-3-262k-minference)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="minference"
+            ;;
+        llama-inf-llm)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="InfLLM"
+            ;;
+        yi-inf-llm)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="InfLLM"
+            ;;
+        llama-3-262k-dilated1)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="dilated1"
+            ;;
+        MInference6KoP)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="MInference6KoP"
+            ;;
+        MInference6KOPYi)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="MInference6KOPYi"
+            ;;
+        llama-3-262k-streaming)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="dilated1"
+            ;;
+        Yi-dilated1)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="dilated1"
+            ;;
+        Yi-dilated2)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="dilated2"
+            ;;
+        Yi-static)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="YiStatic"
+            ;;
+        MInference6KOPYi)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="MInference6KOPYi"
+            ;;
+        llama-static)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="LlamaStatic"
+            ;;
+        Yi-streaming)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="streaming"
+            ;;
+        OPYiHalfV2)
+            MODEL_PATH="01-ai/Yi-9B-200K"
+            MODEL_TEMPLATE_TYPE="meta-chat"
+            MODEL_FRAMEWORK="OPYiHalfV2"
+            ;;
+        llama-3-262k-dilated2)
+            MODEL_PATH="gradientai/Llama-3-8B-Instruct-262k"
+            MODEL_TEMPLATE_TYPE="llama-3"
+            MODEL_FRAMEWORK="dilated2"
+            ;;
+        gpt-3.5-turbo)
+            MODEL_PATH="gpt-3.5-turbo-0125"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="openai"
+            TOKENIZER_PATH="cl100k_base"
+            TOKENIZER_TYPE="openai"
+            OPENAI_API_KEY=""
+            AZURE_ID=""
+            AZURE_SECRET=""
+            AZURE_ENDPOINT=""
+            ;;
+        gpt-4-turbo)
+            MODEL_PATH="gpt-4"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="openai"
+            TOKENIZER_PATH="cl100k_base"
+            TOKENIZER_TYPE="openai"
+            OPENAI_API_KEY=""
+            AZURE_ID=""
+            AZURE_SECRET=""
+            AZURE_ENDPOINT=""
+            ;;
+        gemini_1.0_pro)
+            MODEL_PATH="gemini-1.0-pro-latest"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="gemini"
+            TOKENIZER_PATH=$MODEL_PATH
+            TOKENIZER_TYPE="gemini"
+            GEMINI_API_KEY=""
+            ;;
+        gemini_1.5_pro)
+            MODEL_PATH="gemini-1.5-pro-latest"
+            MODEL_TEMPLATE_TYPE="base"
+            MODEL_FRAMEWORK="gemini"
+            TOKENIZER_PATH=$MODEL_PATH
+            TOKENIZER_TYPE="gemini"
+            GEMINI_API_KEY=""
+            ;;
+    esac
+
+
+    if [ -z "${TOKENIZER_PATH}" ]; then
+        if [ -f ${MODEL_PATH}/tokenizer.model ]; then
+            TOKENIZER_PATH=${MODEL_PATH}/tokenizer.model
+            TOKENIZER_TYPE="nemo"
+        else
+            TOKENIZER_PATH=${MODEL_PATH}
+            TOKENIZER_TYPE="hf"
+        fi
+    fi
+
+
+    echo "$MODEL_PATH:$MODEL_TEMPLATE_TYPE:$MODEL_FRAMEWORK:$TOKENIZER_PATH:$TOKENIZER_TYPE:$OPENAI_API_KEY:$GEMINI_API_KEY:$AZURE_ID:$AZURE_SECRET:$AZURE_ENDPOINT"
+}
