@@ -16,4 +16,4 @@ export MAX_JOBS=1
 # Make sure release wheels are built for the following architectures
 export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 8.9 9.0+PTX"
 # Build
-$python_executable setup.py bdist_wheel --dist-dir=dist
+$python_executable setup.py $3 --dist-dir=dist
