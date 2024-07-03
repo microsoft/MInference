@@ -1,6 +1,6 @@
 <p align="center">
   <picture>
-    <img alt="MInference" src="images/MInference_logo.png" width=70%>
+    <img alt="MInference" src="https://raw.githubusercontent.com/microsoft/MInference/main/images/MInference_logo.png" width=70%>
   </picture>
 </p>
 
@@ -8,7 +8,7 @@
 
 <p align="center">
     | <a href="https://aka.ms/MInference"><b>Project Page</b></a> |
-    <a href="https://arxiv.org/abs/2407."><b>Paper</b></a> |
+    <a href="https://arxiv.org/abs/2407.02490"><b>Paper</b></a> |
     <a href="https://huggingface.co/spaces/microsoft/MInference"><b>HF Demo</b></a> |
 </p>
 
@@ -21,13 +21,13 @@ https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-
 
 **MInference 1.0** leverages the dynamic sparse nature of LLMs' attention, which exhibits some static patterns, to speed up the pre-filling for long-context LLMs. It first determines offline which sparse pattern each head belongs to, then approximates the sparse index online and dynamically computes attention with the optimal custom kernels. This approach achieves up to a **10x speedup** for pre-filling on an A100 while maintaining accuracy.
 
-- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2407.) (Under Review, ES-FoMo @ ICML'24)<br>
+- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2407.02490) (Under Review, ES-FoMo @ ICML'24)<br>
   _Huiqiang Jiang†, Yucheng Li†, Chengruidong Zhang†, Qianhui Wu, Xufang Luo, Surin Ahn, Zhenhua Han, Amir H. Abdi, Dongsheng Li, Chin-Yew Lin, Yuqing Yang and Lili Qiu_
 
 
 ## 🎥 Overview
 
-![Onepage of MInference](./images/MInference1_onepage.png)
+![Onepage of MInference](https://raw.githubusercontent.com/microsoft/MInference/main/images/MInference1_onepage.png)
 
 ## 🎯 Quick Start
 
@@ -47,7 +47,7 @@ pip install minference
 
 General *MInference* **supports any decoding LLMs**, including LLaMA-style models, and Phi models.
 We have adapted nearly all open-source long-context LLMs available in the market.
-If your model is not on the supported list, feel free to let us know in the issues, or you can follow [the guide](./experiments/) to manually generate the sparse heads config.
+If your model is not on the supported list, feel free to let us know in the issues, or you can follow [the guide](https://github.com/microsoft/MInference/blob/main/experiments) to manually generate the sparse heads config.
 
 You can get the complete list of supported LLMs by running:
 ```python
@@ -102,11 +102,11 @@ attn_output = block_sparse_attention(q, k, v, topk)
 attn_output = streaming_forward(q, k, v, init_num, local_window_num)
 ```
 
-For more details, please refer to our [Examples](./examples/) and [Experiments](./experiments/).
+For more details, please refer to our [Examples](https://github.com/microsoft/MInference/tree/main/examples) and [Experiments](https://github.com/microsoft/MInference/tree/main/experiments).
 
 ## FAQ
 
-For more insights and answers, visit our [FAQ section](./Transparency_FAQ.md).
+For more insights and answers, visit our [FAQ section](https://github.com/microsoft/MInference/blob/main/Transparency_FAQ.md).
 
 **Q1: How to effectively evaluate the impact of dynamic sparse attention on the capabilities of long-context LLMs?**
 
@@ -124,7 +124,7 @@ Similar vertical and slash line sparse patterns have been discovered in BERT[1] 
 [1] SparseBERT: Rethinking the Importance Analysis in Self-Attention, ICML 2021.<br/>
 [2] LOOK-M: Look-Once Optimization in KV Cache for Efficient Multimodal Long-Context Inference, 2024.<br/>
 <p align="center">
-    <img src="images/t5_sparse_pattern.png" width="600px" style="margin:auto;border-radius: 5px;display: inline-block;padding: 0 0 0 10px;" alt=''>
+    <img src="https://raw.githubusercontent.com/microsoft/MInference/main/images/t5_sparse_pattern.png" width="600px" style="margin:auto;border-radius: 5px;display: inline-block;padding: 0 0 0 10px;" alt=''>
 </p>
 <p align="center">Figure 1. The sparse pattern in T5 Encoder.</p>
 
@@ -140,7 +140,7 @@ If you find MInference useful or relevant to your project and research, please k
 @article{jiang2024minference,
     title={MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention},
     author={Jiang, Huiqiang and Li, Yucheng and Zhang, Chengruidong and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Han, Zhenhua and Abdi, Amir H and Li, Dongsheng and Lin, Chin-Yew and Yang, Yuqing and Qiu, Lili},
-    journal={arXiv},
+    journal={arXiv preprint arXiv:2407.02490},
     year={2024}
 }
 ```
