@@ -76,7 +76,7 @@ jobs:
       - name: Set CUDA and PyTorch versions
         run: |
           echo "MATRIX_CUDA_VERSION=$(echo ${{ matrix.cuda-version }} | awk -F \. {'print $1 $2'})" >> $GITHUB_ENV
-          echo "MATRIX_TORCH_VERSION=$(echo ${{ matrix.torch-version }} | awk -F \. {'print $1 "." $2'})" >> $GITHUB_ENV
+          echo "MATRIX_TORCH_VERSION=$(echo ${{ matrix.pytorch-version }} | awk -F \. {'print $1 "." $2'})" >> $GITHUB_ENV
           echo "MATRIX_PYTHON_VERSION=$(echo ${{ matrix.python-version }} | awk -F \. {'print $1 $2'})" >> $GITHUB_ENV
 
       - name: Install CUDA ${{ matrix.cuda-version }}
