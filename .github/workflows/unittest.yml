@@ -1,7 +1,10 @@
 name: Unit Test
 
 # see: https://help.github.com/en/actions/reference/events-that-trigger-workflows
-on: [] # Trigger the workflow on pull request or merge
+on:
+  push:
+    branches:
+      - 'test/**'
   # pull_request:
   # merge_group:
   #   types: [checks_requested]

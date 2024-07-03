@@ -8,14 +8,14 @@
 
 <p align="center">
     | <a href="https://aka.ms/MInference"><b>Project Page</b></a> |
-    <a href="https://arxiv.org/abs/2407.02490"><b>Paper</b></a> |
+    <a href="https://export.arxiv.org/pdf/2407.02490"><b>Paper</b></a> |
     <a href="https://huggingface.co/spaces/microsoft/MInference"><b>HF Demo</b></a> |
 </p>
 
 https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-7123c81d6b19
 
 ## News
-- 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this [link](https://github.com/microsoft/MInference/blob/main/papers/MInference1_Arxiv.pdf)..
+- 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this [link](https://export.arxiv.org/pdf/2407.02490).
 - 🧩 [24/07/03] We will present **MInference 1.0** at the _**Microsoft Booth**_ and _**ES-FoMo**_ at ICML'24. See you in Vienna!
 
 ## TL;DR
