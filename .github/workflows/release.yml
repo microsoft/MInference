@@ -50,8 +50,8 @@ jobs:
       matrix:
           os: ['ubuntu-20.04']
           python-version: ['3.8', '3.9', '3.10', '3.11']
-          pytorch-version: ['2.2.2', '2.3.0']
-          cuda-version: ['12.2.2']
+          pytorch-version: ['2.0.1', '2.1.2', '2.2.2', '2.3.0']
+          cuda-version: ['11.8.0', '12.2.2']
           exclude:
             # see https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
             # Pytorch < 2.2 does not support Python 3.12
