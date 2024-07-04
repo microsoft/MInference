@@ -20,5 +20,8 @@ if [ "$3" = sdist ];
 then
 MINFERENCE_SKIP_CUDA_BUILD="TRUE" $python_executable setup.py $3 --dist-dir=dist
 else
-MINFERENCE_LOCAL_VERSION=cu${MATRIX_CUDA_VERSION}torch${MATRIX_TORCH_VERSION} MINFERENCE_FORCE_BUILD="TRUE" $python_executable setup.py $3 --dist-dir=dist
+MINFERENCE_FORCE_BUILD="TRUE" $python_executable setup.py $3 --dist-dir=dist
+tmpname=cu${MATRIX_CUDA_VERSION}torch${MATRIX_TORCH_VERSION}
+wheel_name=$(ls dist/*whl | xargs -n 1 basename | sed "s/-/+$tmpname-/2")
+ls dist/*whl |xargs -I {} mv {} dist/${wheel_name}
 fi

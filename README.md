@@ -8,7 +8,7 @@
 
 <p align="center">
     | <a href="https://aka.ms/MInference"><b>Project Page</b></a> |
-    <a href="https://export.arxiv.org/pdf/2407.02490"><b>Paper</b></a> |
+    <a href="https://arxiv.org/abs/2407.02490"><b>Paper</b></a> |
     <a href="https://huggingface.co/spaces/microsoft/MInference"><b>HF Demo</b></a> |
 </p>
 
@@ -103,7 +103,7 @@ attn_output = block_sparse_attention(q, k, v, topk)
 attn_output = streaming_forward(q, k, v, init_num, local_window_num)
 ```
 
-For more details, please refer to our [Examples](https://github.com/microsoft/MInference/tree/main/examples) and [Experiments](https://github.com/microsoft/MInference/tree/main/experiments).
+For more details, please refer to our [Examples](https://github.com/microsoft/MInference/tree/main/examples) and [Experiments](https://github.com/microsoft/MInference/tree/main/experiments). You can find more information about the dynamic compiler PIT in this [paper](https://dl.acm.org/doi/10.1145/3600006.3613139) and on [GitHub](https://github.com/microsoft/SparTA/tree/pit_artifact).
 
 ## FAQ
 
