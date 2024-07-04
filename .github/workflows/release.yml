@@ -50,7 +50,7 @@ jobs:
       matrix:
           os: ['ubuntu-20.04']
           python-version: ['3.8', '3.9', '3.10', '3.11']
-          pytorch_version: ['2.2.2', '2.3.0']
+          pytorch-version: ['2.2.2', '2.3.0']
           cuda-version: ['12.2.2']
           exclude:
             # see https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
