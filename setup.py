@@ -169,7 +169,7 @@ class CachedWheelsCommand(_bdist_wheel):
     """
 
     def run(self):
-        if True:
+        if FORCE_BUILD:
             return super().run()
         wheel_url, wheel_filename = get_wheel_url()
         print("Guessing wheel URL: ", wheel_url)
