@@ -4,13 +4,17 @@
 import inspect
 import json
 import os
+import warnings
 from importlib import import_module
 
 from transformers.models.llama.modeling_llama import *
 from transformers.utils.import_utils import _is_package_available
 
 if _is_package_available("vllm"):
-    from vllm.attention.backends.flash_attn import *
+    try:
+        from vllm.attention.backends.flash_attn import *
+    except:
+        warnings.warn("Only support 'vllm==0.4.1'. Please update your vllm version.")
 
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
@@ -768,7 +772,7 @@ def minference_vllm_forward(
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
-        attn_metadata: AttentionMetadata[FlashAttentionMetadata],
+        attn_metadata,
         kv_scale: float,
         layer_idx: int,
     ) -> torch.Tensor:
