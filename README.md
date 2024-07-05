@@ -80,6 +80,7 @@ pipe(prompt, max_length=10)
 ```
 
 for vLLM,
+> For now, please use vllm==0.4.1
 
 ```diff
 from vllm import LLM, SamplingParams
