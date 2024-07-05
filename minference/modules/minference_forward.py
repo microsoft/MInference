@@ -764,7 +764,8 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     return fc(q, k, v, vertical_size, slash_size)
 
 def minference_vllm_forward(
-    pattern_config
+    pattern_config,
+    vllm_version = "0.4.1"
 ):
     def forward(
         self,
@@ -919,4 +920,321 @@ def minference_vllm_forward(
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)
 
-    return forward
+    def forward_vllm_042(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        kv_scale: float,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        """Forward pass with FlashAttention and PagedAttention.
+
+        Args:
+            query: shape = [num_tokens, num_heads * head_size]
+            key: shape = [num_tokens, num_kv_heads * head_size]
+            value: shape = [num_tokens, num_kv_heads * head_size]
+            kv_cache = [2, num_blocks, block_size * num_kv_heads * head_size]
+            attn_metadata: Metadata for attention.
+        Returns:
+            shape = [num_tokens, num_heads * head_size]
+        """
+        self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
+        def repeat_kv(hidden_states, n_rep):
+            sqlen, num_head, head_dim = hidden_states.shape
+            if n_rep == 1:
+                return hidden_states
+            hidden_states = hidden_states[:, :, None, :].expand(sqlen, num_head, n_rep, head_dim)
+            return hidden_states.reshape(sqlen, num_head * n_rep, head_dim)
+
+        def minference_prefill_func(
+            q, k, v,
+        ):
+            # (seq_len, num_heads, head_size)
+            if q.size(-2) != k.size(-2):
+                k = repeat_kv(k, q.size(-2) // k.size(-2))
+                v = repeat_kv(v, q.size(-2) // v.size(-2))
+
+            output = torch.empty_like(q)
+            for head in range(q.size(-2)):
+                q_head = q[:, head, :].unsqueeze(1)
+                k_head = k[:, head, :].unsqueeze(1)
+                v_head = v[:, head, :].unsqueeze(1)
+
+                # (1, seq_len, num_heads, head_size)
+                q_head = q_head[None, ...]
+                k_head = k_head[None, ...]
+                v_head = v_head[None, ...]
+
+                q_head = q_head.transpose(1, 2)
+                k_head = k_head.transpose(1, 2)
+                v_head = v_head.transpose(1, 2)
+
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+
+                out = out.transpose(1, 2).squeeze(0).contiguous()
+                output[:, head:head+1, :] = out
+            return output
+
+        num_tokens, hidden_size = query.shape
+        # Reshape the query, key, and value tensors.
+        query = query.view(-1, self.num_heads, self.head_size)
+        key = key.view(-1, self.num_kv_heads, self.head_size)
+        value = value.view(-1, self.num_kv_heads, self.head_size)
+
+        if kv_cache is not None:
+            key_cache, value_cache = PagedAttention.split_kv_cache(
+                kv_cache, self.num_kv_heads, self.head_size)
+
+            # Reshape the input keys and values and store them in the cache.
+            # If kv_cache is not provided, the new key and value tensors are
+            # not cached. This happens during the initial memory profiling run.
+            PagedAttention.write_to_paged_cache(key, value, key_cache,
+                                                value_cache,
+                                                attn_metadata.slot_mapping,
+                                                attn_metadata.kv_cache_dtype,
+                                                kv_scale)
+
+        num_prefill_tokens = attn_metadata.num_prefill_tokens
+        num_decode_tokens = attn_metadata.num_decode_tokens
+        assert key.shape[0] == num_prefill_tokens + num_decode_tokens
+        assert value.shape[0] == num_prefill_tokens + num_decode_tokens
+
+        output = torch.empty_like(query)
+        # Query for decode. KV is not needed because it is already cached.
+        decode_query = query[num_prefill_tokens:]
+        # QKV for prefill.
+        query = query[:num_prefill_tokens]
+        key = key[:num_prefill_tokens]
+        value = value[:num_prefill_tokens]
+
+        assert query.shape[0] == num_prefill_tokens
+        assert decode_query.shape[0] == num_decode_tokens
+
+        if prefill_meta := attn_metadata.prefill_metadata:
+            # Prompt run.
+            if kv_cache is None or prefill_meta.block_tables.numel() == 0:
+                # normal attention
+                # When block_tables are not filled, it means q and k are the
+                # prompt, and they have the same length.
+                # (seq_len, num_heads, head_size)
+                # out = flash_attn_varlen_func(
+                #     q=query,
+                #     k=key,
+                #     v=value,
+                #     cu_seqlens_q=prefill_meta.seq_start_loc,
+                #     cu_seqlens_k=prefill_meta.seq_start_loc,
+                #     max_seqlen_q=prefill_meta.max_prompt_len,
+                #     max_seqlen_k=prefill_meta.max_prompt_len,
+                #     softmax_scale=self.scale,
+                #     causal=True,
+                #     window_size=self.sliding_window,
+                #     alibi_slopes=self.alibi_slopes,
+                # )
+                out = minference_prefill_func(query, key, value)
+                assert output[:num_prefill_tokens].shape == out.shape
+                output[:num_prefill_tokens] = out
+            else:
+                # prefix-enabled attention
+                # TODO(Hai) this triton kernel has regression issue (broke) to
+                # deal with different data types between KV and FP8 KV cache,
+                # to be addressed separately.
+                output[:num_prefill_tokens] = PagedAttention.forward_prefix(
+                    query,
+                    key,
+                    value,
+                    key_cache,
+                    value_cache,
+                    prefill_meta.block_tables,
+                    prefill_meta.subquery_start_loc,
+                    prefill_meta.prompt_lens_tensor,
+                    prefill_meta.context_lens,
+                    prefill_meta.max_subquery_len,
+                    self.alibi_slopes,
+                )
+        if decode_meta := attn_metadata.decode_metadata:
+            # Decoding run.
+            output[num_prefill_tokens:] = PagedAttention.forward_decode(
+                decode_query,
+                key_cache,
+                value_cache,
+                decode_meta.block_tables,
+                decode_meta.seq_lens_tensor,
+                decode_meta.max_seq_len,
+                attn_metadata.kv_cache_dtype,
+                self.num_kv_heads,
+                self.scale,
+                self.alibi_slopes,
+                kv_scale,
+            )
+
+        # Reshape the output tensor.
+        return output.view(num_tokens, hidden_size)
+
+    def forward_vllm_043(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata: FlashAttentionMetadata,
+        kv_scale: float,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        """Forward pass with FlashAttention.
+
+        Args:
+            query: shape = [num_tokens, num_heads * head_size]
+            key: shape = [num_tokens, num_kv_heads * head_size]
+            value: shape = [num_tokens, num_kv_heads * head_size]
+            kv_cache = [2, num_blocks, block_size, num_kv_heads, head_size]
+            attn_metadata: Metadata for attention.
+        Returns:
+            shape = [num_tokens, num_heads * head_size]
+        """
+        # NOTE(woosuk): FlashAttention does not support FP8 KV cache.
+        self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
+        assert kv_scale == 1.0, "kv_scale is not supported in FlashAttention."
+
+        def repeat_kv(hidden_states, n_rep):
+            sqlen, num_head, head_dim = hidden_states.shape
+            if n_rep == 1:
+                return hidden_states
+            hidden_states = hidden_states[:, :, None, :].expand(sqlen, num_head, n_rep, head_dim)
+            return hidden_states.reshape(sqlen, num_head * n_rep, head_dim)
+
+        def minference_prefill_func(
+            q, k, v,
+        ):
+            # (seq_len, num_heads, head_size)
+            if q.size(-2) != k.size(-2):
+                k = repeat_kv(k, q.size(-2) // k.size(-2))
+                v = repeat_kv(v, q.size(-2) // v.size(-2))
+
+            output = torch.empty_like(q)
+            for head in range(q.size(-2)):
+                q_head = q[:, head, :].unsqueeze(1)
+                k_head = k[:, head, :].unsqueeze(1)
+                v_head = v[:, head, :].unsqueeze(1)
+
+                # (1, seq_len, num_heads, head_size)
+                q_head = q_head[None, ...]
+                k_head = k_head[None, ...]
+                v_head = v_head[None, ...]
+
+                q_head = q_head.transpose(1, 2)
+                k_head = k_head.transpose(1, 2)
+                v_head = v_head.transpose(1, 2)
+
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+
+                out = out.transpose(1, 2).squeeze(0).contiguous()
+                output[:, head:head+1, :] = out
+            return output
+
+        num_tokens, hidden_size = query.shape
+        # Reshape the query, key, and value tensors.
+        query = query.view(-1, self.num_heads, self.head_size)
+        key = key.view(-1, self.num_kv_heads, self.head_size)
+        value = value.view(-1, self.num_kv_heads, self.head_size)
+
+        if kv_cache is not None:
+            key_cache = kv_cache[0]
+            value_cache = kv_cache[1]
+
+            # Reshape the input keys and values and store them in the cache.
+            # If kv_cache is not provided, the new key and value tensors are
+            # not cached. This happens during the initial memory profiling run.
+            cache_ops.reshape_and_cache_flash(
+                key,
+                value,
+                key_cache,
+                value_cache,
+                attn_metadata.slot_mapping.flatten(),
+                self.kv_cache_dtype,
+            )
+
+        num_prefill_tokens = attn_metadata.num_prefill_tokens
+        num_decode_tokens = attn_metadata.num_decode_tokens
+        assert key.shape[0] == num_prefill_tokens + num_decode_tokens
+        assert value.shape[0] == num_prefill_tokens + num_decode_tokens
+
+        output = torch.empty_like(query)
+        # Query for decode. KV is not needed because it is already cached.
+        decode_query = query[num_prefill_tokens:]
+        # QKV for prefill.
+        query = query[:num_prefill_tokens]
+        key = key[:num_prefill_tokens]
+        value = value[:num_prefill_tokens]
+
+        assert query.shape[0] == num_prefill_tokens
+        assert decode_query.shape[0] == num_decode_tokens
+
+        if prefill_meta := attn_metadata.prefill_metadata:
+            # Prompt run.
+            if (kv_cache is None or prefill_meta.block_tables is None
+                    or prefill_meta.block_tables.numel() == 0):
+                # normal attention
+                # When block_tables are not filled, it means q and k are the
+                # prompt, and they have the same length.
+                # out = flash_attn_varlen_func(
+                #     q=query,
+                #     k=key,
+                #     v=value,
+                #     cu_seqlens_q=prefill_meta.seq_start_loc,
+                #     cu_seqlens_k=prefill_meta.seq_start_loc,
+                #     max_seqlen_q=prefill_meta.max_prefill_seq_len,
+                #     max_seqlen_k=prefill_meta.max_prefill_seq_len,
+                #     softmax_scale=self.scale,
+                #     causal=True,
+                #     window_size=self.sliding_window,
+                #     alibi_slopes=self.alibi_slopes,
+                # )
+                out = minference_prefill_func(query, key, value)
+                assert output[:num_prefill_tokens].shape == out.shape
+                output[:num_prefill_tokens] = out
+            else:
+                # prefix-enabled attention
+                assert prefill_meta.seq_lens is not None
+                max_seq_len = max(prefill_meta.seq_lens)
+                output[:num_prefill_tokens] = flash_attn_varlen_func(
+                    q=query,
+                    k=key_cache,
+                    v=value_cache,
+                    cu_seqlens_q=prefill_meta.query_start_loc,
+                    max_seqlen_q=prefill_meta.max_query_len,
+                    cu_seqlens_k=prefill_meta.seq_start_loc,
+                    max_seqlen_k=max_seq_len,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                    block_table=prefill_meta.block_tables,
+                )
+
+        if decode_meta := attn_metadata.decode_metadata:
+            # Decoding run.
+            output[num_prefill_tokens:] = flash_attn_with_kvcache(
+                decode_query.unsqueeze(1),
+                key_cache,
+                value_cache,
+                block_table=decode_meta.block_tables,
+                cache_seqlens=decode_meta.seq_lens_tensor,
+                softmax_scale=self.scale,
+                causal=True,
+                alibi_slopes=self.alibi_slopes,
+            ).squeeze(1)
+
+        # Reshape the output tensor.
+        return output.view(num_tokens, hidden_size)
+
+
+    if vllm_version == "0.4.1":
+        return forward
+    elif vllm_version == "0.4.2":
+        return forward_vllm_042
+    elif vllm_version == "0.4.3":
+        return forward_vllm_043
+    else:
+        return forward_vllm_042
