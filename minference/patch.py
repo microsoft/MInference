@@ -1024,6 +1024,7 @@ def llama_layer_forward_vllm(
     hidden_states = self.mlp(hidden_states)
     return hidden_states, residual
 
+
 def llama_attn_forward_vllm(
     vllm_version: str = "0.4.2",
 ):
@@ -1038,7 +1039,9 @@ def llama_attn_forward_vllm(
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx)
+        attn_output = self.attn(
+            q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
+        )
         output, _ = self.o_proj(attn_output)
         return output
 
@@ -1086,6 +1089,7 @@ def minference_patch_vllm(
     llm,
     config_file,
 ):
+    import vllm
     from vllm.attention import Attention
     from vllm.model_executor.models.llama import (
         LlamaAttention,
@@ -1093,7 +1097,7 @@ def minference_patch_vllm(
         LlamaForCausalLM,
         LlamaModel,
     )
-    import vllm
+
     vllm_version = vllm.__version__
 
     config = json.load(open(config_file))
