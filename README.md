@@ -14,7 +14,10 @@
 
 https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-7123c81d6b19
 
+_Now, you can process **1M context 10x faster in a single A100** using Long-context LLMs like LLaMA-3-8B-1M, GLM-4-1M, with even **better accuracy**, try **MInference 1.0** right now!_
+
 ## News
+- 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the [HF Demo](https://huggingface.co/spaces/microsoft/MInference) with ZeroGPU.
 - 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this [link](https://export.arxiv.org/pdf/2407.02490).
 - 🧩 [24/07/03] We will present **MInference 1.0** at the _**Microsoft Booth**_ and _**ES-FoMo**_ at ICML'24. See you in Vienna!
 
@@ -102,6 +105,16 @@ from minference import vertical_slash_sparse_attention, block_sparse_attention, 
 attn_output = vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
 attn_output = block_sparse_attention(q, k, v, topk)
 attn_output = streaming_forward(q, k, v, init_num, local_window_num)
+```
+
+for a local gradio demo <a href='https://github.com/gradio-app/gradio'><img src='https://img.shields.io/github/stars/gradio-app/gradio'></a>
+
+```bash
+git clone https://huggingface.co/spaces/microsoft/MInference
+cd MInference
+pip install -r requirments.txt
+pip install flash_attn pycuda==2023.1
+python app.py
 ```
 
 For more details, please refer to our [Examples](https://github.com/microsoft/MInference/tree/main/examples) and [Experiments](https://github.com/microsoft/MInference/tree/main/experiments). You can find more information about the dynamic compiler PIT in this [paper](https://dl.acm.org/doi/10.1145/3600006.3613139) and on [GitHub](https://github.com/microsoft/SparTA/tree/pit_artifact).
