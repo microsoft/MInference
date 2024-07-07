@@ -1026,19 +1026,46 @@ def llama_layer_forward_vllm(
 
 
 def llama_attn_forward_vllm(
-    self,
-    positions: torch.Tensor,
-    hidden_states: torch.Tensor,
-    kv_cache: torch.Tensor,
-    attn_metadata,
-    layer_idx: int,
-) -> torch.Tensor:
-    qkv, _ = self.qkv_proj(hidden_states)
-    q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-    q, k = self.rotary_emb(positions, q, k)
-    attn_output = self.attn(q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx)
-    output, _ = self.o_proj(attn_output)
-    return output
+    vllm_version: str = "0.4.2",
+):
+    def llama_attn_forward_vllm_042(
+        self,
+        positions: torch.Tensor,
+        hidden_states: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        qkv, _ = self.qkv_proj(hidden_states)
+        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+        q, k = self.rotary_emb(positions, q, k)
+        attn_output = self.attn(
+            q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
+        )
+        output, _ = self.o_proj(attn_output)
+        return output
+
+    def llama_attn_forward_vllm_043(
+        self,
+        positions: torch.Tensor,
+        hidden_states: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        layer_idx: int,
+    ) -> torch.Tensor:
+        qkv, _ = self.qkv_proj(hidden_states)
+        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+        q, k = self.rotary_emb(positions, q, k)
+        attn_output = self.attn(q, k, v, kv_cache, attn_metadata, layer_idx)
+        output, _ = self.o_proj(attn_output)
+        return output
+
+    if vllm_version == "0.4.2":
+        return llama_attn_forward_vllm_042
+    elif vllm_version == "0.4.3":
+        return llama_attn_forward_vllm_043
+    else:
+        return llama_attn_forward_vllm_042
 
 
 def vllm_attn_forward(
@@ -1051,6 +1078,8 @@ def vllm_attn_forward(
     kv_scale: float = 1.0,
     layer_idx: int = 0,
 ) -> torch.Tensor:
+    # check self._kv_scale
+    kv_scale = getattr(self, "_kv_scale", kv_scale)
     return self.impl.forward(
         query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
     )
@@ -1060,6 +1089,7 @@ def minference_patch_vllm(
     llm,
     config_file,
 ):
+    import vllm
     from vllm.attention import Attention
     from vllm.model_executor.models.llama import (
         LlamaAttention,
@@ -1068,8 +1098,10 @@ def minference_patch_vllm(
         LlamaModel,
     )
 
+    vllm_version = vllm.__version__
+
     config = json.load(open(config_file))
-    attn_forward = minference_vllm_forward(config)
+    attn_forward = minference_vllm_forward(config, vllm_version=vllm_version)
 
     def update_module(m):
         if isinstance(m, Attention):
@@ -1086,7 +1118,7 @@ def minference_patch_vllm(
         if isinstance(m, LlamaModel):
             m.forward = llama_model_forward_vllm.__get__(m, LlamaModel)
         if isinstance(m, LlamaAttention):
-            m.forward = llama_attn_forward_vllm.__get__(m, LlamaAttention)
+            m.forward = llama_attn_forward_vllm(vllm_version).__get__(m, LlamaAttention)
 
     llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(update_module)
 
