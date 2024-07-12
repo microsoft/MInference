@@ -6,6 +6,7 @@ import platform
 import subprocess
 import sys
 import urllib
+import warnings
 
 import torch
 from packaging.version import Version, parse
@@ -38,7 +39,6 @@ INSTALL_REQUIRES = [
     "torch",
     "triton",
     "flash_attn",
-    "pycuda==2023.1",
 ]
 QUANLITY_REQUIRES = [
     "black==21.4b0",

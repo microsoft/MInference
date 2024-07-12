@@ -570,6 +570,8 @@ def forward_llama_decoder_layer(
         use_cache=use_cache,
         padding_mask=padding_mask,
     )
+    if residual.device != hidden_states.device:
+        residual = residual.to(hidden_states.device)
     hidden_states = residual + hidden_states
 
     # Fully Connected
