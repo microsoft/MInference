@@ -2,18 +2,11 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 import argparse
-import sys
 import time
 from collections import defaultdict
 
 import torch
-from transformers import (
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    GenerationConfig,
-    LlamaForCausalLM,
-)
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
 from minference import MInference
 
@@ -108,6 +101,7 @@ if __name__ == "__main__":
             "hf",
             "streaming",
             "minference",
+            "minference_with_dense",
             "inf_llm",
         ],
     )

@@ -17,4 +17,4 @@ style:
 	isort -rc $(CHECK_DIRS)
 
 test:
-	@${PYTHON} -m pytest -n auto --dist=loadfile -s -v ./tests/
+	@${PYTHON} -m pytest -n 1 --dist=loadfile -s -v ./tests/
