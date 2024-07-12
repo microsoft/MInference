@@ -113,7 +113,7 @@ for a local gradio demo <a href='https://github.com/gradio-app/gradio'><img src=
 git clone https://huggingface.co/spaces/microsoft/MInference
 cd MInference
 pip install -r requirments.txt
-pip install flash_attn pycuda==2023.1
+pip install flash_attn
 python app.py
 ```
 

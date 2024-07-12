@@ -37,7 +37,6 @@ python run_infinitebench.py \
 Environment parameters:
 - CUDA 12.3
 - Triton 2.1.0
-- PyCuda 2023.1
 
 ### End-to-End Benchmark
 
