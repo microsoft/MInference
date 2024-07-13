@@ -6,8 +6,12 @@ from copy import deepcopy
 from typing import Optional, Tuple
 
 import torch
-from flash_attn import flash_attn_func
 from transformers.modeling_outputs import CausalLMOutput
+
+try:
+    from flash_attn import flash_attn_func as dense_decoding_func
+except ImportError:
+    from ..ops.flash_attn_triton import _flash_attn_triton_decoding as dense_decoding_func
 
 from ..ops.streaming_kernel import TritonMultiStageDotProductionAttention
 
@@ -1084,7 +1088,7 @@ def inf_llm_forward(
             h_v = h_v.transpose(1, 2)
 
             # (batch_size, seqlen, nheads, headdim)
-            o = flash_attn_func(h_q, h_k, h_v, causal=True)
+            o = dense_decoding_func(h_q, h_k, h_v)
 
             o = o.reshape(batch_size, len_q, dim_head * num_heads)
             o = attention_out(o)

@@ -14,12 +14,17 @@ if _is_package_available("vllm"):
     try:
         from vllm.attention.backends.flash_attn import *
     except:
-        warnings.warn("Only support 'vllm==0.4.1'. Please update your vllm version.")
+        warnings.warn("Only support 'vllm==0.4.x'. Please update your vllm version.")
 
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .snap_kv import *
+
+try:
+    from flash_attn import flash_attn_func
+except ImportError:
+    from ..ops.flash_attn_triton import _flash_attn_triton_decoding
 
 last_q = 64
 arange = torch.arange(last_q, device="cuda")
@@ -546,7 +551,10 @@ def minference_forward():
                 with open(self.config_path, 'w') as json_file:
                     json.dump(config_list, json_file)
         else:
-            output =  flash_attn_func(query_states.transpose(1, 2), key_states.transpose(1, 2), value_states.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, query_states.size(1), q_len, self.head_dim)
+            if is_flash_attn_2_available():
+                output =  flash_attn_func(query_states.transpose(1, 2), key_states.transpose(1, 2), value_states.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, query_states.size(1), q_len, self.head_dim)
+            else:
+                output = _flash_attn_triton_decoding(query_states.transpose(1, 2), key_states.transpose(1, 2), value_states.transpose(1,2),).view(bsz, query_states.size(1), q_len, self.head_dim)
         attn_output = output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
         attn_output = self.o_proj(attn_output)

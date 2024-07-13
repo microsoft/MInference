@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import triton
 import triton.language as tl
-from flash_attn import flash_attn_varlen_func
+# from flash_attn import flash_attn_varlen_func
 
 # import pycuda.autoprimaryctx
 # from pycuda.compiler import SourceModule
