@@ -12,14 +12,19 @@ from transformers.utils.import_utils import _is_package_available
 
 if _is_package_available("vllm"):
     try:
-        from vllm.attention.backends.flash_attn import *
+        from vllm.attention.ops.paged_attn import PagedAttention
     except:
-        warnings.warn("Only support 'vllm==0.4.1'. Please update your vllm version.")
+        warnings.warn("Only support 'vllm>=0.4.0'. Please update your vllm version.")
 
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .snap_kv import *
+
+try:
+    from flash_attn import flash_attn_func
+except ImportError:
+    from ..ops.flash_attn_triton import _flash_attn_triton_decoding as flash_attn_func
 
 last_q = 64
 arange = torch.arange(last_q, device="cuda")
@@ -1113,7 +1118,7 @@ def minference_vllm_forward(
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
-        attn_metadata: FlashAttentionMetadata,
+        attn_metadata,
         kv_scale: float,
         layer_idx: int,
     ) -> torch.Tensor:

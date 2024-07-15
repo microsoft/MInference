@@ -38,7 +38,6 @@ INSTALL_REQUIRES = [
     "accelerate",
     "torch",
     "triton",
-    "flash_attn",
 ]
 QUANLITY_REQUIRES = [
     "black==21.4b0",
