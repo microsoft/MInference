@@ -38,7 +38,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 ### Requirements
 
 - Torch
-- FlashAttention-2
+- FlashAttention-2 (Optional)
 - Triton == 2.1.0
 
 To get started with MInference, simply install it using pip:

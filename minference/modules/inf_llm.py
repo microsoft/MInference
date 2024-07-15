@@ -11,7 +11,9 @@ from transformers.modeling_outputs import CausalLMOutput
 try:
     from flash_attn import flash_attn_func as dense_decoding_func
 except ImportError:
-    from ..ops.flash_attn_triton import _flash_attn_triton_decoding as dense_decoding_func
+    from ..ops.flash_attn_triton import (
+        _flash_attn_triton_decoding as dense_decoding_func,
+    )
 
 from ..ops.streaming_kernel import TritonMultiStageDotProductionAttention
 

@@ -1,8 +1,9 @@
+import math
+
 import torch
 import triton
 import triton.language as tl
-from flash_attn import flash_attn_func
-import math
+
 
 @triton.heuristics(
     {
@@ -212,7 +213,7 @@ def _fwd_kernel(
                 out_ptrs, acc_o, mask=(offs_m[:, None] < seqlen_q) & (offs_d[None, :] < headdim)
             )
 
-def _flash_attn_triton_decoding(q, k, v,):
+def _flash_attn_triton_decoding(q, k, v, dropout_p=0.0, softmax_scale=None, causal=False):
     # shape constraints
     batch, seqlen_q, nheads, d = q.shape
     _, seqlen_k, _, _ = k.shape
@@ -222,8 +223,8 @@ def _flash_attn_triton_decoding(q, k, v,):
     assert q.dtype == k.dtype == v.dtype, "All tensors must have the same type"
     assert q.dtype in [torch.float16, torch.bfloat16], "Only support fp16 and bf16"
     assert q.is_cuda and k.is_cuda and v.is_cuda
-    softmax_scale = 1.0 / math.sqrt(d)
-    causal = False
+    if softmax_scale is None:
+        softmax_scale = 1.0 / math.sqrt(d)
     bias = None
 
     has_bias = bias is not None
@@ -318,6 +319,7 @@ def torch_decoding(q, k, v):
     return o.transpose(0, 1).view(1, num_heads, head_dim)
 
 if __name__ == "__main__":
+    from flash_attn import flash_attn_func
     q = torch.randn(1, 32, 1, 128, device="cuda", dtype=torch.bfloat16)
     k = torch.randn(1, 32, 20, 128, device="cuda", dtype=torch.bfloat16)
     v = torch.randn(1, 32, 20, 128, device="cuda", dtype=torch.bfloat16)
