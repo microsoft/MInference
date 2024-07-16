@@ -12,9 +12,14 @@ from transformers.utils.import_utils import _is_package_available
 
 if _is_package_available("vllm"):
     try:
+        from vllm import _custom_ops as vllm_ops
         from vllm.attention.ops.paged_attn import PagedAttention
+        from vllm_flash_attn import flash_attn_with_kvcache
     except:
-        warnings.warn("Only support 'vllm>=0.4.0'. Please update your vllm version.")
+        import vllm
+        vllm_version = vllm.__version__
+        if vllm_version < "0.4.1":
+            warnings.warn("Only support 'vllm>=0.4.1'. Please update your vllm version.")
 
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
@@ -1186,7 +1191,7 @@ def minference_vllm_forward(
             # Reshape the input keys and values and store them in the cache.
             # If kv_cache is not provided, the new key and value tensors are
             # not cached. This happens during the initial memory profiling run.
-            cache_ops.reshape_and_cache_flash(
+            vllm_ops.reshape_and_cache_flash(
                 key,
                 value,
                 key_cache,
@@ -1268,12 +1273,10 @@ def minference_vllm_forward(
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)
 
-
-    if vllm_version == "0.4.1":
+    if vllm_version in "0.4.1":
         return forward
     elif vllm_version == "0.4.2":
         return forward_vllm_042
-    elif vllm_version == "0.4.3":
+    elif vllm_version >= "0.4.3":
         return forward_vllm_043
-    else:
-        return forward_vllm_042
+    assert False, "Only support 'vllm>=0.4.1'. Please update your vllm version."

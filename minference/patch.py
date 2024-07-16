@@ -1030,7 +1030,7 @@ def llama_layer_forward_vllm(
 def llama_attn_forward_vllm(
     vllm_version: str = "0.4.2",
 ):
-    def llama_attn_forward_vllm_042(
+    def llama_attn_forward_vllm(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
@@ -1041,33 +1041,19 @@ def llama_attn_forward_vllm(
         qkv, _ = self.qkv_proj(hidden_states)
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(
-            q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
-        )
+        if "0.4.1" <= vllm_version <= "0.4.2":
+            attn_output = self.attn(
+                q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
+            )
+        elif vllm_version >= "0.4.3":
+            attn_output = self.attn(q, k, v, kv_cache, attn_metadata, layer_idx)
+        else:
+            assert False, "Only support 'vllm>=0.4.1'. Please update your vllm version."
+
         output, _ = self.o_proj(attn_output)
         return output
 
-    def llama_attn_forward_vllm_043(
-        self,
-        positions: torch.Tensor,
-        hidden_states: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata,
-        layer_idx: int,
-    ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(hidden_states)
-        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        q, k = self.rotary_emb(positions, q, k)
-        attn_output = self.attn(q, k, v, kv_cache, attn_metadata, layer_idx)
-        output, _ = self.o_proj(attn_output)
-        return output
-
-    if vllm_version == "0.4.2":
-        return llama_attn_forward_vllm_042
-    elif vllm_version == "0.4.3":
-        return llama_attn_forward_vllm_043
-    else:
-        return llama_attn_forward_vllm_042
+    return llama_attn_forward_vllm
 
 
 def vllm_attn_forward(
