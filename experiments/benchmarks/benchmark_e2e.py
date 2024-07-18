@@ -11,7 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 from minference import MInference
 
 
-def run_target_length(m: int, model, attn_type):
+def run_target_length(m: int, model, attn_type: str):
     # wget https://raw.githubusercontent.com/FranxYao/chain-of-thought-hub/main/gsm8k/lib_prompt/prompt_hardest.txt
     prompt_complex = open("./prompt_hardest.txt").read()
     input_ids = tokenizer(prompt_complex)["input_ids"]
@@ -37,7 +37,7 @@ def run_target_length(m: int, model, attn_type):
                 )
         torch.cuda.synchronize()
         s += time.time() - start
-    print(m, s / T)
+    print(attn_type, m, s / T)
     return s / T
 
 
