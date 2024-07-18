@@ -51,7 +51,7 @@ wget https://raw.githubusercontent.com/FranxYao/chain-of-thought-hub/main/gsm8k/
 2. Run a single context window size test using one method:
 
 ```bash
-python experiments/benchmarks/benchmark_e2e.py --attn_type hf --context_window 1000000
+python experiments/benchmarks/benchmark_e2e.py --attn_type hf --context_window 1_000_000
 ```
 
 3. Run all latency experiments using different methods:
@@ -76,6 +76,34 @@ python experiments/benchmarks/benchmark_e2e.py --run_benchmark
 
 > [!TIP]
 > Based on our tests, **a single A100 can support up to 1.8M** context prompts during the pre-filling stage using LLaMA-3-8B-4M with **bf16**.
+
+#### End-to-End Benchmark using vLLM
+
+And we also built the End-to-End benchmark using vLLM. You can run it using the following scripts:
+
+1. Download the prompt:
+
+```bash
+wget https://raw.githubusercontent.com/FranxYao/chain-of-thought-hub/main/gsm8k/lib_prompt/prompt_hardest.txt
+```
+
+2. Run a single context window size test using one method:
+
+```bash
+python experiments/benchmarks/benchmark_e2e_vllm.py --attn_type minference --context_window 100_000
+```
+
+Here are some vLLM latency data, for reference, on an A100:
+```json
+        FlashAttention-2  MInference
+1K      0.08062           3.01744
+10K     0.83215           2.76216
+50K     7.71675           7.53989
+100K    21.73080          14.08111
+128K    32.86252          18.82662
+```
+
+Please note that the current vLLM version **only supports** MInference and FlashAttention modes. Due to vLLM's PageAttention management of the KV cache, a single A100 can handle a maximum context window size of **130k**.
 
 ### Micro-Benchmark
 
