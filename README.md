@@ -76,7 +76,7 @@ from transformers import pipeline
 pipe = pipeline("text-generation", model=model_name, torch_dtype="auto", device_map="auto")
 
 # Patch MInference Module,
-# If you use the local path, please pass in the model_name in HF.
+# If you use the local path, please use the model_name from HF when initializing MInference.
 +minference_patch = MInference("minference", model_name)
 +pipe.model = minference_patch(pipe.model)
 
@@ -93,7 +93,7 @@ from vllm import LLM, SamplingParams
 llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128000)
 
 # Patch MInference Module,
-# If you use the local path, please pass in the model_name in HF.
+# If you use the local path, please use the model_name from HF when initializing MInference.
 +minference_patch = MInference("vllm", model_name)
 +llm = minference_patch(llm)
 
