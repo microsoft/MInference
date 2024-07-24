@@ -26,6 +26,9 @@ MODEL2PATH = {
     "THUDM/glm-4-9b-chat-1m": os.path.join(
         BASE_DIR, "GLM_4_9B_1M_instruct_kv_out_v32_fit_o_best_pattern.json"
     ),
+    "meta-llama/Meta-Llama-3.1-8B-Instruct": os.path.join(
+        BASE_DIR, "Llama_3.1_8B_Instruct_128k_kv_out_v32_fit_o_best_pattern.json"
+    ),
 }
 
 
