@@ -8,6 +8,7 @@ import warnings
 from importlib import import_module
 
 from transformers.models.llama.modeling_llama import *
+from transformers.utils import is_flash_attn_2_available
 from transformers.utils.import_utils import _is_package_available
 
 if _is_package_available("vllm"):
@@ -531,7 +532,7 @@ def minference_forward():
             if os.path.exists(self.config_path):
                 config_list = json.load(open(self.config_path))
                 if self.layer_idx < len(config_list):
-                    assert False
+                    assert False, f"Search completed. The config is located in {self.config_path}."
             else:
                 config_list = []
             config = {}
