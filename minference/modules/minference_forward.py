@@ -187,10 +187,10 @@ def search_pattern(q, k, head):
         attention_mask = torch.full((q_len, q_len), torch.finfo(q.dtype).min, device="cuda")
         mask_cond = torch.arange(attention_mask.size(-1), device="cuda")
         attention_mask.masked_fill_(mask_cond < (mask_cond + 1).view(attention_mask.size(-1), 1), 0)
-        attention_mask = attention_mask[None, None, :]
+        attention_mask = attention_mask[None, None, :].to(q.device)
         SEARCH_MASK = attention_mask
     else:
-        attention_mask = SEARCH_MASK
+        attention_mask = SEARCH_MASK.to(q.device)
     attn_weights = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(head_dim) + attention_mask
     attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(q.dtype)
     best_s, best_v, best_score, best_ty = 0, 0, 0, ""
@@ -531,7 +531,7 @@ def minference_forward():
         if self.is_search:
             if os.path.exists(self.config_path):
                 config_list = json.load(open(self.config_path))
-                if self.layer_idx < len(config_list):
+                if self.config.num_hidden_layers == len(config_list):
                     assert False, f"Search completed. The config is located in {self.config_path}."
             else:
                 config_list = []
@@ -543,7 +543,7 @@ def minference_forward():
                 q = query_states[:, head, :, :].unsqueeze(1)
                 k = key_states[:, head, :, :].unsqueeze(1)
                 v = value_states[:, head, :, :].unsqueeze(1)
-                if self.is_search:
+                if self.is_search and self.layer_idx >= len(config_list):
                     config[head] = search_pattern(q, k, head)
                 if self.layer_idx >= self.starting_layer and not self.is_search:
                     attn_output = self.gather_last_q_vertical_slash_topk_v4(q, k, v, head)
@@ -553,13 +553,14 @@ def minference_forward():
                     attn_output = gather_qkv(q, k, v, attention_mask)
                 output[:, head:head + 1] = attn_output
             if self.is_search:
-                config_list.append(config)
+                if len(config):
+                    config_list.append(config)
                 with open(self.config_path, 'w') as json_file:
                     json.dump(config_list, json_file)
         else:
             output =  flash_attn_func(query_states.transpose(1, 2), key_states.transpose(1, 2), value_states.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, query_states.size(1), q_len, self.head_dim)
         attn_output = output.transpose(1, 2).contiguous()
-        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+        attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
         attn_output = self.o_proj(attn_output)
 
         return attn_output, None, past_key_value
@@ -741,7 +742,7 @@ def minference_with_snapkv_forward():
                 output[:, head:head + 1] = self.gather_last_q_vertical_slash_topk_v4(q, k, v, head)
 
             attn_output = output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+            attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
             attn_output = self.o_proj(attn_output)
             return attn_output, None, past_key_value
 
@@ -757,7 +758,7 @@ def minference_with_snapkv_forward():
                     attn_output = gather_qkv(q, k, v, attention_mask)
                 output[:, head:head + 1] = attn_output
             attn_output = output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+            attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
             attn_output = self.o_proj(attn_output)
 
             return attn_output, None, past_key_value

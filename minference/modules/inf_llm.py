@@ -149,6 +149,7 @@ class VectorTensor:
             self.append_cache()
 
         self.data[self.length : self.length + append_l, ...].copy_(tensor)
+        self.data = self.data.to(tensor.device)
 
         self.length += append_l
 
@@ -567,9 +568,14 @@ class ContextManager:
 
         # calc local result first to overlap host-device communication
         attn = self.Attn(local_h_q.shape, local_h_q.dtype, local_h_q.device)
-        attn.append(
-            local_h_q, local_h_k, local_h_v, get_score=True, sliding_window=self.n_local
-        )
+        with torch.cuda.device(local_h_k.device):
+            attn.append(
+                local_h_q,
+                local_h_k,
+                local_h_v,
+                get_score=True,
+                sliding_window=self.n_local,
+            )
 
         # calc topk global repr k and load cache
         with torch.cuda.stream(GLOBAL_STREAM):
@@ -612,15 +618,16 @@ class ContextManager:
             torch.cuda.current_stream().wait_stream(GLOBAL_STREAM)
 
         # calc global result
-        attn.append(
-            global_h_q,
-            global_h_k,
-            global_h_v,
-            end=True,
-            get_score=self.calc_block_score,
-            sliding_window=global_sliding_window,
-            complement_sliding_window=True,
-        )
+        with torch.cuda.device(global_h_q.device):
+            attn.append(
+                global_h_q,
+                global_h_k,
+                global_h_v,
+                end=True,
+                get_score=self.calc_block_score,
+                sliding_window=global_sliding_window,
+                complement_sliding_window=True,
+            )
 
         o, score_list = attn.get_result()
         loc_score = score_list[0]
@@ -1238,7 +1245,9 @@ class GreedySearch:
             if word.item() in end_token_ids or i == max_length:
                 break
 
-            input_ids = torch.cat((input_ids, word.view(1, 1)), dim=-1)
+            input_ids = torch.cat(
+                (input_ids, word.view(1, 1).to(input_ids.device)), dim=-1
+            )
             attention_mask = torch.cat(
                 (
                     attention_mask,

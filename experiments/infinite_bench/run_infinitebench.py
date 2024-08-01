@@ -166,7 +166,7 @@ def load_model(
             model_name,
             config=config,
             torch_dtype="auto",
-            device_map="cuda",
+            device_map="auto",
             resume_download=None,
             trust_remote_code=trust_remote_code,
         )
