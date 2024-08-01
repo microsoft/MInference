@@ -75,6 +75,9 @@ class RotaryEmbeddingESM(torch.nn.Module):
             cos = cos[:, :, right - length : right, :]
             sin = sin[:, :, right - length : right, :]
 
+        if cos.device != x.device:
+            cos, sin = cos.to(x.device), sin.to(x.device)
+
         return ((x.float() * cos) + (self.rotate_half(x).float() * sin)).to(dtype)
 
     def _update_cos_sin_tables(self, x, seq_dim):
@@ -143,6 +146,9 @@ class RotaryEmbeddingESM(torch.nn.Module):
         elif cos.dim() == 4:
             cos = cos[:, :, index - 1 : index, :]
             sin = sin[:, :, index - 1 : index, :]
+
+        if cos.device != x.device:
+            cos, sin = cos.to(x.device), sin.to(x.device)
 
         return ((x.float() * cos) + (self.rotate_half(x).float() * sin)).to(dtype)
 
