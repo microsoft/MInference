@@ -51,7 +51,11 @@ wget https://raw.githubusercontent.com/FranxYao/chain-of-thought-hub/main/gsm8k/
 2. Run a single context window size test using one method:
 
 ```bash
-python experiments/benchmarks/benchmark_e2e.py --attn_type hf --context_window 1_000_000
+# If the context window is greater than 700K, you need to enable kv_cache_cpu.
+python experiments/benchmarks/benchmark_e2e.py --attn_type minference --context_window 1_000_000 --kv_cache_cpu
+python experiments/benchmarks/benchmark_e2e.py --attn_type minference_with_dense --context_window 1_000_000 --kv_cache_cpu
+
+python experiments/benchmarks/benchmark_e2e.py --attn_type minference --context_window 500_000
 ```
 
 3. Run all latency experiments using different methods:

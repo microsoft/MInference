@@ -247,9 +247,11 @@ if __name__ == "__main__":
         if os.path.exists(output_path) and not args.rewrite:
             print(f"Output file {output_path} exists. Loading from file.")
             compute_scores(output_path, data_name, real_model_name, max_seq_length)
+            with open(output_path) as f:
+                preds = [json.loads(ii) for ii in f.readlines()]
 
         for i, eg in tqdm(enumerate(examples)):
-            if i < args.start_example_id:
+            if i < args.start_example_id or i < len(preds):
                 continue
             input_text = create_prompt(eg, data_name, real_model_name, args.data_dir)
             ground_truth = get_answer(eg, data_name)
