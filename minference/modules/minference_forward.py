@@ -373,7 +373,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
     def vertical_and_slash_kernel(q, k, v, vertical_size, slash_size):
         vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
         last_q = min(64, q_len)
-        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k) / math.sqrt(self.head_dim)
         qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q:], -torch.inf)
         qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
         vertical = qk.sum(-2, keepdim=True)
@@ -391,7 +391,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         vertical_size, slash_size  = min(q_len, max(vertical_size + 100, 30)), min(q_len, max(slash_size, 50))
         last_q = min(64, q_len)
         last_start = 100
-        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q-last_start:-last_start,:], k)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q-last_start:-last_start,:], k) / math.sqrt(self.head_dim)
         qk[:, :, :, -last_start:] = -torch.inf
         qk[:, :, :, -last_q-last_start:-last_start] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q-last_start:-last_start], -torch.inf)
         qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
@@ -413,7 +413,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         else:
             vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
             last_q = 64
-            qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k)
+            qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k) / math.sqrt(self.head_dim)
             qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK, qk[:, :, :, -last_q:], -torch.inf)
             qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
             vertical = qk.sum(-2, keepdim=True)
