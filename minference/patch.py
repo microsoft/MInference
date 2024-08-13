@@ -1279,9 +1279,22 @@ def patch_hf(
         raise ValueError("Only supports llama, mistral and qwen2 models.")
 
     hf_rope = model.model.layers[0].self_attn.rotary_emb
-    base = base if base is not None else hf_rope.base
+    base = (
+        base
+        if base is not None
+        else (hf_rope.base if "base" in hf_rope.__dict__ else hf_rope.config.rope_theta)
+    )
     distance_scale = distance_scale if distance_scale is not None else 1.0
-    rope = RotaryEmbeddingESM(hf_rope.dim, base, distance_scale, is_glm4=is_glm4)
+    rope = RotaryEmbeddingESM(
+        (
+            hf_rope.dim
+            if "dim" in hf_rope.__dict__
+            else hf_rope.config.hidden_size // hf_rope.config.num_attention_heads
+        ),
+        base,
+        distance_scale,
+        is_glm4=is_glm4,
+    )
     model.model.position_bias = rope
     model.model.hf_position_bias = hf_rope
     DecoderLayer = model.model.layers[0].__class__
