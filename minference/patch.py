@@ -1073,7 +1073,7 @@ def vllm_attn_forward(
     layer_idx: int = 0,
 ) -> torch.Tensor:
     # check self._kv_scale
-    kv_scale = getattr(self, "_kv_scale", kv_scale)
+    kv_scale = getattr(self, "_kv_scale", getattr(self, "_k_scale", kv_scale))
     return self.impl.forward(
         query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
     )

@@ -144,6 +144,8 @@ def get_score_one_kv_retrieval(pred, label, model_name: str) -> bool:
     for c in ["\n", ":", '"', "'", ".", ",", "?", "!", "{", "}", "</s>", "The", "To"]:
         pred = pred.replace(c, " ")
     words = pred.split()
+    if isinstance(label, list):
+        label = label[0]
     return label in words
 
 

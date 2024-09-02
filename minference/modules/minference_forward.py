@@ -15,7 +15,7 @@ if _is_package_available("vllm"):
     try:
         from vllm import _custom_ops as vllm_ops
         from vllm.attention.ops.paged_attn import PagedAttention
-        from vllm_flash_attn import flash_attn_with_kvcache
+        from vllm_flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
     except:
         import vllm
         vllm_version = vllm.__version__
@@ -1193,6 +1193,9 @@ def minference_vllm_forward(
             # Reshape the input keys and values and store them in the cache.
             # If kv_cache is not provided, the new key and value tensors are
             # not cached. This happens during the initial memory profiling run.
+            addition_params = {}
+            if "k_scale" in inspect.signature(vllm_ops.reshape_and_cache_flash).parameters:
+                addition_params = {"k_scale": 1.0, "v_scale": 1.0}
             vllm_ops.reshape_and_cache_flash(
                 key,
                 value,
@@ -1200,6 +1203,7 @@ def minference_vllm_forward(
                 value_cache,
                 attn_metadata.slot_mapping.flatten(),
                 self.kv_cache_dtype,
+                **addition_params,
             )
 
         num_prefill_tokens = attn_metadata.num_prefill_tokens
