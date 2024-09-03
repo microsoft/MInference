@@ -15,6 +15,7 @@ if _is_package_available("vllm"):
     try:
         from vllm import _custom_ops as vllm_ops
         from vllm.attention.ops.paged_attn import PagedAttention
+        from vllm.distributed import get_tensor_model_parallel_rank
         from vllm_flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
     except:
         import vllm
@@ -851,6 +852,7 @@ def minference_vllm_forward(
                 v = repeat_kv(v, q.size(-2) // v.size(-2))
 
             output = torch.empty_like(q)
+            head_idx_st = get_tensor_model_parallel_rank() * q.size(-2)
             for head in range(q.size(-2)):
                 q_head = q[:, head, :].unsqueeze(1)
                 k_head = k[:, head, :].unsqueeze(1)
@@ -865,7 +867,7 @@ def minference_vllm_forward(
                 k_head = k_head.transpose(1, 2)
                 v_head = v_head.transpose(1, 2)
 
-                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head + head_idx_st)
 
                 out = out.transpose(1, 2).squeeze(0).contiguous()
                 output[:, head:head+1, :] = out
@@ -1004,6 +1006,7 @@ def minference_vllm_forward(
                 v = repeat_kv(v, q.size(-2) // v.size(-2))
 
             output = torch.empty_like(q)
+            head_idx_st = get_tensor_model_parallel_rank() * q.size(-2)
             for head in range(q.size(-2)):
                 q_head = q[:, head, :].unsqueeze(1)
                 k_head = k[:, head, :].unsqueeze(1)
@@ -1018,7 +1021,7 @@ def minference_vllm_forward(
                 k_head = k_head.transpose(1, 2)
                 v_head = v_head.transpose(1, 2)
 
-                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head + head_idx_st)
 
                 out = out.transpose(1, 2).squeeze(0).contiguous()
                 output[:, head:head+1, :] = out
@@ -1160,6 +1163,7 @@ def minference_vllm_forward(
                 v = repeat_kv(v, q.size(-2) // v.size(-2))
 
             output = torch.empty_like(q)
+            head_idx_st = get_tensor_model_parallel_rank() * q.size(-2)
             for head in range(q.size(-2)):
                 q_head = q[:, head, :].unsqueeze(1)
                 k_head = k[:, head, :].unsqueeze(1)
@@ -1174,7 +1178,7 @@ def minference_vllm_forward(
                 k_head = k_head.transpose(1, 2)
                 v_head = v_head.transpose(1, 2)
 
-                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head + head_idx_st)
 
                 out = out.transpose(1, 2).squeeze(0).contiguous()
                 output[:, head:head+1, :] = out

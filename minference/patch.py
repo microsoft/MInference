@@ -1052,7 +1052,9 @@ def llama_attn_forward_vllm(
                 q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
             )
         elif vllm_version >= "0.4.3":
-            attn_output = self.attn(q, k, v, kv_cache, attn_metadata, layer_idx)
+            attn_output = self.attn(
+                q, k, v, kv_cache, attn_metadata, layer_idx=layer_idx
+            )
         else:
             assert False, "Only support 'vllm>=0.4.1'. Please update your vllm version."
 
