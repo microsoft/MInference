@@ -92,7 +92,7 @@ for vLLM,
 from vllm import LLM, SamplingParams
 + from minference import MInference
 
-llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128000)
+llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128_000, enable_chunked_prefill=False)
 
 # Patch MInference Module,
 # If you use the local path, please use the model_name from HF when initializing MInference.

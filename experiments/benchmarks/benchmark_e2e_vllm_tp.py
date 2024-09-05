@@ -23,13 +23,14 @@ def run_target_length(m: int, model, sampling_params, attn_type: str):
 
     s = 0
     T = 10
-    for _ in range(T):
+    for _ in range(T + 1):
         torch.cuda.synchronize()
         start = time.time()
         with torch.no_grad():
             outputs = llm.generate([prompt], sampling_params)
         torch.cuda.synchronize()
-        s += time.time() - start
+        if _:
+            s += time.time() - start
     print(attn_type, m, s / T)
     return s / T
 
@@ -47,6 +48,7 @@ if __name__ == "__main__":
         choices=["flash_attn", "minference"],
     )
     args.add_argument("--context_window", type=int, default=100_000)
+    args.add_argument("--tensor_parallel_size", type=int, default=2)
     args = args.parse_args()
 
     model_name = args.model_name
@@ -61,9 +63,9 @@ if __name__ == "__main__":
     llm = LLM(
         model_name,
         enforce_eager=True,
-        max_model_len=129000,
+        max_model_len=args.context_window + 10_000,
         enable_chunked_prefill=False,
-        tensor_parallel_size=2,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
 
     # Patch MInference Module

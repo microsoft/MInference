@@ -977,114 +977,13 @@ def minference_patch_with_snapkv(model):
     return model
 
 
-def llama_model_forward_vllm(
-    self,
-    input_ids: Optional[torch.Tensor],
-    positions: torch.Tensor,
-    kv_caches: List[torch.Tensor],
-    attn_metadata,
-    inputs_embeds: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    if inputs_embeds is not None:
-        hidden_states = inputs_embeds
-    else:
-        hidden_states = self.get_input_embeddings(input_ids)
-    residual = None
-    for i in range(len(self.layers)):
-        layer = self.layers[i]
-        hidden_states, residual = layer(
-            positions,
-            hidden_states,
-            kv_caches[i],
-            attn_metadata,
-            residual,
-            layer_idx=i,
-        )
-    hidden_states, _ = self.norm(hidden_states, residual)
-    return hidden_states
+def minference_patch_vllm_tp(self, config_file):
+    self.model_runner.model.apply(minference_patch_vllm_executor(config_file))
 
 
-def llama_layer_forward_vllm(
-    self,
-    positions: torch.Tensor,
-    hidden_states: torch.Tensor,
-    kv_cache: torch.Tensor,
-    attn_metadata,
-    residual: Optional[torch.Tensor],
-    layer_idx: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    # Self Attention
-    if residual is None:
-        residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-    else:
-        hidden_states, residual = self.input_layernorm(hidden_states, residual)
-    hidden_states = self.self_attn(
-        positions=positions,
-        hidden_states=hidden_states,
-        kv_cache=kv_cache,
-        attn_metadata=attn_metadata,
-        layer_idx=layer_idx,
-    )
+def minference_patch_vllm_executor(config_file: str):
+    import json
 
-    # Fully Connected
-    hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
-    hidden_states = self.mlp(hidden_states)
-    return hidden_states, residual
-
-
-def llama_attn_forward_vllm(
-    vllm_version: str = "0.4.2",
-):
-    def llama_attn_forward_vllm(
-        self,
-        positions: torch.Tensor,
-        hidden_states: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata,
-        layer_idx: int,
-    ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(hidden_states)
-        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        q, k = self.rotary_emb(positions, q, k)
-        if "0.4.1" <= vllm_version <= "0.4.2":
-            attn_output = self.attn(
-                q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
-            )
-        elif vllm_version >= "0.4.3":
-            attn_output = self.attn(
-                q, k, v, kv_cache, attn_metadata, layer_idx=layer_idx
-            )
-        else:
-            assert False, "Only support 'vllm>=0.4.1'. Please update your vllm version."
-
-        output, _ = self.o_proj(attn_output)
-        return output
-
-    return llama_attn_forward_vllm
-
-
-def vllm_attn_forward(
-    self,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    kv_cache: Optional[torch.Tensor],
-    attn_metadata,
-    kv_scale: float = 1.0,
-    layer_idx: int = 0,
-) -> torch.Tensor:
-    # check self._kv_scale
-    kv_scale = getattr(self, "_kv_scale", getattr(self, "_k_scale", kv_scale))
-    return self.impl.forward(
-        query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
-    )
-
-
-def minference_patch_vllm(
-    llm,
-    config_file,
-):
     import vllm
     from vllm.attention import Attention
     from vllm.model_executor.models.llama import (
@@ -1094,10 +993,117 @@ def minference_patch_vllm(
         LlamaModel,
     )
 
+    from minference.modules.minference_forward import (
+        gather_last_q_vertical_slash_topk_vllm,
+        minference_vllm_forward,
+    )
+
     vllm_version = vllm.__version__
 
     config = json.load(open(config_file))
     attn_forward = minference_vllm_forward(config, vllm_version=vllm_version)
+
+    def vllm_attn_forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: Optional[torch.Tensor],
+        attn_metadata,
+        kv_scale: float = 1.0,
+        layer_idx: int = 0,
+    ) -> torch.Tensor:
+        # check self._kv_scale
+        kv_scale = getattr(self, "_kv_scale", getattr(self, "_k_scale", kv_scale))
+        return self.impl.forward(
+            query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
+        )
+
+    def llama_model_forward_vllm(
+        self,
+        input_ids: Optional[torch.Tensor],
+        positions: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata,
+        inputs_embeds: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if inputs_embeds is not None:
+            hidden_states = inputs_embeds
+        else:
+            hidden_states = self.get_input_embeddings(input_ids)
+        residual = None
+        for i in range(len(self.layers)):
+            layer = self.layers[i]
+            hidden_states, residual = layer(
+                positions,
+                hidden_states,
+                kv_caches[i],
+                attn_metadata,
+                residual,
+                layer_idx=i,
+            )
+        hidden_states, _ = self.norm(hidden_states, residual)
+        return hidden_states
+
+    def llama_layer_forward_vllm(
+        self,
+        positions: torch.Tensor,
+        hidden_states: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        residual: Optional[torch.Tensor],
+        layer_idx: int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Self Attention
+        if residual is None:
+            residual = hidden_states
+            hidden_states = self.input_layernorm(hidden_states)
+        else:
+            hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        hidden_states = self.self_attn(
+            positions=positions,
+            hidden_states=hidden_states,
+            kv_cache=kv_cache,
+            attn_metadata=attn_metadata,
+            layer_idx=layer_idx,
+        )
+
+        # Fully Connected
+        hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
+        hidden_states = self.mlp(hidden_states)
+        return hidden_states, residual
+
+    def llama_attn_forward_vllm(
+        vllm_version: str = "0.4.2",
+    ):
+        def llama_attn_forward_vllm(
+            self,
+            positions: torch.Tensor,
+            hidden_states: torch.Tensor,
+            kv_cache: torch.Tensor,
+            attn_metadata,
+            layer_idx: int,
+        ) -> torch.Tensor:
+            qkv, _ = self.qkv_proj(hidden_states)
+            q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+            q, k = self.rotary_emb(positions, q, k)
+            if "0.4.1" <= vllm_version <= "0.4.2":
+                attn_output = self.attn(
+                    q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
+                )
+            elif vllm_version >= "0.4.3":
+                attn_output = self.attn(
+                    q, k, v, kv_cache, attn_metadata, layer_idx=layer_idx
+                )
+            else:
+                assert (
+                    False
+                ), "Only support 'vllm>=0.4.1'. Please update your vllm version."
+
+            output, _ = self.o_proj(attn_output)
+            return output
+
+        return llama_attn_forward_vllm
 
     def update_module(m):
         if isinstance(m, Attention):
@@ -1116,7 +1122,21 @@ def minference_patch_vllm(
         if isinstance(m, LlamaAttention):
             m.forward = llama_attn_forward_vllm(vllm_version).__get__(m, LlamaAttention)
 
-    llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(update_module)
+    return update_module
+
+
+def minference_patch_vllm(
+    llm,
+    config_file,
+):
+    if "workers" in llm.llm_engine.model_executor.__dict__:
+        llm.llm_engine.model_executor._run_workers(
+            "minference_patch_vllm_tp", config_file=config_file
+        )
+    else:
+        llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(
+            minference_patch_vllm_executor(config_file)
+        )
 
     print("Patched model for minference with vLLM..")
     return llm
