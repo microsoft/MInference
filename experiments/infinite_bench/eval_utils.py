@@ -34,8 +34,8 @@ DATA_NAME_TO_PATH = {
 }
 
 DATA_NAME_TO_MAX_NEW_TOKENS = {
-    "passkey": 6,
-    "number_string": 12,
+    "passkey": 15,
+    "number_string": 20,
     "kv_retrieval": 80,
     "longbook_sum_eng": 1200,
     "longbook_choice_eng": 40,
