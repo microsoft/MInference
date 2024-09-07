@@ -798,10 +798,13 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     q_len = q.shape[2]
     bsz = q.shape[0]
 
-    ty, vertical_size, slash_size, _ = self.best_pattern[head_id]
+    ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
 
     if q_len == 1:
         return dense(q, k, v)
+
+    if self.patch_config.get("streaming", False):
+        return streaming_forward(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
 
     fc = {
         "stream_llm": streaming_forward,
@@ -812,7 +815,8 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
 
 def minference_vllm_forward(
     pattern_config,
-    vllm_version = "0.4.1"
+    vllm_version = "0.4.1",
+    patch_config = {},
 ):
     def forward(
         self,
@@ -835,6 +839,7 @@ def minference_vllm_forward(
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
+        self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
         def repeat_kv(hidden_states, n_rep):
             sqlen, num_head, head_dim = hidden_states.shape
@@ -989,6 +994,7 @@ def minference_vllm_forward(
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
+        self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
         def repeat_kv(hidden_states, n_rep):
             sqlen, num_head, head_dim = hidden_states.shape
@@ -1144,6 +1150,7 @@ def minference_vllm_forward(
             shape = [num_tokens, num_heads * head_size]
         """
         # NOTE(woosuk): FlashAttention does not support FP8 KV cache.
+        self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
         assert kv_scale == 1.0, "kv_scale is not supported in FlashAttention."
 

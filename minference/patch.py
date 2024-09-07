@@ -977,12 +977,15 @@ def minference_patch_with_snapkv(model):
     return model
 
 
-def minference_patch_vllm_tp(self, config_file):
-    self.model_runner.model.apply(minference_patch_vllm_executor(config_file))
+def minference_patch_vllm_tp(self, config_file, patch_config):
+    self.model_runner.model.apply(
+        minference_patch_vllm_executor(config_file, patch_config)
+    )
 
 
-def minference_patch_vllm_executor(config_file: str):
+def minference_patch_vllm_executor(config_file: str, patch_config={}):
     import json
+    from collections import defaultdict
 
     import vllm
     from vllm.attention import Attention
@@ -1000,8 +1003,12 @@ def minference_patch_vllm_executor(config_file: str):
 
     vllm_version = vllm.__version__
 
-    config = json.load(open(config_file))
-    attn_forward = minference_vllm_forward(config, vllm_version=vllm_version)
+    config = defaultdict(dict)
+    if os.path.exists(config_file):
+        config = json.load(open(config_file))
+    attn_forward = minference_vllm_forward(
+        config, vllm_version=vllm_version, patch_config=patch_config
+    )
 
     def vllm_attn_forward(
         self,
@@ -1128,14 +1135,17 @@ def minference_patch_vllm_executor(config_file: str):
 def minference_patch_vllm(
     llm,
     config_file,
+    patch_config: dict = {},
 ):
     if "workers" in llm.llm_engine.model_executor.__dict__:
         llm.llm_engine.model_executor._run_workers(
-            "minference_patch_vllm_tp", config_file=config_file
+            "minference_patch_vllm_tp",
+            config_file=config_file,
+            patch_config=patch_config,
         )
     else:
         llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(
-            minference_patch_vllm_executor(config_file)
+            minference_patch_vllm_executor(config_file, patch_config)
         )
 
     print("Patched model for minference with vLLM..")

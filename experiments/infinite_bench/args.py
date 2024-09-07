@@ -60,11 +60,14 @@ def parse_args() -> Namespace:
     p.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
     p.add_argument("--use_snapkv", action="store_true")
     p.add_argument("--trust_remote_code", action="store_true")
+    p.add_argument("--tensor_parallel_size", type=int, default=1)
     p.add_argument(
         "--attn_type",
         type=str,
         choices=[
             "vllm",
+            "vllm_minference",
+            "vllm_streaming",
             "hf",
             "streaming",
             "inf_llm",

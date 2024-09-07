@@ -39,7 +39,7 @@ class MInference:
         return self.patch_model(model)
 
     def patch_model(self, model):
-        if self.config.attn_type != "vllm":
+        if "vllm" not in self.config.attn_type:
             model.config.starting_layer = self.config.starting_layer
             model.config.config_path = self.config.config_path
 
@@ -100,6 +100,16 @@ class MInference:
             )
         elif self.config.attn_type == "vllm":
             model = minference_patch_vllm(model, self.config.config_path)
+        elif self.config.attn_type == "vllm_streaming":
+            patch_config = {
+                "streaming": True,
+                "streaming_kwargs": {
+                    "n_local": 3968,
+                    "n_init": 128,
+                },
+                **self.config.attn_kwargs,
+            }
+            model = minference_patch_vllm(model, self.config.config_path, patch_config)
         else:
             raise ValueError(
                 f"The attention type {self.config.attn_type} you specified is not supported."

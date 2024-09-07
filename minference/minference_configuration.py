@@ -17,6 +17,7 @@ class MInferenceConfig:
         "dilated1",
         "dilated2",
         "streaming",
+        "vllm_streaming",
         "inf_llm",
         "hf",
     ]
