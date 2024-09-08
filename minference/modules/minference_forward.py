@@ -1235,8 +1235,11 @@ def minference_vllm_forward(
 
         if prefill_meta := attn_metadata.prefill_metadata:
             # Prompt run.
-            if (kv_cache is None or prefill_meta.block_tables is None
-                    or prefill_meta.block_tables.numel() == 0):
+            if (
+                kv_cache is None or prefill_meta.block_tables is None
+                or prefill_meta.block_tables.numel() == 0
+                or query.shape[0] > 10_000 # temporary solution in enable_prefix_caching=True
+            ):
                 # normal attention
                 # When block_tables are not filled, it means q and k are the
                 # prompt, and they have the same length.
