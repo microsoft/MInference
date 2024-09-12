@@ -989,10 +989,14 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
 
     import vllm
     from vllm.attention import Attention
+    from vllm.model_executor.models.chatglm import (
+        GLMAttention,
+        GLMBlock,
+        GLMTransformer,
+    )
     from vllm.model_executor.models.llama import (
         LlamaAttention,
         LlamaDecoderLayer,
-        LlamaForCausalLM,
         LlamaModel,
     )
 
@@ -1052,6 +1056,28 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
+    def chatglm_model_forward_vllm(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata,
+    ) -> torch.Tensor:
+        for i in range(self.num_layers):
+            layer = self.layers[i]
+            hidden_states = layer(
+                hidden_states=hidden_states,
+                position_ids=position_ids,
+                kv_cache=kv_caches[i],
+                attn_metadata=attn_metadata,
+                layer_idx=i,
+            )
+        # Final layer norm.
+        if self.post_layer_norm:
+            hidden_states = self.final_layernorm(hidden_states)
+
+        return hidden_states
+
     def llama_layer_forward_vllm(
         self,
         positions: torch.Tensor,
@@ -1079,6 +1105,42 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
         hidden_states = self.mlp(hidden_states)
         return hidden_states, residual
+
+    def chatglm_layer_forward_vllm(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        layer_idx=0,
+    ) -> torch.Tensor:
+        # hidden_states: [num_tokens, h]
+        # Layer norm at the beginning of the transformer layer.
+        layernorm_output = self.input_layernorm(hidden_states)
+        # Self attention.
+        attention_output = self.self_attention(
+            hidden_states=layernorm_output,
+            position_ids=position_ids,
+            kv_cache=kv_cache,
+            attn_metadata=attn_metadata,
+            layer_idx=layer_idx,
+        )
+
+        # Residual connection.
+        if self.apply_residual_connection_post_layernorm:
+            residual = layernorm_output
+        else:
+            residual = hidden_states
+        layernorm_input = residual + attention_output
+        # Layer norm post the self attention.
+        layernorm_output = self.post_attention_layernorm(layernorm_input)
+        # Second residual connection.
+        if self.apply_residual_connection_post_layernorm:
+            residual = layernorm_output
+        else:
+            residual = layernorm_input
+        output = self.mlp(layernorm_output) + residual
+        return output
 
     def llama_attn_forward_vllm(
         vllm_version: str = "0.4.2",
@@ -1112,6 +1174,28 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
 
         return llama_attn_forward_vllm
 
+    def chatglm_attn_forward_vllm(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        layer_idx: int = 0,
+    ) -> torch.Tensor:
+        qkv, _ = self.query_key_value(hidden_states)
+        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+        q, k = self.rotary_emb(position_ids, q, k)
+        context_layer = self.attn(
+            q,
+            k,
+            v,
+            kv_cache,
+            attn_metadata,
+            layer_idx=layer_idx,
+        )
+        attn_output, _ = self.dense(context_layer)
+        return attn_output
+
     def update_module(m):
         if isinstance(m, Attention):
             m.forward = vllm_attn_forward.__get__(m, Attention)
@@ -1128,6 +1212,12 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
             m.forward = llama_model_forward_vllm.__get__(m, LlamaModel)
         if isinstance(m, LlamaAttention):
             m.forward = llama_attn_forward_vllm(vllm_version).__get__(m, LlamaAttention)
+        if isinstance(m, GLMBlock):
+            m.forward = chatglm_layer_forward_vllm.__get__(m, GLMBlock)
+        if isinstance(m, GLMTransformer):
+            m.forward = chatglm_model_forward_vllm.__get__(m, GLMTransformer)
+        if isinstance(m, GLMAttention):
+            m.forward = chatglm_attn_forward_vllm.__get__(m, GLMAttention)
 
     return update_module
 

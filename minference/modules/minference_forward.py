@@ -64,6 +64,9 @@ def get_cos_sin(self, value_states, kv_seq_len, position_ids):
     elif ROPE_TYPE == "seq_len,position_ids":
         cos, sin = self.rotary_emb(value_states, position_ids=position_ids, seq_len=kv_seq_len)
     elif ROPE_TYPE == "max_seq_len":
+        if position_ids is not None and position_ids[0][0] < 0:
+            kv_seq_len -= position_ids[0][0].item()
+            position_ids = position_ids - position_ids[0][0]
         cos = self.rotary_emb(kv_seq_len)
         if position_ids is not None:
             cos = cos[position_ids]
@@ -434,6 +437,18 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         topk = 100
         return block_sparse_attention(q, k, v, topk)
 
+    def tri_streamingllm_kernel(q, k, v, n_init, n_local, n_last=100):
+        q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
+        y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
+
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(self.head_dim)
+        arange = torch.arange(n_last, device="cuda")
+        mask = arange[None, None, :, None] >= arange[None, None, None, :]
+        qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
+        y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
+        return torch.cat([y1, y2], dim=2)
+
     q_len = q.shape[2]
     bsz = q.shape[0]
 
@@ -448,6 +463,8 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         return dense(q, k, v)
     if self.config.to_dict().get("streaming", False):
         return streaming_forward(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
+    if self.config.to_dict().get("tri_streaming", False):
+        return tri_streamingllm_kernel(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
 
     ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
 
@@ -685,9 +702,15 @@ def minference_with_snapkv_forward():
 
         bsz, q_len, _ = hidden_states.size()
 
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
+        if "q_proj" in self.__dict__["_modules"]:
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
+        else:
+            qkv = self.qkv_proj(hidden_states)
+            query_pos = self.num_heads * self.head_dim
+            key_value_pos = query_pos // self.num_key_value_groups
+            query_states, key_states, value_states = torch.split(qkv, [query_pos, key_value_pos, key_value_pos], -1)
 
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
@@ -773,7 +796,7 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     def vertical_and_slash_kernel(q, k, v, vertical_size, slash_size):
         vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
         last_q = min(64, q_len)
-        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k) / math.sqrt(q.shape[-1])
 
         qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q:], -torch.inf)
         qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
@@ -795,6 +818,17 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     def dense(q, k, v, vertical_size=None, slash_size=None):
         return flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)
 
+    def tri_streamingllm_kernel(q, k, v, n_init, n_local, n_last=100):
+        q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
+        y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(q2.shape[-1])
+        arange = torch.arange(n_last, device="cuda")
+        mask = arange[None, None, :, None] >= arange[None, None, None, :]
+        qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
+        y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
+        return torch.cat([y1, y2], dim=2)
+
     q_len = q.shape[2]
     bsz = q.shape[0]
 
@@ -805,6 +839,8 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
 
     if self.patch_config.get("streaming", False):
         return streaming_forward(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
+    if self.patch_config.get("tri_streaming", False):
+        return tri_streamingllm_kernel(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
 
     fc = {
         "stream_llm": streaming_forward,

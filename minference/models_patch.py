@@ -72,6 +72,15 @@ class MInference:
             }
             model = minference_patch(model, self.config)
 
+        elif self.config.attn_type == "tri_streaming":
+            model.config.tri_streaming = True
+            model.config.streaming_kwargs = {
+                "n_local": 3968,
+                "n_init": 128,
+                **self.config.attn_kwargs,
+            }
+            model = minference_patch(model, self.config)
+
         elif self.config.attn_type == "streaming2":
             model = patch_hf(
                 model,
@@ -103,6 +112,16 @@ class MInference:
         elif self.config.attn_type == "vllm_streaming":
             patch_config = {
                 "streaming": True,
+                "streaming_kwargs": {
+                    "n_local": 3968,
+                    "n_init": 128,
+                },
+                **self.config.attn_kwargs,
+            }
+            model = minference_patch_vllm(model, self.config.config_path, patch_config)
+        elif self.config.attn_type == "vllm_tri_streaming":
+            patch_config = {
+                "tri_streaming": True,
                 "streaming_kwargs": {
                     "n_local": 3968,
                     "n_init": 128,
