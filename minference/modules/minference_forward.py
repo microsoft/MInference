@@ -54,7 +54,7 @@ def set_rope_type(self):
         ROPE_TYPE = "position_ids"
 
 def get_cos_sin(self, value_states, kv_seq_len, position_ids):
-    if self.rotary_emb.inv_freq is not None and value_states.device != self.rotary_emb.inv_freq.device:
+    if "inv_freq" in self.rotary_emb.__dict__ is not None and value_states.device != self.rotary_emb.inv_freq.device:
         value_states = value_states.to(self.rotary_emb.inv_freq.device)
         position_ids = position_ids.to(self.rotary_emb.inv_freq.device)
     if value_states.device != position_ids.device:

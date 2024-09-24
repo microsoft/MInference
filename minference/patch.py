@@ -585,7 +585,10 @@ def forward_llama_decoder_layer(
         end_idx = min(seq_len, start_idx + 32000)
         part_hidden_states = hidden_states[:, start_idx:end_idx, :].clone()
         part_hidden_states = self.post_attention_layernorm(part_hidden_states)
-        part_hidden_states = self.mlp(part_hidden_states)
+        if "mlp" in self.__dict__:
+            part_hidden_states = self.mlp(part_hidden_states)
+        elif "block_sparse_moe" in self.__dict__:
+            part_hidden_states = self.block_sparse_moe(part_hidden_states)
         hidden_states[:, start_idx:end_idx, :] += part_hidden_states
 
     outputs = (hidden_states,)

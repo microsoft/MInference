@@ -165,6 +165,15 @@ def load_model(
             }
             config.update(c)
 
+        llm = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            config=config,
+            torch_dtype="auto",
+            device_map="auto",
+            resume_download=None,
+            trust_remote_code=trust_remote_code,
+        )
+
     if attn_type not in ["vllm", "hf"]:
         llm = minference_patch(llm)
 

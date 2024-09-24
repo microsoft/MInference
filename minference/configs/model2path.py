@@ -23,11 +23,22 @@ MODEL2PATH = {
     "Qwen/Qwen2-7B-Instruct": os.path.join(
         BASE_DIR, "Qwen2_7B_Instruct_128k_instruct_kv_out_v32_fit_o_best_pattern.json"
     ),
+    "Qwen/Qwen2.5-32B-Instruct": os.path.join(
+        BASE_DIR,
+        "Qwen2.5_32B_Instruct_128k_instruct_kv_out_v32_fit_o_best_pattern.json",
+    ),
+    "Qwen/Qwen2.5-72B-Instruct": os.path.join(
+        BASE_DIR,
+        "Qwen2.5_72B_Instruct_128k_instruct_kv_out_v32_fit_o_best_pattern.json",
+    ),
     "THUDM/glm-4-9b-chat-1m": os.path.join(
         BASE_DIR, "GLM_4_9B_1M_instruct_kv_out_v32_fit_o_best_pattern.json"
     ),
     "meta-llama/Meta-Llama-3.1-8B-Instruct": os.path.join(
-        BASE_DIR, "Llama_3.1_8B_Instruct_128k_kv_out_v32_fit_o_best_pattern.json"
+        BASE_DIR, "Llama_3.1_8B_Instruct_128k_kv_out_v32_fit_o_best_pattern_v2.json"
+    ),
+    "meta-llama/Meta-Llama-3.1-70B-Instruct": os.path.join(
+        BASE_DIR, "Llama_3.1_70B_Instruct_128k_kv_out_v32_fit_o_best_pattern_v2.json"
     ),
     "gradientai/Llama-3-70B-Instruct-Gradient-262k": os.path.join(
         BASE_DIR, "Llama_3_70B_Instruct_262k_kv_out_v32_fit_o_best_pattern.json"
