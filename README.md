@@ -17,6 +17,8 @@ https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-
 _Now, you can process **1M context 10x faster in a single A100** using Long-context LLMs like LLaMA-3-8B-1M, GLM-4-1M, with even **better accuracy**, try **MInference 1.0** right now!_
 
 ## News
+- 🧤 [24/09/26] MInference has been accepted as **spotlight** at **NeurIPS'24**. See you in Vancouver!
+- 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, [RetrievalAttention](https://aka.ms/RetrievalAttention), which accelerates long-context LLM inference via vector retrieval.
 - 🥤 [24/07/24] MInference support [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct) now.
 - 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the [HF Demo](https://huggingface.co/spaces/microsoft/MInference) with ZeroGPU.
 - 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this [link](https://export.arxiv.org/pdf/2407.02490).
@@ -26,7 +28,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 **MInference 1.0** leverages the dynamic sparse nature of LLMs' attention, which exhibits some static patterns, to speed up the pre-filling for long-context LLMs. It first determines offline which sparse pattern each head belongs to, then approximates the sparse index online and dynamically computes attention with the optimal custom kernels. This approach achieves up to a **10x speedup** for pre-filling on an A100 while maintaining accuracy.
 
-- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2407.02490) (Under Review, ES-FoMo @ ICML'24)<br>
+- [MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention](https://arxiv.org/abs/2407.02490) (NeurIPS'24 **spotlight**, ES-FoMo @ ICML'24)<br>
   _Huiqiang Jiang†, Yucheng Li†, Chengruidong Zhang†, Qianhui Wu, Xufang Luo, Surin Ahn, Zhenhua Han, Amir H. Abdi, Dongsheng Li, Chin-Yew Lin, Yuqing Yang and Lili Qiu_
 
 
