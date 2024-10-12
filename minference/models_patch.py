@@ -17,7 +17,7 @@ class MInference:
         config_path: str = None,
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
-        use_snapkv: bool = False,
+        kvcompress_method: str = "",
         is_search: bool = False,
         attn_kwargs: dict = {},
         **kwargs,
@@ -29,7 +29,7 @@ class MInference:
             config_path=config_path,
             starting_layer=starting_layer,
             kv_cache_cpu=kv_cache_cpu,
-            use_snapkv=use_snapkv,
+            kvcompress_method=kvcompress_method,
             is_search=is_search,
             attn_kwargs=attn_kwargs,
             **kwargs,
@@ -63,7 +63,7 @@ class MInference:
             model.config.dilated2 = True
             model = minference_patch(model, self.config)
 
-        elif self.config.attn_type == "streaming":
+        elif self.config.attn_type == "a_shape":
             model.config.streaming = True
             model.config.streaming_kwargs = {
                 "n_local": 3968,
@@ -72,8 +72,8 @@ class MInference:
             }
             model = minference_patch(model, self.config)
 
-        elif self.config.attn_type == "tri_streaming":
-            model.config.tri_streaming = True
+        elif self.config.attn_type == "tri_shape":
+            model.config.tri_shape = True
             model.config.streaming_kwargs = {
                 "n_local": 3968,
                 "n_init": 128,
@@ -84,7 +84,7 @@ class MInference:
         elif self.config.attn_type == "streaming2":
             model = patch_hf(
                 model,
-                attn_type="streaming",
+                attn_type="a_shape",
                 attn_kwargs={"n_local": 3968, "n_init": 128, **self.config.attn_kwargs},
             )
         elif self.config.attn_type == "hf":
@@ -109,9 +109,9 @@ class MInference:
             )
         elif self.config.attn_type == "vllm":
             model = minference_patch_vllm(model, self.config.config_path)
-        elif self.config.attn_type == "vllm_streaming":
+        elif self.config.attn_type == "vllm_a_shape":
             patch_config = {
-                "streaming": True,
+                "a_shape": True,
                 "streaming_kwargs": {
                     "n_local": 3968,
                     "n_init": 128,
@@ -119,9 +119,9 @@ class MInference:
                 **self.config.attn_kwargs,
             }
             model = minference_patch_vllm(model, self.config.config_path, patch_config)
-        elif self.config.attn_type == "vllm_tri_streaming":
+        elif self.config.attn_type == "vllm_tri_shape":
             patch_config = {
-                "tri_streaming": True,
+                "tri_shape": True,
                 "streaming_kwargs": {
                     "n_local": 3968,
                     "n_init": 128,

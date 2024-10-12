@@ -150,7 +150,7 @@ if __name__ == "__main__":
         choices=[
             "vllm",
             "hf",
-            "streaming",
+            "a_shape",
             "minference",
             "inf_llm",
             "minference_with_dense",

@@ -16,10 +16,10 @@ class MInferenceConfig:
         "static",
         "dilated1",
         "dilated2",
-        "streaming",
-        "tri_streaming",
-        "vllm_streaming",
-        "vllm_tri_streaming",
+        "a_shape",
+        "tri_shape",
+        "vllm_a_shape",
+        "vllm_tri_shape",
         "inf_llm",
         "hf",
     ]
@@ -32,7 +32,7 @@ class MInferenceConfig:
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = "cpu",
-        use_snapkv: bool = False,
+        kvcompress_method: str = "",
         is_search: bool = False,
         attn_kwargs: dict = {},
         **kwargs,
@@ -48,7 +48,7 @@ class MInferenceConfig:
         self.starting_layer = starting_layer
         self.kv_cache_cpu = kv_cache_cpu
         self.kv_cache_cpu_device = kv_cache_cpu_device
-        self.use_snapkv = use_snapkv
+        self.kvcompress_method = kvcompress_method
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):

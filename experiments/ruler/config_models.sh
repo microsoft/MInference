@@ -92,7 +92,7 @@ MODEL_SELECT() {
         Yi-streaming)
             MODEL_PATH="01-ai/Yi-9B-200K"
             MODEL_TEMPLATE_TYPE="meta-chat"
-            MODEL_FRAMEWORK="streaming"
+            MODEL_FRAMEWORK="a_shape"
             ;;
         OPYiHalfV2)
             MODEL_PATH="01-ai/Yi-9B-200K"

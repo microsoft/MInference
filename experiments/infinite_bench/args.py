@@ -58,7 +58,7 @@ def parse_args() -> Namespace:
     p.add_argument("--topk_dims_file_path", type=str, default=None)
     p.add_argument("--kv_cache_cpu", action="store_true")
     p.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
-    p.add_argument("--use_snapkv", action="store_true")
+    p.add_argument("--kvcompress_method", type=str, default="")
     p.add_argument("--trust_remote_code", action="store_true")
     p.add_argument("--tensor_parallel_size", type=int, default=1)
     p.add_argument(
@@ -67,9 +67,9 @@ def parse_args() -> Namespace:
         choices=[
             "vllm",
             "vllm_minference",
-            "vllm_streaming",
+            "vllm_a_shape",
             "hf",
-            "streaming",
+            "a_shape",
             "inf_llm",
             "flash_attn",
             "minference",

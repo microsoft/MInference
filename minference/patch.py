@@ -16,7 +16,7 @@ from .modules.minference_forward import (
     minference_forward,
     minference_kv_cache_cpu_forward,
     minference_vllm_forward,
-    minference_with_snapkv_forward,
+    minference_with_kvcompress_forward,
     search_pattern,
     sum_all_diagonal_matrix,
 )
@@ -193,7 +193,7 @@ def apply_rotary_pos_emb_glm4(
 
 
 ATTN_FORWRAD = {
-    "streaming": stream_llm_forward,
+    "a_shape": stream_llm_forward,
     "minference": minference_forward,
     "inf_llm": inf_llm_forward,
 }
@@ -845,8 +845,8 @@ def minference_patch(model, config):
         KV_CACHE_CPU_DEVICE = config.kv_cache_cpu_device
         model.config.kv_cache_cpu_device = config.kv_cache_cpu_device
         return minference_patch_kv_cache_cpu(model)
-    if config.use_snapkv:
-        return minference_patch_with_snapkv(model)
+    if config.kvcompress_method:
+        return minference_patch_with_kvcompress(model, config)
 
     model = patch_glm_4_1m(model)
 
@@ -934,7 +934,7 @@ def minference_patch_kv_cache_cpu(model):
     return model
 
 
-def minference_patch_with_snapkv(model):
+def minference_patch_with_kvcompress(model, config):
     from transformers import LlamaForCausalLM
 
     model = patch_glm_4_1m(model)
@@ -943,7 +943,9 @@ def minference_patch_with_snapkv(model):
     Model = model.model.__class__
     DecoderLayer = model.model.layers[0].__class__
 
-    forward = minference_with_snapkv_forward()
+    forward = minference_with_kvcompress_forward(
+        method=config.kvcompress_method, config=config
+    )
 
     def update_module(m):
         if isinstance(m, Attention):

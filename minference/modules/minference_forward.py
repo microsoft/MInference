@@ -69,7 +69,7 @@ def get_cos_sin(self, value_states, kv_seq_len, position_ids):
             position_ids = position_ids - position_ids[0][0]
         cos = self.rotary_emb(kv_seq_len)
         if position_ids is not None:
-            cos = cos[position_ids]
+            cos = cos[position_ids.to(cos.device)]
         else:
             cos = cos[None, :kv_seq_len]
         sin = None
@@ -437,7 +437,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         topk = 100
         return block_sparse_attention(q, k, v, topk)
 
-    def tri_streamingllm_kernel(q, k, v, n_init, n_local, n_last=100):
+    def tri_shape_kernel(q, k, v, n_init, n_local, n_last=100):
         q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
         y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
 
@@ -461,10 +461,10 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         return dialted(q, k, v, 'dilated2')
     if self.config.to_dict().get("dense", False):
         return dense(q, k, v)
-    if self.config.to_dict().get("streaming", False):
+    if self.config.to_dict().get("a_shape", False):
         return streaming_forward(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
-    if self.config.to_dict().get("tri_streaming", False):
-        return tri_streamingllm_kernel(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
+    if self.config.to_dict().get("tri_shape", False):
+        return tri_shape_kernel(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
 
     ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
 
@@ -684,7 +684,10 @@ def minference_kv_cache_cpu_forward():
 
     return forward
 
-def minference_with_snapkv_forward():
+def minference_with_kvcompress_forward(
+    method: str = "snapkv",
+    config: dict = {},
+):
     def forward(
         self,
         hidden_states,
@@ -698,7 +701,12 @@ def minference_with_snapkv_forward():
         self.init_minference_parameters()
         self.ne_inf = torch.finfo(hidden_states.dtype).min
 
-        init_snapkv(self)
+        if method == "snapkv":
+            init_snapkv(self)
+        elif method == "pyramidkv":
+            init_pyramidkv(self, self.config.num_hidden_layers)
+        else:
+            init_StreamingLLM(self)
 
         bsz, q_len, _ = hidden_states.size()
 
@@ -818,7 +826,7 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     def dense(q, k, v, vertical_size=None, slash_size=None):
         return flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)
 
-    def tri_streamingllm_kernel(q, k, v, n_init, n_local, n_last=100):
+    def tri_shape_kernel(q, k, v, n_init, n_local, n_last=100):
         q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
         y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
         qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(q2.shape[-1])
@@ -837,10 +845,10 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     if q_len == 1:
         return dense(q, k, v)
 
-    if self.patch_config.get("streaming", False):
+    if self.patch_config.get("a_shape", False):
         return streaming_forward(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
-    if self.patch_config.get("tri_streaming", False):
-        return tri_streamingllm_kernel(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
+    if self.patch_config.get("tri_shape", False):
+        return tri_shape_kernel(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
 
     fc = {
         "stream_llm": streaming_forward,
