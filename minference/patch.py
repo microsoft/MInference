@@ -20,6 +20,10 @@ from .modules.minference_forward import (
     search_pattern,
     sum_all_diagonal_matrix,
 )
+from .modules.kvcompression import (
+    SnapKVCache,
+    method_to_cache_obj
+)
 from .ops.streaming_kernel import stream_llm_forward
 from .utils import patch_glm_4_1m
 
@@ -442,74 +446,65 @@ def prepare_inputs_for_generation(
     )
     return model_inputs
 
-
-def prepare_inputs_for_generation_snapkv(
-    self,
-    input_ids,
-    past_key_values=None,
-    attention_mask=None,
-    inputs_embeds=None,
-    **kwargs,
+def prepare_inputs_for_generation_kvcompression(
+    method: str, config
 ):
-    if (
-        past_key_values is None or past_key_values.__dict__.get("_seen_tokens", 0) == 0
-    ):  # [SnapKV]
-        for layer in self.model.layers:
-            layer.self_attn.kv_seq_len = 0
-    if past_key_values is not None:
-        if hasattr(self.model.layers[0].self_attn, "kv_seq_len"):
-            cache_length = past_length = self.model.layers[0].self_attn.kv_seq_len
-            max_cache_length = None
-        elif isinstance(past_key_values, Cache):
-            cache_length = past_key_values.get_seq_length()
-            past_length = past_key_values.seen_tokens
-            max_cache_length = past_key_values.get_max_length()
+    cache_obj: Cache = method_to_cache_obj[method]
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        inputs_embeds=None,
+        cache_position=None,
+        position_ids=None,
+        use_cache=True,
+        num_logits_to_keep=None,
+        **kwargs,
+    ):
+        # If we have cache: let's slice `input_ids` through `cache_position`, to keep only the unprocessed tokens
+        # Exception 1: when passing input_embeds, input_ids may be missing entries
+        # Exception 2: some generation methods do special slicing of input_ids, so we don't need to do it here
+        if use_cache and past_key_values is None:
+            past_key_values = cache_obj(config)
+
+        if past_key_values is not None:
+            if inputs_embeds is not None:  # Exception 1
+                input_ids = input_ids[:, -cache_position.shape[0] :]
+            elif input_ids.shape[1] != cache_position.shape[0]:  # Default case (the "else", a no op, is Exception 2)
+                input_ids = input_ids[:, cache_position]
+
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if past_key_values:
+                position_ids = position_ids[:, -input_ids.shape[1] :]
+
+                # This `clone` call is needed to avoid recapturing cuda graphs with `torch.compile`'s  `mode="reduce-overhead`, as otherwise the input `position_ids` would have various stride during the decoding. Here, simply using `.contiguous()` is not sufficient as in the batch size = 1 case, `position_ids` is already contiguous but with varying stride which retriggers a capture.
+                position_ids = position_ids.clone(memory_format=torch.contiguous_format)
+
+        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
+        if inputs_embeds is not None and cache_position[0] == 0:
+            model_inputs = {"inputs_embeds": inputs_embeds, "input_ids": None}
         else:
-            cache_length = past_length = past_key_values[0][0].shape[2]
-            max_cache_length = None
-        # Keep only the unprocessed tokens:
-        # 1 - If the length of the attention_mask exceeds the length of input_ids, then we are in a setting where
-        # some of the inputs are exclusively passed as part of the cache (e.g. when passing input_embeds as
-        # input)
-        if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-            input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
-        # 2 - If the past_length is smaller than input_ids', then input_ids holds all input tokens. We can discard
-        # input_ids based on the past_length.
-        elif past_length < input_ids.shape[1]:
-            input_ids = input_ids[:, past_length:]
-        # 3 - Otherwise (past_length >= input_ids.shape[1]), let's assume input_ids only has unprocessed tokens.
+            # The clone here is for the same reason as for `position_ids`.
+            model_inputs = {"input_ids": input_ids.clone(memory_format=torch.contiguous_format), "inputs_embeds": None}
 
-        # If we are about to go beyond the maximum cache length, we need to crop the input attention mask.
-        if (
-            max_cache_length is not None
-            and attention_mask is not None
-            and cache_length + input_ids.shape[1] > max_cache_length
-        ):
-            attention_mask = attention_mask[:, -max_cache_length:]
+        if num_logits_to_keep is not None:
+            model_inputs["num_logits_to_keep"] = num_logits_to_keep
 
-    position_ids = kwargs.get("position_ids", None)
-    if attention_mask is not None and position_ids is None:
-        # create position_ids on the fly for batch generation
-        position_ids = attention_mask.long().cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask == 0, 1)
-        if past_key_values:
-            position_ids = position_ids[:, -input_ids.shape[1] :]
-
-    # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-    if inputs_embeds is not None and past_key_values is None:
-        model_inputs = {"inputs_embeds": inputs_embeds}
-    else:
-        model_inputs = {"input_ids": input_ids}
-
-    model_inputs.update(
-        {
-            "position_ids": position_ids,
-            "past_key_values": past_key_values,
-            "use_cache": kwargs.get("use_cache"),
-            "attention_mask": attention_mask,
-        }
-    )
-    return model_inputs
+        model_inputs.update(
+            {
+                "position_ids": position_ids,
+                "cache_position": cache_position,
+                "past_key_values": past_key_values,
+                "use_cache": use_cache,
+                "attention_mask": attention_mask,
+            }
+        )
+        return model_inputs
+    return prepare_inputs_for_generation
 
 
 def _prepare_decoder_attention_mask_inference(
@@ -963,7 +958,8 @@ def minference_patch_with_kvcompress(model, config):
             m.forward = forward_llama_decoder_layer.__get__(m, DecoderLayer)
 
     model.apply(update_module)
-    model.prepare_inputs_for_generation = prepare_inputs_for_generation_snapkv.__get__(
+    prepare_inputs = prepare_inputs_for_generation_kvcompression(config.kvcompress_method, config)
+    model.prepare_inputs_for_generation = prepare_inputs.__get__(
         model, model.__class__
     )
     model.model._use_sdpa = False
@@ -976,7 +972,7 @@ def minference_patch_with_kvcompress(model, config):
     model.model.forward = forward_llama_model.__get__(
         model.model, model.model.__class__
     )
-    model.forward = forward_llama_for_causal_lm.__get__(model, model.__class__)
+    # model.forward = forward_llama_for_causal_lm.__get__(model, model.__class__)
 
     print("Patched model for minference with SanpKV..")
     return model

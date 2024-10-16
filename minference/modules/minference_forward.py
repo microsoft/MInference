@@ -696,17 +696,12 @@ def minference_with_kvcompress_forward(
         past_key_value,
         output_attentions,
         use_cache,
+        cache_position,
+        position_embeddings,
         **kwargs,
     ):
         self.init_minference_parameters()
         self.ne_inf = torch.finfo(hidden_states.dtype).min
-
-        if method == "snapkv":
-            init_snapkv(self)
-        elif method == "pyramidkv":
-            init_pyramidkv(self, self.config.num_hidden_layers)
-        else:
-            init_StreamingLLM(self)
 
         bsz, q_len, _ = hidden_states.size()
 
@@ -725,44 +720,26 @@ def minference_with_kvcompress_forward(
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
         kv_seq_len = key_states.shape[-2]
-        if past_key_value is not None:
-            if self.layer_idx is None:
-                raise ValueError(
-                    f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
-                    "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
-                    "with a layer index."
-                )
+        kv_seq_len += past_key_value.get_seq_length(self.layer_idx)
 
-            if hasattr(self, "kv_seq_len") and q_len == 1: #[SnapKV] add kv_seq_len
-                if self.kv_seq_len != 0:
-                    kv_seq_len += self.kv_seq_len
-                else:
-                    kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-            else:
-                kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        set_rope_type(self)
-        cos, sin = get_cos_sin(self, value_states, kv_seq_len, position_ids)
-        if ROPE_TYPE == "max_seq_len":
-            if cos.device != query_states.device:
-                cos = cos.to(query_states.device)
-            query_states = apply_rotary_pos_emb(query_states, cos)
-            key_states = apply_rotary_pos_emb(key_states, cos)
+        if position_embeddings is None:
+            logger.warning_once(
+                "The attention layers in this model are transitioning from computing the RoPE embeddings internally "
+                "through `position_ids` (2D tensor with the indexes of the tokens), to using externally computed "
+                "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.46 `position_ids` will be "
+                "removed and `position_embeddings` will be mandatory."
+            )
+            cos, sin = self.rotary_emb(value_states, position_ids)
         else:
-            if position_ids is not None and position_ids.device != cos.device:
-                position_ids = position_ids.to(cos.device)
-            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+            cos, sin = position_embeddings
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
         if past_key_value is not None:
-            cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
-            if key_states.shape[-2] == kv_seq_len: # [SnapKV] add kv_cluster
-                self.kv_seq_len = kv_seq_len # [SnapKV] register kv_seq_len
-                key_states_compress, value_states_compress = self.kv_cluster.update_kv(key_states, query_states, value_states, attention_mask, self.num_key_value_groups)
-                past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
-            else:
-                self.kv_seq_len += q_len
-                key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}  # Specific to RoPE models
+            key_states, value_states = past_key_value.update(query_states, key_states, value_states, attention_mask, self.layer_idx, self.num_key_value_groups, cache_kwargs)
 
         if self.layer_idx >= self.starting_layer:
             assert query_states.size(1) == key_states.size(1) == value_states.size(1)
