@@ -8,10 +8,11 @@ class SnapKVCache(Cache):
         self.key_cache: List[torch.Tensor] = []
         self.value_cache: List[torch.Tensor] = []
 
-        self.window_size = config.get('window_size', 32) 
-        self.max_capacity_prompt = config.get('max_capacity_prompt', 4096)
-        self.kernel_size = config.get('kernel_size', 5)
-        self.pooling = config.get('pooling', 'avgpool')
+        self.window_size = config.window_size if hasattr(config, "window_size") else 32
+        self.max_capacity_prompt = config.max_capacity_prompt if hasattr(config, "max_capacity_prompt") else 4096
+        self.kernel_size = config.kernel_size if hasattr(config, "kernel_size") else 5
+        self.pooling = config.pooling if hasattr(config, "pooling") else "avgpool"
+
         self.kv_clusters = []
 
     def update(
@@ -30,7 +31,10 @@ class SnapKVCache(Cache):
         if layer_idx == 0:
             self._seen_tokens += key_states.shape[-2]
 
+        prefilling = False
         if len(self.kv_clusters) == layer_idx:
+            # prefilling
+            prefilling = True
             kv_cluster = SnapKVCluster(
                 self.window_size, self.max_capacity_prompt,
                 self.kernel_size, self.pooling
@@ -48,9 +52,12 @@ class SnapKVCache(Cache):
             self.key_cache[layer_idx] = torch.cat([self.key_cache[layer_idx], key_states], dim=-2)
             self.value_cache[layer_idx] = torch.cat([self.value_cache[layer_idx], value_states], dim=-2)
 
-        return self.key_cache[layer_idx], self.value_cache[layer_idx]
+        if prefilling:
+            return key_states, value_states
+        else:
+            return self.key_cache[layer_idx], self.value_cache[layer_idx]
     
-    def get_seq_length(self, layer_idx):
+    def get_seq_length(self, layer_idx=0):
         if len(self.key_cache) <= layer_idx:
             return 0
         return self._seen_tokens

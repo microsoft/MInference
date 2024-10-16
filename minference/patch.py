@@ -446,6 +446,26 @@ def prepare_inputs_for_generation(
     )
     return model_inputs
 
+def prepare_cache(
+    method: str, config
+):
+    cache_obj: Cache = method_to_cache_obj[method]
+    def _prepare_cache_for_generation(
+        self,
+        generation_config,
+        model_kwargs: Dict,
+        *args,
+        **kwargs
+    ) -> bool:
+        """
+        Prepares the cache for generation (if applicable), given `generate`'s paramaterization. If a cache is
+        instantiated, writes it to `model_kwargs`, under the name expected by the model.
+        """
+
+        model_kwargs["past_key_values"] = cache_obj(config)
+    return _prepare_cache_for_generation
+
+
 def prepare_inputs_for_generation_kvcompression(
     method: str, config
 ):
@@ -933,8 +953,6 @@ def minference_patch_kv_cache_cpu(model):
 
 
 def minference_patch_with_kvcompress(model, config):
-    from transformers import LlamaForCausalLM
-
     model = patch_glm_4_1m(model)
 
     Attention = model.model.layers[0].self_attn.__class__
@@ -954,27 +972,21 @@ def minference_patch_with_kvcompress(model, config):
                 gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
             )
             m.forward = forward.__get__(m, Attention)
-        if isinstance(m, DecoderLayer):
-            m.forward = forward_llama_decoder_layer.__get__(m, DecoderLayer)
 
     model.apply(update_module)
-    prepare_inputs = prepare_inputs_for_generation_kvcompression(config.kvcompress_method, config)
-    model.prepare_inputs_for_generation = prepare_inputs.__get__(
-        model, model.__class__
-    )
-    model.model._use_sdpa = False
+    prepare_cache_func = prepare_cache(config.kvcompress_method, config)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(model, model.__class__)
 
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(config.kvcompress_method, config)
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(model, model.__class__)
+
+    model.model._use_sdpa = False
     model.model._prepare_decoder_attention_mask = (
         _prepare_decoder_attention_mask_inference.__get__(
             model.model, model.model.__class__
         )
     )
-    model.model.forward = forward_llama_model.__get__(
-        model.model, model.model.__class__
-    )
-    # model.forward = forward_llama_for_causal_lm.__get__(model, model.__class__)
-
-    print("Patched model for minference with SanpKV..")
+    print(f"Patched model for minference with {config.kvcompress_method} ..")
     return model
 
 
