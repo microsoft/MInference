@@ -733,7 +733,7 @@ def minference_with_kvcompress_forward(
                     "with a layer index."
                 )
 
-            if hasattr(self, "kv_seq_len"): #[SnapKV] add kv_seq_len
+            if hasattr(self, "kv_seq_len") and q_len == 1: #[SnapKV] add kv_seq_len
                 if self.kv_seq_len != 0:
                     kv_seq_len += self.kv_seq_len
                 else:

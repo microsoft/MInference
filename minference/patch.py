@@ -451,11 +451,13 @@ def prepare_inputs_for_generation_snapkv(
     inputs_embeds=None,
     **kwargs,
 ):
-    if past_key_values is None:  # [SnapKV]
+    if (
+        past_key_values is None or past_key_values.__dict__.get("_seen_tokens", 0) == 0
+    ):  # [SnapKV]
         for layer in self.model.layers:
             layer.self_attn.kv_seq_len = 0
     if past_key_values is not None:
-        if hasattr(self.model.layers[0].self_attn, 'kv_seq_len'):
+        if hasattr(self.model.layers[0].self_attn, "kv_seq_len"):
             cache_length = past_length = self.model.layers[0].self_attn.kv_seq_len
             max_cache_length = None
         elif isinstance(past_key_values, Cache):
