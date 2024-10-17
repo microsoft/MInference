@@ -16,13 +16,14 @@ from .modules.minference_forward import (
     minference_forward,
     minference_kv_cache_cpu_forward,
     minference_vllm_forward,
-    minference_with_kvcompress_forward,
+    kvcompress_forward,
     search_pattern,
     sum_all_diagonal_matrix,
 )
 from .modules.kvcompression import (
     SnapKVCache,
-    method_to_cache_obj
+    method_to_cache_obj,
+    prepare_inputs_for_generation_kvcompression
 )
 from .ops.streaming_kernel import stream_llm_forward
 from .utils import patch_glm_4_1m
@@ -465,68 +466,6 @@ def prepare_cache(
         model_kwargs["past_key_values"] = cache_obj(config)
     return _prepare_cache_for_generation
 
-
-def prepare_inputs_for_generation_kvcompression(
-    method: str, config
-):
-    cache_obj: Cache = method_to_cache_obj[method]
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        past_key_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        cache_position=None,
-        position_ids=None,
-        use_cache=True,
-        num_logits_to_keep=None,
-        **kwargs,
-    ):
-        # If we have cache: let's slice `input_ids` through `cache_position`, to keep only the unprocessed tokens
-        # Exception 1: when passing input_embeds, input_ids may be missing entries
-        # Exception 2: some generation methods do special slicing of input_ids, so we don't need to do it here
-        if use_cache and past_key_values is None:
-            past_key_values = cache_obj(config)
-
-        if past_key_values is not None:
-            if inputs_embeds is not None:  # Exception 1
-                input_ids = input_ids[:, -cache_position.shape[0] :]
-            elif input_ids.shape[1] != cache_position.shape[0]:  # Default case (the "else", a no op, is Exception 2)
-                input_ids = input_ids[:, cache_position]
-
-        if attention_mask is not None and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.long().cumsum(-1) - 1
-            position_ids.masked_fill_(attention_mask == 0, 1)
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
-
-                # This `clone` call is needed to avoid recapturing cuda graphs with `torch.compile`'s  `mode="reduce-overhead`, as otherwise the input `position_ids` would have various stride during the decoding. Here, simply using `.contiguous()` is not sufficient as in the batch size = 1 case, `position_ids` is already contiguous but with varying stride which retriggers a capture.
-                position_ids = position_ids.clone(memory_format=torch.contiguous_format)
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and cache_position[0] == 0:
-            model_inputs = {"inputs_embeds": inputs_embeds, "input_ids": None}
-        else:
-            # The clone here is for the same reason as for `position_ids`.
-            model_inputs = {"input_ids": input_ids.clone(memory_format=torch.contiguous_format), "inputs_embeds": None}
-
-        if num_logits_to_keep is not None:
-            model_inputs["num_logits_to_keep"] = num_logits_to_keep
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "cache_position": cache_position,
-                "past_key_values": past_key_values,
-                "use_cache": use_cache,
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
-    return prepare_inputs_for_generation
-
-
 def _prepare_decoder_attention_mask_inference(
     self, attention_mask, input_shape, inputs_embeds, past_key_values_length
 ):
@@ -959,33 +898,35 @@ def minference_patch_with_kvcompress(model, config):
     Model = model.model.__class__
     DecoderLayer = model.model.layers[0].__class__
 
-    forward = minference_with_kvcompress_forward(
-        method=config.kvcompress_method, config=config
+    forward = kvcompress_forward(
+        Attention.forward, method=config.kvcompress_method, config=config
     )
 
     def update_module(m):
         if isinstance(m, Attention):
-            m.init_minference_parameters = init_minference_parameters.__get__(
-                m, Attention
-            )
-            m.gather_last_q_vertical_slash_topk_v4 = (
-                gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
-            )
+            # if use minference with kvcompress, then patch with minference kernels
+            if config.attn_type in ["minference"]:
+                m.init_minference_parameters = init_minference_parameters.__get__(
+                    m, Attention
+                )
+                m.gather_last_q_vertical_slash_topk_v4 = (
+                    gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
+                )
             m.forward = forward.__get__(m, Attention)
 
     model.apply(update_module)
     prepare_cache_func = prepare_cache(config.kvcompress_method, config)
     model._prepare_cache_for_generation = prepare_cache_func.__get__(model, model.__class__)
 
-    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(config.kvcompress_method, config)
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(config.kvcompress_method, config, model.prepare_inputs_for_generation)
     model.prepare_inputs_for_generation = prepare_inputs_func.__get__(model, model.__class__)
 
-    model.model._use_sdpa = False
-    model.model._prepare_decoder_attention_mask = (
-        _prepare_decoder_attention_mask_inference.__get__(
-            model.model, model.model.__class__
-        )
-    )
+    # model.model._use_sdpa = False
+    # model.model._prepare_decoder_attention_mask = (
+    #     _prepare_decoder_attention_mask_inference.__get__(
+    #         model.model, model.model.__class__
+    #     )
+    # )
     print(f"Patched model for minference with {config.kvcompress_method} ..")
     return model
 

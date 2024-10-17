@@ -27,6 +27,7 @@ from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .snap_kv import *
+from .kvcompression import *
 
 try:
     from flash_attn import flash_attn_func
@@ -684,95 +685,20 @@ def minference_kv_cache_cpu_forward():
 
     return forward
 
-def minference_with_kvcompress_forward(
+def kvcompress_forward(
+    original_forward,
     method: str = "snapkv",
-    config: dict = {},
+    config: dict = {}, 
 ):
-    def forward(
-        self,
-        hidden_states,
-        attention_mask,
-        position_ids,
-        past_key_value,
-        output_attentions,
-        use_cache,
-        cache_position,
-        position_embeddings,
-        **kwargs,
-    ):
-        self.init_minference_parameters()
-        self.ne_inf = torch.finfo(hidden_states.dtype).min
+    if config.attn_type in ["minference"]:
+        return minference_forward()
+    
+    forward_map = {
+        "snapkv": snapkv_forward,
+        "quest": original_forward,
+    }
 
-        bsz, q_len, _ = hidden_states.size()
-
-        if "q_proj" in self.__dict__["_modules"]:
-            query_states = self.q_proj(hidden_states)
-            key_states = self.k_proj(hidden_states)
-            value_states = self.v_proj(hidden_states)
-        else:
-            qkv = self.qkv_proj(hidden_states)
-            query_pos = self.num_heads * self.head_dim
-            key_value_pos = query_pos // self.num_key_value_groups
-            query_states, key_states, value_states = torch.split(qkv, [query_pos, key_value_pos, key_value_pos], -1)
-
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-
-        kv_seq_len = key_states.shape[-2]
-        kv_seq_len += past_key_value.get_seq_length(self.layer_idx)
-
-        if position_embeddings is None:
-            logger.warning_once(
-                "The attention layers in this model are transitioning from computing the RoPE embeddings internally "
-                "through `position_ids` (2D tensor with the indexes of the tokens), to using externally computed "
-                "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.46 `position_ids` will be "
-                "removed and `position_embeddings` will be mandatory."
-            )
-            cos, sin = self.rotary_emb(value_states, position_ids)
-        else:
-            cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
-
-        key_states = repeat_kv(key_states, self.num_key_value_groups)
-        value_states = repeat_kv(value_states, self.num_key_value_groups)
-
-        if past_key_value is not None:
-            cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}  # Specific to RoPE models
-            key_states, value_states = past_key_value.update(query_states, key_states, value_states, attention_mask, self.layer_idx, self.num_key_value_groups, cache_kwargs)
-
-        if self.layer_idx >= self.starting_layer:
-            assert query_states.size(1) == key_states.size(1) == value_states.size(1)
-            output = torch.empty_like(query_states)
-            for head in range(query_states.size(1)):
-                q = query_states[:, head, :, :].unsqueeze(1)
-                k = key_states[:, head, :, :].unsqueeze(1)
-                v = value_states[:, head, :, :].unsqueeze(1)
-                output[:, head:head + 1] = self.gather_last_q_vertical_slash_topk_v4(q, k, v, head)
-
-            attn_output = output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
-            attn_output = self.o_proj(attn_output)
-            return attn_output, None, past_key_value
-
-        else:
-            output = torch.empty_like(query_states)
-            for head in range(query_states.size(1)):
-                q = query_states[:, head, :, :].unsqueeze(1)
-                k = key_states[:, head, :, :].unsqueeze(1)
-                v = value_states[:, head, :, :].unsqueeze(1)
-                if is_flash_attn_2_available():
-                    attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q.shape[2], self.head_dim)
-                else:
-                    attn_output = gather_qkv(q, k, v, attention_mask)
-                output[:, head:head + 1] = attn_output
-            attn_output = output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
-            attn_output = self.o_proj(attn_output)
-
-            return attn_output, None, past_key_value
-
-    return forward
+    return forward_map[method]
 
 def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     kv_seq_len = k.size(2)

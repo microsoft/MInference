@@ -47,7 +47,7 @@ class MInference:
             model.config.is_search = self.config.is_search
             model = minference_patch(model, self.config)
 
-        elif self.config.attn_type == "minference_with_dense":
+        elif self.config.attn_type in ["minference_with_dense", "dense_prefill"]:
             model.config.dense = True
             model = minference_patch(model, self.config)
 
