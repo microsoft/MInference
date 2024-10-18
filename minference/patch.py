@@ -2,6 +2,7 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 import json
+import types
 
 import torch
 import transformers
@@ -9,25 +10,24 @@ from transformers.cache_utils import *
 from transformers.models.llama.modeling_llama import *
 
 from .modules.inf_llm import InfLLMGenerator, inf_llm_forward
+from .modules.kvcompression import (
+    SnapKVCache,
+    method_to_cache_obj,
+    prepare_inputs_for_generation_kvcompression,
+)
 from .modules.minference_forward import (
     gather_last_q_vertical_slash_topk_v4,
     gather_last_q_vertical_slash_topk_vllm,
     init_minference_parameters,
+    kvcompress_forward,
     minference_forward,
     minference_kv_cache_cpu_forward,
     minference_vllm_forward,
-    kvcompress_forward,
     search_pattern,
     sum_all_diagonal_matrix,
 )
-from .modules.kvcompression import (
-    SnapKVCache,
-    method_to_cache_obj,
-    prepare_inputs_for_generation_kvcompression
-)
 from .ops.streaming_kernel import stream_llm_forward
 from .utils import patch_glm_4_1m
-import types
 
 KV_CACHE_CPU_DEVICE = "cpu"
 
@@ -448,16 +448,12 @@ def prepare_inputs_for_generation(
     )
     return model_inputs
 
-def prepare_cache(
-    method: str, config
-):
+
+def prepare_cache(method: str, config):
     cache_obj: Cache = method_to_cache_obj[method]
+
     def _prepare_cache_for_generation(
-        self,
-        generation_config,
-        model_kwargs: Dict,
-        *args,
-        **kwargs
+        self, generation_config, model_kwargs: Dict, *args, **kwargs
     ) -> bool:
         """
         Prepares the cache for generation (if applicable), given `generate`'s paramaterization. If a cache is
@@ -465,7 +461,9 @@ def prepare_cache(
         """
         config.num_layers = self.config.num_hidden_layers
         model_kwargs["past_key_values"] = cache_obj(config)
+
     return _prepare_cache_for_generation
+
 
 def _prepare_decoder_attention_mask_inference(
     self, attention_mask, input_shape, inputs_embeds, past_key_values_length
@@ -913,18 +911,26 @@ def minference_patch_with_kvcompress(model, config):
                 m.gather_last_q_vertical_slash_topk_v4 = (
                     gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
                 )
-            if config.kvcompress_method == 'quest':
+            if config.kvcompress_method == "quest":
                 m.flash_forward = types.MethodType(LlamaFlashAttention2.forward, m)
-                m.token_budget = 1024 if not hasattr(m, 'token_budget') else m.token_budget
-                m.chunk_size = 16 if not hasattr(m, 'chunk_size') else m.chunk_size
+                m.token_budget = (
+                    1024 if not hasattr(m, "token_budget") else m.token_budget
+                )
+                m.chunk_size = 16 if not hasattr(m, "chunk_size") else m.chunk_size
             m.forward = forward.__get__(m, Attention)
 
     model.apply(update_module)
     prepare_cache_func = prepare_cache(config.kvcompress_method, config)
-    model._prepare_cache_for_generation = prepare_cache_func.__get__(model, model.__class__)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(
+        model, model.__class__
+    )
 
-    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(config.kvcompress_method, config, model.prepare_inputs_for_generation)
-    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(model, model.__class__)
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
+        config.kvcompress_method, config, model.prepare_inputs_for_generation
+    )
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
+        model, model.__class__
+    )
 
     # model.model._use_sdpa = False
     # model.model._prepare_decoder_attention_mask = (

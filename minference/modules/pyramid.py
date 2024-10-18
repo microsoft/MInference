@@ -1,7 +1,13 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Refer to the code in https://github.com/Zefan-Cai/PyramidKV/blob/main/pyramidkv/pyramidkv_utils.py
+
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
+
 
 class PyramidKVCluster:
     def __init__(

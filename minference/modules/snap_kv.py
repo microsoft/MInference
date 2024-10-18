@@ -540,8 +540,8 @@ class PyramidKVCluster:
 class StreamingLLMKVCluster:
     def __init__(
         self,
-        window_size=64,
-        max_capacity_prompt=256 + 64,
+        window_size=4096 - 128,
+        max_capacity_prompt=4096,
         kernel_size=5,
         pooling="avgpool",
     ):
@@ -553,8 +553,8 @@ class StreamingLLMKVCluster:
 
     def reset(
         self,
-        window_size=64,
-        max_capacity_prompt=256 + 64,
+        window_size=4096 - 128,
+        max_capacity_prompt=4096,
         kernel_size=5,
         pooling="avgpool",
     ):

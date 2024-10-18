@@ -1,22 +1,23 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Refer to the code in https://github.com/mit-han-lab/Quest/blob/main/evaluation/quest_attention.py
+
 import math
-import numpy as np
+import types
 from typing import Optional, Tuple, Union
 
+import numpy as np
 import torch
-from torch import nn
-import torch.utils.checkpoint
 import torch.nn.functional as F
+import torch.utils.checkpoint
+from torch import nn
 from torch.cuda.amp import autocast
-
-import types
-
+from transformers import DynamicCache
 from transformers.models.llama.modeling_llama import (
     LlamaAttention,
     apply_rotary_pos_emb,
     repeat_kv,
 )
-
-from transformers import DynamicCache
 
 
 def local_heavy_hitter_mask(attn_weights, token_budget, chunk_size):
@@ -90,7 +91,7 @@ def quest_forward(
             use_cache=use_cache,
             **kwargs,
         )
-    
+
     query_states = (
         self.q_proj(hidden_states)
         .view(bsz, q_len, self.num_heads, self.head_dim)
@@ -119,7 +120,9 @@ def quest_forward(
 
     if past_key_value is not None:
         # reuse k, v, self_attention
-        key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx)
+        key_states, value_states = past_key_value.update(
+            key_states, value_states, self.layer_idx
+        )
 
     key_states = repeat_kv(key_states, self.num_key_value_groups)
     value_states = repeat_kv(value_states, self.num_key_value_groups)
