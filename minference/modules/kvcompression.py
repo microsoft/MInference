@@ -1,4 +1,5 @@
-from .snap_kv import *
+from .snap_kv import SnapKVCluster, StreamingLLMKVCluster
+from .pyramid import PyramidKVCluster
 from .quest import *
 from transformers.models.llama.modeling_llama import *
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
@@ -12,6 +13,7 @@ def prepare_inputs_for_generation_kvcompression(
         use_cache = kwargs
         if use_cache and not isinstance(outputs["past_key_values"], method_to_cache_obj[method]):
             cache_obj: Cache = method_to_cache_obj[method]
+            config.num_layers = self.num_hidden_layers
             outputs["past_key_values"] = cache_obj(config)
         if self._supports_num_logits_to_keep():
             outputs["num_logits_to_keep"] = 1
@@ -114,6 +116,7 @@ class SnapKVCache(Cache):
         self.pooling = config.pooling if hasattr(config, "pooling") else "avgpool"
 
         self.kv_clusters = []
+        self.kv_cluster_class = SnapKVCluster
 
     def update(
         self,
@@ -135,7 +138,7 @@ class SnapKVCache(Cache):
         if len(self.kv_clusters) == layer_idx:
             # prefilling
             prefilling = True
-            kv_cluster = SnapKVCluster(
+            kv_cluster = self.kv_cluster_class(
                 self.window_size, self.max_capacity_prompt,
                 self.kernel_size, self.pooling
             )
@@ -176,6 +179,65 @@ class SnapKVCache(Cache):
             cache.update(key_states, value_states, layer_idx)
         return cache
 
+class PyramidKVCache(SnapKVCache):
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.num_layers = config.num_layers
+        self.kv_cluster_class = PyramidKVCluster
+    
+    def update(
+        self,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        layer_idx,
+        num_key_value_groups,
+        cache_kwargs
+    ):
+        # if prefill, then compress
+        # if decode, then update
+        
+        if layer_idx == 0:
+            self._seen_tokens += key_states.shape[-2]
+
+        prefilling = False
+        if len(self.kv_clusters) == layer_idx:
+            # prefilling
+            prefilling = True
+            kv_cluster = self.kv_cluster_class(
+                self.num_layers,
+                self.window_size, self.max_capacity_prompt,
+                self.kernel_size, self.pooling,
+                layer_idx = layer_idx
+            )
+            self.kv_clusters.append(kv_cluster)
+
+            key_compress, value_compress = self.kv_clusters[layer_idx].update_kv(
+                key_states, query_states, value_states, attention_mask, num_key_value_groups,
+            )
+
+        if len(self.key_cache) == layer_idx:
+            self.key_cache.append(key_compress)
+            self.value_cache.append(value_compress)
+        else:
+            self.key_cache[layer_idx] = torch.cat([self.key_cache[layer_idx], key_states], dim=-2)
+            self.value_cache[layer_idx] = torch.cat([self.value_cache[layer_idx], value_states], dim=-2)
+
+        if prefilling:
+            return key_states, value_states
+        else:
+            return self.key_cache[layer_idx], self.value_cache[layer_idx]
+
+class StreamingLLMKVCache(SnapKVCache):
+    def __init__(self, config):
+        super().__init__(config)
+        self.kv_cluster_class = StreamingLLMKVCluster
+
 method_to_cache_obj = {
     'snapkv': SnapKVCache,
+    'pyramidkv': PyramidKVCache,
+    'streaming': StreamingLLMKVCache,
+    'quest': DynamicCache,
 }

@@ -68,7 +68,7 @@ def local_heavy_hitter_mask(attn_weights, token_budget, chunk_size):
     return mask_bottom
 
 
-def forward(
+def quest_forward(
     self,
     hidden_states: torch.Tensor,
     attention_mask: Optional[torch.Tensor] = None,
@@ -80,14 +80,14 @@ def forward(
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
 
-    if q_len > 1 or self.layer_id < 2:
+    if q_len > 1 or self.layer_idx < 2:
         return self.flash_forward(
             hidden_states,
-            attention_mask,
-            position_ids,
-            past_key_value,
-            output_attentions,
-            use_cache,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_value=past_key_value,
+            output_attentions=output_attentions,
+            use_cache=use_cache,
             **kwargs,
         )
     
@@ -109,7 +109,7 @@ def forward(
 
     kv_seq_len = key_states.shape[-2]
     if past_key_value is not None:
-        kv_seq_len += past_key_value.get_seq_length(self.layer_id)
+        kv_seq_len += past_key_value.get_seq_length(self.layer_idx)
     # cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
     cos, sin = self.rotary_emb(value_states, position_ids)
     query_states, key_states = apply_rotary_pos_emb(
@@ -119,7 +119,7 @@ def forward(
 
     if past_key_value is not None:
         # reuse k, v, self_attention
-        key_states, value_states = past_key_value.update(key_states, value_states, self.layer_id)
+        key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx)
 
     key_states = repeat_kv(key_states, self.num_key_value_groups)
     value_states = repeat_kv(value_states, self.num_key_value_groups)
@@ -473,7 +473,7 @@ def enable_quest_attention_eval(model, args):
             model._modules[name].layer_id = layer_id
             model._modules[name].flash_forward = model._modules[name].forward
             model._modules[name].forward = types.MethodType(
-                forward, model._modules[name]
+                quest_forward, model._modules[name]
             )
 
             model._modules[name].token_budget = args.token_budget

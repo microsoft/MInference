@@ -28,6 +28,7 @@ from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .snap_kv import *
 from .kvcompression import *
+from .quest import quest_forward
 
 try:
     from flash_attn import flash_attn_func
@@ -695,7 +696,9 @@ def kvcompress_forward(
     
     forward_map = {
         "snapkv": snapkv_forward,
-        "quest": original_forward,
+        "pyramidkv": snapkv_forward,
+        "streaming": snapkv_forward,
+        "quest": quest_forward,
     }
 
     return forward_map[method]
