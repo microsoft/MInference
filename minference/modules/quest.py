@@ -227,6 +227,96 @@ def quest_forward(
 
     return attn_output, attn_weights, past_key_value
 
+def quest_decode_kernel(
+    query_states,
+    key_states,
+    value_states,
+    decoding_kwargs,
+):
+    chunk_size = decoding_kwargs["attn_forward_config"].get("chunk_size", 16)
+    token_budget = decoding_kwargs["attn_forward_config"].get("token_budget", 1024)
+    attention_mask = decoding_kwargs.get("attention_mask", None)
+    position_ids = decoding_kwargs.get("position_ids", None)
+    kv_seq_len = key_states.size(-2)
+
+    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(
+        query_states.size(-1)
+    )
+
+    sign = (query_states > 0) + (~(query_states > 0)) * -1
+    max_key = key_states * sign
+    postive_query = query_states * sign
+
+    # expend max_key to be divisible by chunk_size
+    seq_length = max_key.shape[-2]
+    padding_length = chunk_size - ((seq_length - 1) % chunk_size + 1)
+    max_key = torch.cat(
+        [
+            max_key,
+            torch.ones(
+                (max_key.shape[0], max_key.shape[1], padding_length, max_key.shape[3]),
+                device=max_key.device,
+            )
+            * torch.tensor(torch.finfo(max_key.dtype).min),
+        ],
+        dim=-2,
+    )
+
+    # chunk max_key into chunk_size tokens
+    chunk_max_key = max_key.reshape(
+        max_key.shape[0],
+        max_key.shape[1],
+        max_key.shape[2] // chunk_size,
+        chunk_size,
+        max_key.shape[3],
+    ).amax(dim=-2)
+
+    # duplicate chunk_max_key chunk_size times
+    chunk_max_key = chunk_max_key.unsqueeze(-2).repeat(1, 1, 1, chunk_size, 1)
+    # reshape chunk_max_key to the original shape
+    chunk_max_key = chunk_max_key.reshape(
+        chunk_max_key.shape[0], chunk_max_key.shape[1], -1, chunk_max_key.shape[-1]
+    )[:, :, :seq_length, :]
+
+    quantized_weight = torch.matmul(
+        postive_query.float(),
+        chunk_max_key.transpose(2, 3),
+    )
+
+    if attention_mask is not None:
+        if attention_mask.size() != (bsz, 1, q_len, kv_seq_len):
+            raise ValueError(
+                f"Attention mask should be of size {(bsz, 1, q_len, kv_seq_len)}, but is {attention_mask.size()}"
+            )
+        attn_weights = attn_weights + attention_mask
+        attn_weights = torch.max(
+            attn_weights, torch.tensor(torch.finfo(attn_weights.dtype).min)
+        )
+        quantized_weight = quantized_weight + attention_mask
+        quantized_weight = torch.max(
+            quantized_weight, torch.tensor(torch.finfo(quantized_weight.dtype).min)
+        )
+
+    token_budget = min(kv_seq_len, token_budget)
+    attn_weights_for_selection = quantized_weight
+
+    if token_budget > 0:
+        mask_bottom = local_heavy_hitter_mask(
+            attn_weights_for_selection, token_budget, chunk_size
+        )  # Default: No padding applied to input
+    else:
+        mask_bottom = torch.zeros_like(attn_weights_for_selection, dtype=torch.bool)
+
+    mask_bottom = torch.tril(mask_bottom, diagonal=position_ids[0][0].item())
+    attn_weights[~mask_bottom] = torch.tensor(torch.finfo(attn_weights.dtype).min)
+
+    # upcast attention to fp32
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(
+        query_states.dtype
+    )
+    attn_output = torch.matmul(attn_weights, value_states)
+
+    return attn_output
 
 def forward_yarn(
     self,

@@ -766,3 +766,56 @@ def stream_llm_forward(n_local, n_init, *args, **kwargs):
             return score
 
     return forward
+
+def a_shape_kernel(
+    q, k, v, config,
+):
+    # q,k,v should be tensors already equipped with RoPE
+    # k,v should already repeated to align with q.shape
+
+    n_init = config["attn_forward_config"].get("n_init", 128)
+    n_local = config["attn_forward_config"].get("n_local", 3968)
+
+    assert q.dim() == 4 # (bsz, num_heads, seqlen, head_dim)
+    assert q.shape == k.shape == v.shape
+
+    head_dim = q.shape[-1]
+    if head_dim not in [16, 32, 64, 128, 256, 512]:
+        target_dim = 2 ** math.ceil(math.log2(head_dim)) - head_dim
+        q = torch.nn.functional.pad(q, [0, target_dim, 0, 0, 0, 0, 0, 0])
+        k = torch.nn.functional.pad(k, [0, target_dim, 0, 0, 0, 0, 0, 0])
+        v = torch.nn.functional.pad(v, [0, target_dim, 0, 0, 0, 0, 0, 0])
+
+    q_len = q.size(2)
+    k_len = k.size(2)
+
+    attn = TritonMultiStageDotProductionAttention(q.shape, q.dtype, q.device)
+
+    if k_len > n_local:
+        init_k = k[:, :, :n_init, :].contiguous()
+        init_v = v[:, :, :n_init, :].contiguous()
+
+        attn.append(q, k, v, sliding_window=n_local)
+        attn.append(
+            q, init_k, init_v, end=True,
+            sliding_window=(k_len - q_len, n_local), complement_sliding_window=True
+        )
+    else:
+        attn.append(q, k, v, sliding_window=n_local, end=True)
+
+    score, _ = attn.get_result()
+    return score[...,:head_dim]
+
+def tri_shape_kernel(q, k, v, config):
+    n_last = config["attn_forward_config"].get("n_last", 100)
+
+    q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
+    y1 = a_shape_kernel(q1, k[:,:,:-n_last], v[:,:,:-n_last], config)
+
+    qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(q.shape[-1])
+    arange = torch.arange(n_last, device="cuda")
+    mask = arange[None, None, :, None] >= arange[None, None, None, :]
+    qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
+    qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
+    y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
+    return torch.cat([y1, y2], dim=2)

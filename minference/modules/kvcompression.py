@@ -155,16 +155,23 @@ class SnapKVCache(Cache):
 
     def update(
         self,
-        query_states,
         key_states,
         value_states,
-        attention_mask,
         layer_idx,
-        num_key_value_groups,
         cache_kwargs,
     ):
         # if prefill, then compress
         # if decode, then update
+
+        # [bsz, num_heads, q_len, head_dim]
+
+        query_states = cache_kwargs["query_states"]
+        attention_mask = cache_kwargs["attention_mask"]
+        num_key_value_groups = cache_kwargs["num_key_value_groups"]
+
+        if key_states.size(1) != query_states.size(1): # GQA
+            key_states = repeat_kv(key_states, num_key_value_groups)
+            value_states = repeat_kv(value_states, num_key_value_groups)
 
         if layer_idx == 0:
             self._seen_tokens += key_states.shape[-2]
@@ -235,16 +242,21 @@ class PyramidKVCache(SnapKVCache):
 
     def update(
         self,
-        query_states,
         key_states,
         value_states,
-        attention_mask,
         layer_idx,
-        num_key_value_groups,
         cache_kwargs,
     ):
         # if prefill, then compress
         # if decode, then update
+
+        query_states = cache_kwargs["query_states"]
+        attention_mask = cache_kwargs["attention_mask"]
+        num_key_value_groups = cache_kwargs["num_key_value_groups"]
+
+        if key_states.size(1) != query_states.size(1): # GQA
+            key_states = repeat_kv(key_states, num_key_value_groups)
+            value_states = repeat_kv(value_states, num_key_value_groups)
 
         if layer_idx == 0:
             self._seen_tokens += key_states.shape[-2]
@@ -302,6 +314,8 @@ class StreamingLLMKVCache(SnapKVCache):
 
 
 method_to_cache_obj = {
+    "": DynamicCache,
+    "dense": DynamicCache,
     "snapkv": SnapKVCache,
     "pyramidkv": PyramidKVCache,
     "streaming": StreamingLLMKVCache,

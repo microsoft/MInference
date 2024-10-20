@@ -8,6 +8,7 @@ import torch
 import transformers
 from transformers.cache_utils import *
 from transformers.models.llama.modeling_llama import *
+from functools import partial
 
 from .modules.inf_llm import InfLLMGenerator, inf_llm_forward
 from .modules.kvcompression import (
@@ -26,6 +27,7 @@ from .modules.minference_forward import (
     search_pattern,
     sum_all_diagonal_matrix,
 )
+from .modules.forward import attn_forward, prefill_forwards, decoding_forwards
 from .ops.streaming_kernel import stream_llm_forward
 from .utils import patch_glm_4_1m
 
@@ -791,6 +793,44 @@ def forward_llama_for_causal_lm(
         logits=logits,
         past_key_values=outputs.past_key_values,
     )
+
+def new_patch(model, config):
+    model = patch_glm_4_1m(model)
+
+    Attention = model.model.layers[0].self_attn.__class__
+    Model = model.model.__class__
+    DecoderLayer = model.model.layers[0].__class__
+
+    prefill_forward = prefill_forwards[config.attn_type]
+    decoding_forward = decoding_forwards[config.kv_type]
+    forward = partial(
+        attn_forward,
+        prefill_forward=prefill_forward,
+        decoding_forward=decoding_forward,
+        attn_forward_config=config.attn_kwargs,
+    )
+
+    def update_module(m):
+        if isinstance(m, Attention):
+            m.forward = (
+                lambda self, *args, **kwargs: forward(self, *args, **kwargs)
+            ).__get__(m, Attention)
+
+    model.apply(update_module)
+    prepare_cache_func = prepare_cache(config.kv_type, config)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(
+        model, model.__class__
+    )
+
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
+        config.kvcompress_method, config, model.prepare_inputs_for_generation
+    )
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
+        model, model.__class__
+    )
+
+    print(f"Patched model for minference with {config.kvcompress_method} ..")
+    return model
 
 
 def minference_patch(model, config):

@@ -60,3 +60,6 @@ class MInferenceConfig:
             model_name in MODEL2PATH
         ), f"The model {model_name} you specified is not supported. You are welcome to add it and open a PR :)"
         return MODEL2PATH[model_name]
+
+    def get(self, attr, default=None):
+        return getattr(self, attr, default)

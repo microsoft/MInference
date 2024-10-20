@@ -4,7 +4,7 @@
 import os
 
 from .minference_configuration import MInferenceConfig
-from .patch import minference_patch, minference_patch_vllm, patch_hf
+from .patch import minference_patch, minference_patch_vllm, patch_hf, new_patch
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -18,6 +18,7 @@ class MInference:
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kvcompress_method: str = "",
+        kv_type: str = "dense",
         is_search: bool = False,
         attn_kwargs: dict = {},
         **kwargs,
@@ -30,6 +31,7 @@ class MInference:
             starting_layer=starting_layer,
             kv_cache_cpu=kv_cache_cpu,
             kvcompress_method=kvcompress_method,
+            kv_type=kv_type,
             is_search=is_search,
             attn_kwargs=attn_kwargs,
             **kwargs,
@@ -65,12 +67,15 @@ class MInference:
 
         elif self.config.attn_type == "a_shape":
             model.config.streaming = True
+            model.config.a_shape = True
             model.config.streaming_kwargs = {
                 "n_local": 3968,
                 "n_init": 128,
                 **self.config.attn_kwargs,
             }
-            model = minference_patch(model, self.config)
+            # model = minference_patch(model, self.config)
+            self.config.attn_kwargs.update({"n_local": 3968, "n_init": 128})
+            model = new_patch(model, self.config)
 
         elif self.config.attn_type == "tri_shape":
             model.config.tri_shape = True
@@ -79,7 +84,9 @@ class MInference:
                 "n_init": 128,
                 **self.config.attn_kwargs,
             }
-            model = minference_patch(model, self.config)
+            # model = minference_patch(model, self.config)
+            self.config.attn_kwargs.update({"n_local": 3968, "n_init": 128, "n_last": 100})
+            model = new_patch(model, self.config)
 
         elif self.config.attn_type == "streaming2":
             model = patch_hf(
