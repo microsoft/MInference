@@ -87,14 +87,18 @@ def snapkv_forward(
     value_states = repeat_kv(value_states, self.num_key_value_groups)
     if past_key_value is not None:
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
-        cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+        cache_kwargs = {
+            "sin": sin,
+            "cos": cos,
+            "cache_position": cache_position,
+            "query_states": query_states,
+            "attention_mask": attention_mask,
+            "num_key_value_groups": self.num_key_value_groups,
+        }
         key_states, value_states = past_key_value.update(  # kvcompress
-            query_states,
             key_states,
             value_states,
-            attention_mask,
             self.layer_idx,
-            self.num_key_value_groups,
             cache_kwargs,
         )
 
@@ -169,7 +173,7 @@ class SnapKVCache(Cache):
         attention_mask = cache_kwargs["attention_mask"]
         num_key_value_groups = cache_kwargs["num_key_value_groups"]
 
-        if key_states.size(1) != query_states.size(1): # GQA
+        if key_states.size(1) != query_states.size(1):  # GQA
             key_states = repeat_kv(key_states, num_key_value_groups)
             value_states = repeat_kv(value_states, num_key_value_groups)
 
@@ -254,7 +258,7 @@ class PyramidKVCache(SnapKVCache):
         attention_mask = cache_kwargs["attention_mask"]
         num_key_value_groups = cache_kwargs["num_key_value_groups"]
 
-        if key_states.size(1) != query_states.size(1): # GQA
+        if key_states.size(1) != query_states.size(1):  # GQA
             key_states = repeat_kv(key_states, num_key_value_groups)
             value_states = repeat_kv(value_states, num_key_value_groups)
 

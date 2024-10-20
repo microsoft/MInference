@@ -699,6 +699,7 @@ def kvcompress_forward(
         "pyramidkv": snapkv_forward,
         "streaming": snapkv_forward,
         "quest": quest_forward,
+        "dense": snapkv_forward,
     }
 
     return forward_map[method]

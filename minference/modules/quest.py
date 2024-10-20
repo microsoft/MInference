@@ -227,6 +227,7 @@ def quest_forward(
 
     return attn_output, attn_weights, past_key_value
 
+
 def quest_decode_kernel(
     query_states,
     key_states,
@@ -317,6 +318,7 @@ def quest_decode_kernel(
     attn_output = torch.matmul(attn_weights, value_states)
 
     return attn_output
+
 
 def forward_yarn(
     self,

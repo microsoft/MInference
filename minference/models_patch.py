@@ -4,7 +4,7 @@
 import os
 
 from .minference_configuration import MInferenceConfig
-from .patch import minference_patch, minference_patch_vllm, patch_hf, new_patch
+from .patch import minference_patch, minference_patch_vllm, new_patch, patch_hf
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -85,7 +85,9 @@ class MInference:
                 **self.config.attn_kwargs,
             }
             # model = minference_patch(model, self.config)
-            self.config.attn_kwargs.update({"n_local": 3968, "n_init": 128, "n_last": 100})
+            self.config.attn_kwargs.update(
+                {"n_local": 3968, "n_init": 128, "n_last": 100}
+            )
             model = new_patch(model, self.config)
 
         elif self.config.attn_type == "streaming2":

@@ -3,13 +3,14 @@
 
 import json
 import types
+from functools import partial
 
 import torch
 import transformers
 from transformers.cache_utils import *
 from transformers.models.llama.modeling_llama import *
-from functools import partial
 
+from .modules.forward import attn_forward, decoding_forwards, prefill_forwards
 from .modules.inf_llm import InfLLMGenerator, inf_llm_forward
 from .modules.kvcompression import (
     SnapKVCache,
@@ -27,7 +28,6 @@ from .modules.minference_forward import (
     search_pattern,
     sum_all_diagonal_matrix,
 )
-from .modules.forward import attn_forward, prefill_forwards, decoding_forwards
 from .ops.streaming_kernel import stream_llm_forward
 from .utils import patch_glm_4_1m
 
@@ -793,6 +793,7 @@ def forward_llama_for_causal_lm(
         logits=logits,
         past_key_values=outputs.past_key_values,
     )
+
 
 def new_patch(model, config):
     model = patch_glm_4_1m(model)

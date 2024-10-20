@@ -1,7 +1,12 @@
-from transformers.models.llama.modeling_llama import *
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
-from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
+from transformers.models.llama.modeling_llama import *
+
 from ..modules.quest import quest_decode_kernel
+from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
+
 
 def attn_forward(
     self,
@@ -15,10 +20,10 @@ def attn_forward(
         Tuple[torch.Tensor, torch.Tensor]
     ] = None,  # will become mandatory in v4.46
     past_key_value: Cache = None,
-    prefill_forward = None,
-    decoding_forward = None,
-    customized_rope_func = None,
-    attn_forward_config = None,
+    prefill_forward=None,
+    decoding_forward=None,
+    customized_rope_func=None,
+    attn_forward_config=None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     output_attentions = False
 
@@ -52,8 +57,10 @@ def attn_forward(
     else:
         cos, sin = position_embeddings
 
-    if customized_rope_func is not None: # eg, glm-4 rope
-        query_states, key_states = customized_rope_func(query_states, key_states, cos, sin)
+    if customized_rope_func is not None:  # eg, glm-4 rope
+        query_states, key_states = customized_rope_func(
+            query_states, key_states, cos, sin
+        )
     else:
         query_states, key_states = apply_rotary_pos_emb(
             query_states, key_states, cos, sin
@@ -62,13 +69,18 @@ def attn_forward(
     if past_key_value is not None:
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
         cache_kwargs = {
-            "sin": sin, "cos": cos, "cache_position": cache_position,
+            "sin": sin,
+            "cos": cos,
+            "cache_position": cache_position,
             "attn_forward_config": attn_forward_config,
             "attention_mask": attention_mask,
             "num_key_value_groups": self.num_key_value_groups,
             "query_states": query_states,
         }
-        key_states, value_states = past_key_value.update(  # DynamicCache/KvcompressCache
+        (
+            key_states,
+            value_states,
+        ) = past_key_value.update(  # DynamicCache/KvcompressCache
             key_states,
             value_states,
             self.layer_idx,
@@ -79,14 +91,14 @@ def attn_forward(
 
     dropout_rate = self.attention_dropout if self.training else 0.0
 
-    if q_len == key_states.size(-2): # prefilling
+    if q_len == key_states.size(-2):  # prefilling
         assert q_len != 1
-        if prefill_forward is not None: # eg, a-shape/tri-shape/minference
+        if prefill_forward is not None:  # eg, a-shape/tri-shape/minference
             prefill_kwargs = {
                 "attention_mask": attention_mask,
                 "attn_forward_config": attn_forward_config,
             }
-            attn_output = prefill_forward( # [bsz, num_heads, q_len, head_dim]
+            attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
                 query_states,
                 key_states,
                 value_states,
@@ -94,8 +106,8 @@ def attn_forward(
             )
             attn_output = attn_output.transpose(1, 2).contiguous()
 
-        else: # if not specified, use flash attention
-            attn_output = _flash_attention_forward( # [bsz, q_len, num_heads, head_dim]
+        else:  # if not specified, use flash attention
+            attn_output = _flash_attention_forward(  # [bsz, q_len, num_heads, head_dim]
                 query_states.transpose(1, 2),
                 key_states.transpose(1, 2),
                 value_states.transpose(1, 2),
@@ -106,10 +118,10 @@ def attn_forward(
                 sliding_window=getattr(self, "sliding_window", None),
                 is_causal=self.is_causal,
             )
-        
-    else: # decoding
+
+    else:  # decoding
         assert q_len == 1
-        if decoding_forward is not None: # eg, llama-3.1
+        if decoding_forward is not None:  # eg, llama-3.1
             decoding_kwargs = {
                 "layer_idx": self.layer_idx,
                 "attn_forward_config": attn_forward_config,
@@ -142,6 +154,7 @@ def attn_forward(
         attn_weights = None
 
     return attn_output, attn_weights, past_key_value
+
 
 prefill_forwards = {
     "dense": None,
