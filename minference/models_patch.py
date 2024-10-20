@@ -2,6 +2,7 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 import os
+import json
 
 from .minference_configuration import MInferenceConfig
 from .patch import minference_patch, minference_patch_vllm, new_patch, patch_hf
@@ -41,11 +42,21 @@ class MInference:
         return self.patch_model(model)
 
     def patch_model(self, model):
+        if self.config.kv_type == "retr_attn":
+            self.config.attn_kwargs["max_seq_length"] = model.config.max_position_embeddings
+            self.config.attn_kwargs["max_new_tokens"] = 1000
+            self.config.attn_kwargs["num_layers"] = model.config.num_hidden_layers
+
         if "vllm" not in self.config.attn_type:
             model.config.starting_layer = self.config.starting_layer
             model.config.config_path = self.config.config_path
 
         if self.config.attn_type == "minference":
+            with open(self.config.config_path, "r") as f:
+                self.config.attn_kwargs["best_pattern"] = json.load(f)
+            model = new_patch(model, self.config)
+            
+        elif self.config.attn_type == "minference":
             model.config.is_search = self.config.is_search
             model = minference_patch(model, self.config)
 
@@ -138,6 +149,8 @@ class MInference:
                 **self.config.attn_kwargs,
             }
             model = minference_patch_vllm(model, self.config.config_path, patch_config)
+        elif self.config.attn_type == "dense":
+            model = new_patch(model, self.config)
         else:
             raise ValueError(
                 f"The attention type {self.config.attn_type} you specified is not supported."

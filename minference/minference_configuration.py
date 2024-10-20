@@ -10,6 +10,8 @@ class MInferenceConfig:
     MINFERENCE_ATTENTION_TYPES = [
         "minference",
         "vllm",
+        "dense",
+        "minference_prefill",
     ]
     STASTIC_ATTENTION_TYPES = [
         "minference_with_dense",
@@ -33,6 +35,7 @@ class MInferenceConfig:
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = "cpu",
         kvcompress_method: str = "",
+        kv_type: str = "dense",
         is_search: bool = False,
         attn_kwargs: dict = {},
         **kwargs,
@@ -49,6 +52,7 @@ class MInferenceConfig:
         self.kv_cache_cpu = kv_cache_cpu
         self.kv_cache_cpu_device = kv_cache_cpu_device
         self.kvcompress_method = kvcompress_method
+        self.kv_type = kv_type
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):

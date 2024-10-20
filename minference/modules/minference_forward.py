@@ -587,6 +587,62 @@ def minference_forward():
 
     return forward
 
+
+def minference_prefill_kernel(
+    q, k, v, head_id, layer_idx,
+    config,
+):
+    head_dim = q.size(-1)
+    def vertical_and_slash_kernel(q, k, v, vertical_size, slash_size):
+        vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
+        last_q = min(64, q_len)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k) / math.sqrt(head_dim)
+        qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
+        vertical = qk.sum(-2, keepdim=True)
+        vertical[...,:30] = torch.inf
+        vertical_topk = torch.topk(vertical, vertical_size, -1).indices
+
+        slash = sum_all_diagonal_matrix(qk)[...,:-last_q + 1]
+        slash[...,-100:] = torch.inf
+        slash_topk = slash
+        slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
+
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
+
+    def block_sparse_kernel(q, k, v, vertical_size=None, slash_size=None):
+        topk = 100
+        return block_sparse_attention(q, k, v, topk)
+
+    q_len = q.shape[2]
+    ty, vertical_size, slash_size, _ = config["best_pattern"][layer_idx].get(head_id, ("vertical_and_slash", 1000, 6096, 1))
+
+    fc = {
+        "stream_llm": streaming_forward,
+        "vertical_and_slash": vertical_and_slash_kernel,
+        "block_sparse": block_sparse_kernel,
+    }[ty]
+    return fc(q, k, v, vertical_size, slash_size)
+
+def minference_prefill_forward(
+    query_states, key_states, value_states,
+    prefill_kwargs,
+):
+    starting_layer = prefill_kwargs["attn_forward_config"].get("starting_layer", 0)
+    layer_idx = prefill_kwargs["layer_idx"]
+
+    output = torch.empty_like(query_states)
+    for head in range(query_states.size(1)):
+        q = query_states[:, head, :, :].unsqueeze(1)
+        k = key_states[:, head, :, :].unsqueeze(1)
+        v = value_states[:, head, :, :].unsqueeze(1)
+        if layer_idx >= starting_layer:
+            attn_output = minference_prefill_kernel(q, k, v, head, layer_idx, prefill_kwargs["attn_forward_config"])
+        else:
+            attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, self.head_dim)
+        output[:, head:head + 1] = attn_output
+    return output
+
 def minference_kv_cache_cpu_forward():
     def forward(
         self,

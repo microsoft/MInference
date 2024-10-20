@@ -824,7 +824,7 @@ def new_patch(model, config):
     )
 
     prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
-        config.kvcompress_method, config, model.prepare_inputs_for_generation
+        config.kv_type, config, model.prepare_inputs_for_generation
     )
     model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
         model, model.__class__

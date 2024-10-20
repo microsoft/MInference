@@ -6,7 +6,8 @@ from transformers.models.llama.modeling_llama import *
 
 from ..modules.quest import quest_decode_kernel
 from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
-
+from ..modules.retr_attn import retr_attn
+from ..modules.minference_forward import minference_prefill_forward
 
 def attn_forward(
     self,
@@ -86,16 +87,18 @@ def attn_forward(
             self.layer_idx,
             cache_kwargs,
         )
-    key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-    value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+    # key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+    # value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
 
     dropout_rate = self.attention_dropout if self.training else 0.0
 
-    if q_len == key_states.size(-2):  # prefilling
+    # if q_len == key_states.size(-2):  # prefilling
+    if q_len == past_key_value.get_seq_length(self.layer_idx):
         assert q_len != 1
         if prefill_forward is not None:  # eg, a-shape/tri-shape/minference
             prefill_kwargs = {
                 "attention_mask": attention_mask,
+                "layer_idx": self.layer_idx,
                 "attn_forward_config": attn_forward_config,
             }
             attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
@@ -126,14 +129,15 @@ def attn_forward(
                 "layer_idx": self.layer_idx,
                 "attn_forward_config": attn_forward_config,
                 "position_ids": position_ids,
+                "num_key_value_groups": self.num_key_value_groups,
             }
-            attn_output = decoding_forward(
+            attn_output = decoding_forward(  # [bsz, num_heads, q_len, head_dim]
                 query_states,
                 key_states,
                 value_states,
                 decoding_kwargs,
             )
-            attn_output = attn_output.transpose(1, 2)
+            attn_output = attn_output.transpose(1, 2)  # [bsz, q_len, num_heads, head_dim]
         else:
             attn_output = _flash_attention_forward(
                 query_states.transpose(1, 2),
@@ -147,6 +151,7 @@ def attn_forward(
                 is_causal=self.is_causal,
             )
 
+    assert attn_output.size(1) == q_len
     attn_output = attn_output.reshape(bsz, q_len, -1).contiguous()
     attn_output = self.o_proj(attn_output)
 
@@ -160,6 +165,7 @@ prefill_forwards = {
     "dense": None,
     "a_shape": a_shape_kernel,
     "tri_shape": tri_shape_kernel,
+    "minference": minference_prefill_forward,
 }
 
 decoding_forwards = {
@@ -168,4 +174,5 @@ decoding_forwards = {
     "pyramidkv": None,
     "quest": quest_decode_kernel,
     "streaming": None,
+    "retr_attn": retr_attn,
 }

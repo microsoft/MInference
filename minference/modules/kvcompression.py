@@ -8,7 +8,7 @@ from ..utils import apply_rotary_pos_emb_glm4
 from .pyramid import PyramidKVCluster
 from .quest import *
 from .snap_kv import SnapKVCluster, StreamingLLMKVCluster
-
+from .retr_attn import RetrAttnCache
 
 def prepare_inputs_for_generation_kvcompression(
     method: str, config, original_prepare_inputs_for_generation
@@ -213,9 +213,12 @@ class SnapKVCache(Cache):
 
         torch.cuda.empty_cache()
         if prefilling:
-            return key_states, value_states
+            key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+            value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
         else:
-            return self.key_cache[layer_idx], self.value_cache[layer_idx]
+            key_states = repeat_kv(self.key_cache[layer_idx], query_states.size(1) // self.key_cache[layer_idx].size(1))
+            value_states = repeat_kv(self.value_cache[layer_idx], query_states.size(1) // self.value_cache[layer_idx].size(1))
+        return key_states, value_states
 
     def get_seq_length(self, layer_idx=0):
         if len(self.key_cache) <= layer_idx:
@@ -299,9 +302,14 @@ class PyramidKVCache(SnapKVCache):
             )
 
         if prefilling:
-            return key_states, value_states
+            key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+            value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
         else:
-            return self.key_cache[layer_idx], self.value_cache[layer_idx]
+            key_states, value_states = self.key_cache[layer_idx], self.value_cache[layer_idx]
+            key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+            value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+
+        return key_states, value_states
 
 
 class StreamingLLMKVCache(SnapKVCache):
@@ -317,11 +325,21 @@ class StreamingLLMKVCache(SnapKVCache):
         self.kv_cluster_class = StreamingLLMKVCluster
 
 
+class DynamicCacheWithRepeat(DynamicCache):
+    def update(self, *args, **kwargs):
+        key_states, value_states = super().update(*args, **kwargs)
+        query_states = args[-1].get("query_states", None)
+        key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+        value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+        return key_states, value_states
+
+
 method_to_cache_obj = {
-    "": DynamicCache,
-    "dense": DynamicCache,
+    "": DynamicCacheWithRepeat,
+    "dense": DynamicCacheWithRepeat,
     "snapkv": SnapKVCache,
     "pyramidkv": PyramidKVCache,
     "streaming": StreamingLLMKVCache,
-    "quest": DynamicCache,
+    "quest": DynamicCacheWithRepeat,
+    "retr_attn": RetrAttnCache,
 }
