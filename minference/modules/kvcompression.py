@@ -7,8 +7,9 @@ from transformers.models.llama.modeling_llama import *
 from ..utils import apply_rotary_pos_emb_glm4
 from .pyramid import PyramidKVCluster
 from .quest import *
-from .snap_kv import SnapKVCluster, StreamingLLMKVCluster
 from .retr_attn import RetrAttnCache
+from .snap_kv import SnapKVCluster, StreamingLLMKVCluster
+
 
 def prepare_inputs_for_generation_kvcompression(
     method: str, config, original_prepare_inputs_for_generation
@@ -213,11 +214,21 @@ class SnapKVCache(Cache):
 
         torch.cuda.empty_cache()
         if prefilling:
-            key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-            value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+            key_states = repeat_kv(
+                key_states, query_states.size(1) // key_states.size(1)
+            )
+            value_states = repeat_kv(
+                value_states, query_states.size(1) // value_states.size(1)
+            )
         else:
-            key_states = repeat_kv(self.key_cache[layer_idx], query_states.size(1) // self.key_cache[layer_idx].size(1))
-            value_states = repeat_kv(self.value_cache[layer_idx], query_states.size(1) // self.value_cache[layer_idx].size(1))
+            key_states = repeat_kv(
+                self.key_cache[layer_idx],
+                query_states.size(1) // self.key_cache[layer_idx].size(1),
+            )
+            value_states = repeat_kv(
+                self.value_cache[layer_idx],
+                query_states.size(1) // self.value_cache[layer_idx].size(1),
+            )
         return key_states, value_states
 
     def get_seq_length(self, layer_idx=0):
@@ -302,12 +313,23 @@ class PyramidKVCache(SnapKVCache):
             )
 
         if prefilling:
-            key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-            value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+            key_states = repeat_kv(
+                key_states, query_states.size(1) // key_states.size(1)
+            )
+            value_states = repeat_kv(
+                value_states, query_states.size(1) // value_states.size(1)
+            )
         else:
-            key_states, value_states = self.key_cache[layer_idx], self.value_cache[layer_idx]
-            key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-            value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+            key_states, value_states = (
+                self.key_cache[layer_idx],
+                self.value_cache[layer_idx],
+            )
+            key_states = repeat_kv(
+                key_states, query_states.size(1) // key_states.size(1)
+            )
+            value_states = repeat_kv(
+                value_states, query_states.size(1) // value_states.size(1)
+            )
 
         return key_states, value_states
 
@@ -330,7 +352,9 @@ class DynamicCacheWithRepeat(DynamicCache):
         key_states, value_states = super().update(*args, **kwargs)
         query_states = args[-1].get("query_states", None)
         key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-        value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+        value_states = repeat_kv(
+            value_states, query_states.size(1) // value_states.size(1)
+        )
         return key_states, value_states
 
 

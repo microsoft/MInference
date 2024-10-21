@@ -1,8 +1,8 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
-import os
 import json
+import os
 
 from .minference_configuration import MInferenceConfig
 from .patch import minference_patch, minference_patch_vllm, new_patch, patch_hf
@@ -43,7 +43,9 @@ class MInference:
 
     def patch_model(self, model):
         if self.config.kv_type == "retr_attn":
-            self.config.attn_kwargs["max_seq_length"] = model.config.max_position_embeddings
+            self.config.attn_kwargs[
+                "max_seq_length"
+            ] = model.config.max_position_embeddings
             self.config.attn_kwargs["max_new_tokens"] = 1000
             self.config.attn_kwargs["num_layers"] = model.config.num_hidden_layers
 
@@ -55,7 +57,7 @@ class MInference:
             with open(self.config.config_path, "r") as f:
                 self.config.attn_kwargs["best_pattern"] = json.load(f)
             model = new_patch(model, self.config)
-            
+
         elif self.config.attn_type == "minference":
             model.config.is_search = self.config.is_search
             model = minference_patch(model, self.config)

@@ -4,10 +4,11 @@
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
 
-from ..modules.quest import quest_decode_kernel
-from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
-from ..modules.retr_attn import retr_attn
 from ..modules.minference_forward import minference_prefill_forward
+from ..modules.quest import quest_decode_kernel
+from ..modules.retr_attn import retr_attn
+from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
+
 
 def attn_forward(
     self,
@@ -137,7 +138,9 @@ def attn_forward(
                 value_states,
                 decoding_kwargs,
             )
-            attn_output = attn_output.transpose(1, 2)  # [bsz, q_len, num_heads, head_dim]
+            attn_output = attn_output.transpose(
+                1, 2
+            )  # [bsz, q_len, num_heads, head_dim]
         else:
             attn_output = _flash_attention_forward(
                 query_states.transpose(1, 2),

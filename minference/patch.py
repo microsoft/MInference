@@ -728,6 +728,7 @@ def forward_llama_for_causal_lm(
     output_attentions: Optional[bool] = None,
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
+    num_logits_to_keep: int = 1,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     # assert labels is not None
     output_attentions = (
