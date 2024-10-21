@@ -5,6 +5,7 @@ from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
 
 from ..utils import apply_rotary_pos_emb_glm4
+from .kivi import KiviCache
 from .pyramid import PyramidKVCluster
 from .quest import *
 from .retr_attn import RetrAttnCache
@@ -366,4 +367,5 @@ method_to_cache_obj = {
     "streaming": StreamingLLMKVCache,
     "quest": DynamicCacheWithRepeat,
     "retr_attn": RetrAttnCache,
+    "kivi": KiviCache,
 }

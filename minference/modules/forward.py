@@ -4,6 +4,7 @@
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
 
+from ..modules.kivi import kivi_forward
 from ..modules.minference_forward import minference_prefill_forward
 from ..modules.quest import quest_decode_kernel
 from ..modules.retr_attn import retr_attn
@@ -164,7 +165,7 @@ def attn_forward(
     return attn_output, attn_weights, past_key_value
 
 
-prefill_forwards = {
+prefill_forwards = {  # None = use flash attention
     "dense": None,
     "a_shape": a_shape_kernel,
     "tri_shape": tri_shape_kernel,
@@ -178,4 +179,5 @@ decoding_forwards = {
     "quest": quest_decode_kernel,
     "streaming": None,
     "retr_attn": retr_attn,
+    "kivi": kivi_forward,
 }
