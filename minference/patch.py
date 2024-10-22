@@ -805,11 +805,20 @@ def new_patch(model, config):
 
     prefill_forward = prefill_forwards[config.attn_type]
     decoding_forward = decoding_forwards[config.kv_type]
+
+    custom_rope_func = None
+    if model.__class__.__name__ == "GlmForCausalLM":
+        from transformers.models.glm.modeling_glm import (
+            apply_rotary_pos_emb as glm_rope_func,
+        )
+
+        custom_rope_func = glm_rope_func
     forward = partial(
         attn_forward,
         prefill_forward=prefill_forward,
         decoding_forward=decoding_forward,
         attn_forward_config=config.attn_kwargs,
+        customized_rope_func=custom_rope_func,
     )
 
     def update_module(m):
