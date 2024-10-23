@@ -84,7 +84,7 @@ class MInferenceModel:
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = None,
-        kvcompress_method: str = "",
+        kv_type: str = "",
         trust_remote_code: bool = False,
         attn_type: str = "minference",
     ) -> None:
@@ -114,7 +114,7 @@ class MInferenceModel:
             name_or_path,
             config_path=config_path,
             starting_layer=starting_layer,
-            kvcompress_method=kvcompress_method,
+            kv_type=kv_type,
             kv_cache_cpu=kv_cache_cpu,
             kv_cache_cpu_device=kv_cache_cpu_device,
             is_search=False,
@@ -215,7 +215,7 @@ class Streaming(MInferenceModel):
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = None,
-        kvcompress_method: str = "",
+        kv_type: str = "",
         trust_remote_code: bool = False,
     ) -> None:
         from transformers import (
@@ -244,7 +244,7 @@ class Streaming(MInferenceModel):
             name_or_path,
             config_path=config_path,
             starting_layer=starting_layer,
-            kvcompress_method=kvcompress_method,
+            kv_type=kv_type,
             kv_cache_cpu=kv_cache_cpu,
             kv_cache_cpu_device=kv_cache_cpu_device,
             is_search=False,

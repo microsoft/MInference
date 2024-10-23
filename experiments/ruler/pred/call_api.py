@@ -106,7 +106,7 @@ parser.add_argument("--config_path", type=str)
 parser.add_argument("--starting_layer", type=int, default=-1)
 parser.add_argument("--kv_cache_cpu", action="store_true")
 parser.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
-parser.add_argument("--kvcompress_method", type=str, default="")
+parser.add_argument("--kv_type", type=str, default="")
 parser.add_argument("--trust_remote_code", action="store_true")
 
 args = parser.parse_args()
@@ -212,7 +212,7 @@ def get_llm(tokens_to_generate):
             config_path=args.config_path,
             kv_cache_cpu=args.kv_cache_cpu,
             kv_cache_cpu_device=args.kv_cache_cpu_device,
-            kvcompress_method=args.kvcompress_method,
+            kv_type=args.kv_type,
             trust_remote_code=args.trust_remote_code,
             starting_layer=args.starting_layer,
         )
@@ -246,7 +246,7 @@ def get_llm(tokens_to_generate):
             config_path=args.config_path,
             kv_cache_cpu=args.kv_cache_cpu,
             kv_cache_cpu_device=args.kv_cache_cpu_device,
-            kvcompress_method=args.kvcompress_method,
+            kv_type=args.kv_type,
             trust_remote_code=args.trust_remote_code,
             starting_layer=args.starting_layer,
         )

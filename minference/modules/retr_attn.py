@@ -8,7 +8,6 @@ from multiprocessing.dummy import Pool as ThreadPool
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import papyfaiss
 import torch
 import transformers
 from flash_attn import flash_attn_func
@@ -16,6 +15,10 @@ from transformers import LogitsProcessorList, MaxLengthCriteria, StoppingCriteri
 from transformers.generation import GenerateDecoderOnlyOutput
 from transformers.models.llama.modeling_llama import *
 from transformers.utils import ModelOutput
+from transformers.utils.import_utils import _is_package_available
+
+if _is_package_available("papyfaiss"):
+    import papyfaiss
 
 
 class VectorDB_KV_Cache:
@@ -228,7 +231,6 @@ class VectorDB_KV_Cache:
             # index = papyfaiss.IVFIndexSQ(head_num=key_states.shape[1], dim=key_states.shape[3], n_centroids=512, quant="SQ8", use_gpu=True)
             # index.set_nprobe(150, 150)
             self.key_cache.append(index)
-            print(index)
 
             # pool = ThreadPool(core)
             # tasks = range(key_states.shape[1])
@@ -301,7 +303,6 @@ class RetrAttnCache(Cache):
             value_cache, gpu_value_cache = self.vector_db_cache.sync_value_update(
                 value_states, layer_idx, self.do_strllm_until_layer, insert_db
             )
-            print(gpu_key_cache.shape, gpu_value_cache.shape)
             return (key_cache, gpu_key_cache), (value_cache, gpu_value_cache)
 
     def get_seq_length(self, layer_idx=0):

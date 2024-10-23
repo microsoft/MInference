@@ -1,13 +1,20 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Refer to the code in https://github.com/jy-yuan/KIVI/tree/main/quant
+
 import math
 import random
 
-import kivi_gemv
 import numpy as np
 import torch
 import torch.nn as nn
 import triton
 import triton.language as tl
 from transformers.models.llama.modeling_llama import Cache, repeat_kv
+from transformers.utils.import_utils import _is_package_available
+
+if _is_package_available("kivi_gemv"):
+    import kivi_gemv
 
 
 def quant_and_pack_kcache(k: torch.FloatTensor, group_size: int, bits: int):

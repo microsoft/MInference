@@ -840,7 +840,7 @@ def new_patch(model, config):
         model, model.__class__
     )
 
-    print(f"Patched model for minference with {config.kvcompress_method} ..")
+    print(f"Patched model for minference with {config.kv_type} ..")
     return model
 
 
@@ -852,7 +852,7 @@ def minference_patch(model, config):
         KV_CACHE_CPU_DEVICE = config.kv_cache_cpu_device
         model.config.kv_cache_cpu_device = config.kv_cache_cpu_device
         return minference_patch_kv_cache_cpu(model)
-    if config.kvcompress_method:
+    if config.kv_type:
         return minference_patch_with_kvcompress(model, config)
 
     model = patch_glm_4_1m(model)
@@ -949,7 +949,7 @@ def minference_patch_with_kvcompress(model, config):
     DecoderLayer = model.model.layers[0].__class__
 
     forward = kvcompress_forward(
-        Attention.forward, method=config.kvcompress_method, config=config
+        Attention.forward, method=config.kv_type, config=config
     )
 
     def update_module(m):
@@ -962,7 +962,7 @@ def minference_patch_with_kvcompress(model, config):
                 m.gather_last_q_vertical_slash_topk_v4 = (
                     gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
                 )
-            if config.kvcompress_method == "quest":
+            if config.kv_type == "quest":
                 m.flash_forward = types.MethodType(LlamaFlashAttention2.forward, m)
                 m.token_budget = (
                     1024 if not hasattr(m, "token_budget") else m.token_budget
@@ -971,13 +971,13 @@ def minference_patch_with_kvcompress(model, config):
             m.forward = forward.__get__(m, Attention)
 
     model.apply(update_module)
-    prepare_cache_func = prepare_cache(config.kvcompress_method, config)
+    prepare_cache_func = prepare_cache(config.kv_type, config)
     model._prepare_cache_for_generation = prepare_cache_func.__get__(
         model, model.__class__
     )
 
     prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
-        config.kvcompress_method, config, model.prepare_inputs_for_generation
+        config.kv_type, config, model.prepare_inputs_for_generation
     )
     model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
         model, model.__class__
@@ -989,7 +989,7 @@ def minference_patch_with_kvcompress(model, config):
     #         model.model, model.model.__class__
     #     )
     # )
-    print(f"Patched model for minference with {config.kvcompress_method} ..")
+    print(f"Patched model for minference with {config.kv_type} ..")
     return model
 
 

@@ -34,7 +34,6 @@ class MInferenceConfig:
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = "cpu",
-        kvcompress_method: str = "",
         kv_type: str = "dense",
         is_search: bool = False,
         attn_kwargs: dict = {},
@@ -51,7 +50,6 @@ class MInferenceConfig:
         self.starting_layer = starting_layer
         self.kv_cache_cpu = kv_cache_cpu
         self.kv_cache_cpu_device = kv_cache_cpu_device
-        self.kvcompress_method = kvcompress_method
         self.kv_type = kv_type
         self.attn_kwargs = attn_kwargs
 
