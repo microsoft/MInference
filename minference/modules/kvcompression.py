@@ -19,7 +19,7 @@ def prepare_inputs_for_generation_kvcompression(
         outputs = original_prepare_inputs_for_generation(*args, **kwargs)
         use_cache = kwargs.get("use_cache", True)
         if use_cache and not isinstance(
-            outputs["past_key_values"], method_to_cache_obj[method]
+            outputs.get("past_key_values", None), method_to_cache_obj[method]
         ):
             cache_obj: Cache = method_to_cache_obj[method]
             config.num_layers = self.config.num_hidden_layers
@@ -351,11 +351,16 @@ class StreamingLLMKVCache(SnapKVCache):
 class DynamicCacheWithRepeat(DynamicCache):
     def update(self, *args, **kwargs):
         key_states, value_states = super().update(*args, **kwargs)
-        query_states = args[-1].get("query_states", None)
-        key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-        value_states = repeat_kv(
-            value_states, query_states.size(1) // value_states.size(1)
+        query_states = (
+            args[-1].get("query_states", None) if isinstance(args[-1], dict) else None
         )
+        if query_states is not None:
+            key_states = repeat_kv(
+                key_states, query_states.size(1) // key_states.size(1)
+            )
+            value_states = repeat_kv(
+                value_states, query_states.size(1) // value_states.size(1)
+            )
         return key_states, value_states
 
 
