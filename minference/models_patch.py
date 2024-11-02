@@ -44,8 +44,10 @@ class MInference:
             self.config.attn_kwargs[
                 "max_seq_length"
             ] = model.config.max_position_embeddings
-            self.config.attn_kwargs["max_new_tokens"] = 1000
+            self.config.attn_kwargs["max_new_tokens"] = 1024
             self.config.attn_kwargs["num_layers"] = model.config.num_hidden_layers
+            self.config.attn_kwargs["top_k"] = 1000
+            self.config.attn_kwargs["from_layer"] = 0
 
         if "vllm" not in self.config.attn_type:
             model.config.starting_layer = self.config.starting_layer

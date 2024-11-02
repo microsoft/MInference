@@ -273,12 +273,15 @@ class RetrAttnCache(Cache):
 
     def update(self, key_states, value_states, layer_idx, cache_kwargs):
         query_states = cache_kwargs.get("query_states", None)
-        insert_db = cache_kwargs.get("update_kv_cache", True)
+        q_len = query_states.size(-2)
+        insert_db = cache_kwargs.get("update_global_past_kv", True)
 
         if layer_idx == 0:
             self._seen_tokens += key_states.size(-2)
 
-        if key_states.size(-2) != 1:  # prefill
+        # if query_states.size(-2) != 1:  # prefill
+        # if len(self.vector_db_cache.value_cache) == layer_idx: # initializing vector_db_cache
+        if q_len == self._seen_tokens:
             self.vector_db_cache.async_update(
                 key_states.contiguous(),
                 value_states,
@@ -295,20 +298,48 @@ class RetrAttnCache(Cache):
             value_states = repeat_kv(
                 value_states, query_states.size(1) // value_states.size(1)
             )
+            # assert len(self.vector_db_cache.value_cache) == layer_idx + 1
             return key_states, value_states
-        else:  # decoding
-            key_cache, gpu_key_cache = self.vector_db_cache.sync_key_update(
-                key_states, layer_idx, self.do_strllm_until_layer, self.core, insert_db
-            )
-            value_cache, gpu_value_cache = self.vector_db_cache.sync_value_update(
-                value_states, layer_idx, self.do_strllm_until_layer, insert_db
-            )
+        else:
+            if q_len == 1:  # the decoding
+                key_cache, gpu_key_cache = self.vector_db_cache.sync_key_update(
+                    key_states,
+                    layer_idx,
+                    self.do_strllm_until_layer,
+                    self.core,
+                    insert_db,
+                )
+                value_cache, gpu_value_cache = self.vector_db_cache.sync_value_update(
+                    value_states, layer_idx, self.do_strllm_until_layer, insert_db
+                )
+            else:  # the follow-up queries
+                for i in range(q_len):  # insert query token one by one
+                    key_cache, gpu_key_cache = self.vector_db_cache.sync_key_update(
+                        key_states[:, :, i : i + 1, :],
+                        layer_idx,
+                        self.do_strllm_until_layer,
+                        self.core,
+                        insert_db,
+                    )
+                    (
+                        value_cache,
+                        gpu_value_cache,
+                    ) = self.vector_db_cache.sync_value_update(
+                        value_states[:, :, i : i + 1, :],
+                        layer_idx,
+                        self.do_strllm_until_layer,
+                        insert_db,
+                    )
             return (key_cache, gpu_key_cache), (value_cache, gpu_value_cache)
 
     def get_seq_length(self, layer_idx=0):
         if len(self.vector_db_cache.gpu_key_cache) <= layer_idx:
             return 0
         return self._seen_tokens
+
+    def clear_temp_kv_cache(self):
+        self._seen_tokens -= self.vector_db_cache.temp_seen
+        self.vector_db_cache.temp_seen = 0
 
 
 def retr_attn(
@@ -320,8 +351,9 @@ def retr_attn(
     key_cache, gpu_key_cache = key_cache
     value_cache, gpu_value_cache = value_cache
 
+    kv_heads = gpu_key_cache.size(1)
     num_key_value_groups = decoding_kwargs.get(
-        "num_key_value_groups", q.size(1) // gpu_key_cache.size(1)
+        "num_key_value_groups", q.size(1) // kv_heads
     )
     layer_idx = decoding_kwargs.get("layer_idx", None)
     top_k = decoding_kwargs["attn_forward_config"].get("top_k", 200)
@@ -339,7 +371,6 @@ def retr_attn(
 
     # retrieval
     top_k = top_k if layer_idx >= from_layer else 124_000
-    top_k = 2000
     if key_cache.get_index_type() == "Flat":
         distances, indices = key_cache.search(q[0], num_key_value_groups, top_k, core)
     elif "IVF" in key_cache.get_index_type():
@@ -378,7 +409,6 @@ def retr_attn(
             )
 
     retrieval_out = retrieval_out.to(q_dtype).to(device)
-
     if gpu_key_cache is not None:
         flash_out, flash_lse, _ = flash_attn_func(
             qq.transpose(1, 2),
