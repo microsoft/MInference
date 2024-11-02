@@ -273,7 +273,7 @@ class RetrAttnCache(Cache):
 
     def update(self, key_states, value_states, layer_idx, cache_kwargs):
         query_states = cache_kwargs.get("query_states", None)
-        insert_db = cache_kwargs.get("update_kv_cache", False)
+        insert_db = cache_kwargs.get("update_kv_cache", True)
 
         if layer_idx == 0:
             self._seen_tokens += key_states.size(-2)

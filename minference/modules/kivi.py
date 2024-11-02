@@ -569,6 +569,9 @@ class KiviCache(Cache):
         self.kv_cache = []
         self._seen_tokens = 0
 
+        self.temp_key_cache = []
+        self.temp_value_cache = []
+
     def update(
         self,
         key_states,
@@ -576,6 +579,7 @@ class KiviCache(Cache):
         layer_idx,
         cache_kwargs,
     ):
+        update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
         query_states = cache_kwargs["query_states"]
 
         if layer_idx == 0:
@@ -664,70 +668,34 @@ class KiviCache(Cache):
             value_scale = self.kv_cache[layer_idx][6]
             value_mn = self.kv_cache[layer_idx][7]
 
-            if key_states_full is not None:
-                key_states_full = torch.cat([key_states_full, key_states], dim=2)
+            if not update_global_past_kv:
+                if len(self.temp_key_cache) == layer_idx:
+                    self.temp_key_cache.append(key_states)
+                    self.temp_value_cache.append(value_states)
+                else:
+                    self.temp_key_cache[layer_idx] = torch.cat(
+                        [self.temp_key_cache[layer_idx], key_states], dim=-2
+                    )
+                    self.temp_value_cache[layer_idx] = torch.cat(
+                        [self.temp_value_cache[layer_idx], value_states], dim=-2
+                    )
+
+                key_states_full_rt = torch.cat(
+                    [key_states_full, self.temp_key_cache[layer_idx]], dim=-2
+                )
+                value_states_full_rt = torch.cat(
+                    [value_states_full, self.temp_value_cache[layer_idx]], dim=-2
+                )
+
             else:
-                key_states_full = key_states
-
-            key_out = (
-                key_states_quant_trans,
-                key_states_full,
-                key_scale_trans,
-                key_mn_trans,
-            )
-
-            if key_states_full.shape[-2] == self.residual_length:
-                assert self.residual_length % self.group_size == 0
-                (
-                    key_states_quant_trans_new,
-                    key_scale_trans_new,
-                    key_mn_trans_new,
-                ) = triton_quantize_and_pack_along_last_dim(
-                    key_states_full.transpose(2, 3).contiguous(),
-                    self.group_size,
-                    self.k_bits,
-                )
-                key_states_full = None
-                if key_states_quant_trans is not None:
-                    key_states_quant_trans = torch.cat(
-                        [key_states_quant_trans, key_states_quant_trans_new], dim=3
-                    )
-                    key_scale_trans = torch.cat(
-                        [key_scale_trans, key_scale_trans_new], dim=3
-                    )
-                    key_mn_trans = torch.cat([key_mn_trans, key_mn_trans_new], dim=3)
+                if key_states_full is not None:
+                    key_states_full = torch.cat([key_states_full, key_states], dim=2)
                 else:
-                    key_states_quant_trans = key_states_quant_trans_new
-                    key_scale_trans = key_scale_trans_new
-                    key_mn_trans = key_mn_trans_new
+                    key_states_full = key_states
 
-            value_states_full = torch.cat([value_states_full, value_states], dim=2)
-            value_full_length = value_states_full.shape[-2]
-
-            value_out = (value_states_quant, value_states_full, value_scale, value_mn)
-
-            if value_full_length > self.residual_length:
-                assert value_full_length == self.residual_length + 1
-                (
-                    value_states_quant_new,
-                    scale,
-                    mn,
-                ) = triton_quantize_and_pack_along_last_dim(
-                    value_states_full[:, :, :1, :].contiguous(),
-                    self.group_size,
-                    self.v_bits,
-                )
-                value_states_full = value_states_full[:, :, 1:, :].contiguous()
-                if value_states_quant is not None:
-                    value_states_quant = torch.cat(
-                        [value_states_quant, value_states_quant_new], dim=2
-                    )
-                    value_scale = torch.cat([value_scale, scale], dim=2)
-                    value_mn = torch.cat([value_mn, mn], dim=2)
-                else:
-                    value_states_quant = value_states_quant_new
-                    value_scale = scale
-                    value_mn = mn
+                value_states_full = torch.cat([value_states_full, value_states], dim=2)
+                key_states_full_rt = key_states_full
+                value_states_full_rt = value_states_full
 
             self.kv_cache[layer_idx] = (
                 key_states_quant_trans,
@@ -740,6 +708,229 @@ class KiviCache(Cache):
                 value_mn,
             )
 
+            key_out = (
+                key_states_quant_trans,
+                key_states_full_rt,  # key_states_full
+                key_scale_trans,
+                key_mn_trans,
+            )
+            value_out = (
+                value_states_quant,
+                value_states_full_rt,
+                value_scale,
+                value_mn,
+            )
+            return key_out, value_out
+
+    def legacy_update(
+        self,
+        key_states,
+        value_states,
+        layer_idx,
+        cache_kwargs,
+    ):
+        update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
+        query_states = cache_kwargs["query_states"]
+
+        if layer_idx == 0:
+            self._seen_tokens += key_states.size(-2)
+
+        prefilling = False
+        if len(self.kv_cache) == layer_idx:
+            prefilling = True
+
+            if key_states.shape[-2] % self.residual_length != 0:
+                if key_states.shape[-2] < self.residual_length:
+                    key_states_quant = None
+                    key_states_full = key_states
+                else:
+                    key_states_quant = key_states[
+                        :, :, : -(key_states.shape[-2] % self.residual_length), :
+                    ].contiguous()
+                    key_states_full = key_states[
+                        :, :, -(key_states.shape[-2] % self.residual_length) :, :
+                    ].contiguous()
+            else:
+                key_states_quant = key_states
+                key_states_full = None
+
+            if key_states_quant is not None:
+                (
+                    key_states_quant_trans,
+                    key_scale_trans,
+                    key_mn_trans,
+                ) = triton_quantize_and_pack_along_last_dim(
+                    key_states_quant.transpose(2, 3).contiguous(),
+                    self.group_size,
+                    self.k_bits,
+                )
+            else:
+                key_states_quant_trans = None
+                key_scale_trans = None
+                key_mn_trans = None
+
+            if value_states.shape[-2] <= self.residual_length:
+                value_states_quant = None
+                value_states_full = value_states
+                value_scale = None
+                value_mn = None
+            else:
+                value_states_quant = value_states[
+                    :, :, : -self.residual_length, :
+                ].contiguous()
+                value_states_full = value_states[
+                    :, :, -self.residual_length :, :
+                ].contiguous()
+                (
+                    value_states_quant,
+                    value_scale,
+                    value_mn,
+                ) = triton_quantize_and_pack_along_last_dim(
+                    value_states_quant, self.group_size, self.v_bits
+                )
+
+            self.kv_cache.append(
+                (
+                    key_states_quant_trans,
+                    key_states_full,
+                    key_scale_trans,
+                    key_mn_trans,
+                    value_states_quant,
+                    value_states_full,
+                    value_scale,
+                    value_mn,
+                )
+            )
+
+            return (
+                repeat_kv(key_states, query_states.size(-1) // key_states.size(-1)),
+                repeat_kv(value_states, query_states.size(-1) // value_states.size(-1)),
+            )
+
+        else:  # decoding
+            key_states_quant_trans = self.kv_cache[layer_idx][0]
+            key_states_full = self.kv_cache[layer_idx][1]
+            key_scale_trans = self.kv_cache[layer_idx][2]
+            key_mn_trans = self.kv_cache[layer_idx][3]
+
+            value_states_quant = self.kv_cache[layer_idx][4]
+            value_states_full = self.kv_cache[layer_idx][5]
+            value_scale = self.kv_cache[layer_idx][6]
+            value_mn = self.kv_cache[layer_idx][7]
+
+            if not update_global_past_kv:
+                if len(self.temp_key_cache) == layer_idx:
+                    self.temp_key_cache.append(key_states)
+                    self.temp_value_cache.append(value_states)
+                else:
+                    self.temp_key_cache[layer_idx] = torch.cat(
+                        [self.temp_key_cache[layer_idx], key_states], dim=-2
+                    )
+                    self.temp_value_cache[layer_idx] = torch.cat(
+                        [self.temp_value_cache[layer_idx], value_states], dim=-2
+                    )
+
+                key_states_full_rt = torch.cat(
+                    [key_states_full, self.temp_key_cache[layer_idx]], dim=-2
+                )
+                value_states_full_rt = torch.cat(
+                    [value_states_full, self.temp_value_cache[layer_idx]], dim=-2
+                )
+
+            else:
+                if key_states_full is not None:
+                    key_states_full = torch.cat([key_states_full, key_states], dim=2)
+                else:
+                    key_states_full = key_states
+
+                if key_states_full.shape[-2] > self.residual_length:
+                    key_states_quant = key_states_full[
+                        :, :, : -(key_states_full.shape[-2] % self.residual_length), :
+                    ].contiguous()
+                    key_states_full = key_states_full[
+                        :, :, -(key_states_full.shape[-2] % self.residual_length) :, :
+                    ].contiguous()
+
+                    (
+                        key_states_quant_trans_new,
+                        key_scale_trans_new,
+                        key_mn_trans_new,
+                    ) = triton_quantize_and_pack_along_last_dim(
+                        key_states_quant.transpose(2, 3).contiguous(),
+                        self.group_size,
+                        self.k_bits,
+                    )
+                    if key_states_quant_trans is not None:
+                        key_states_quant_trans = torch.cat(
+                            [key_states_quant_trans, key_states_quant_trans_new], dim=3
+                        )
+                        key_scale_trans = torch.cat(
+                            [key_scale_trans, key_scale_trans_new], dim=3
+                        )
+                        key_mn_trans = torch.cat(
+                            [key_mn_trans, key_mn_trans_new], dim=3
+                        )
+                    else:
+                        key_states_quant_trans = key_states_quant_trans_new
+                        key_scale_trans = key_scale_trans_new
+                        key_mn_trans = key_mn_trans_new
+
+                value_states_full = torch.cat([value_states_full, value_states], dim=2)
+                value_full_length = value_states_full.shape[-2]
+
+                if value_full_length > self.residual_length:
+                    value_states_to_quant = value_states_full[
+                        :, :, : -(value_full_length % self.residual_length), :
+                    ].contiguous()
+                    value_states_full = value_states_full[
+                        :, :, -(value_full_length % self.residual_length) :, :
+                    ].contiguous()
+
+                    (
+                        value_states_quant_new,
+                        scale,
+                        mn,
+                    ) = triton_quantize_and_pack_along_last_dim(
+                        value_states_to_quant.contiguous(),
+                        self.group_size,
+                        self.v_bits,
+                    )
+                    if value_states_quant is not None:
+                        value_states_quant = torch.cat(
+                            [value_states_quant, value_states_quant_new], dim=2
+                        )
+                        value_scale = torch.cat([value_scale, scale], dim=2)
+                        value_mn = torch.cat([value_mn, mn], dim=2)
+                    else:
+                        value_states_quant = value_states_quant_new
+                        value_scale = scale
+                        value_mn = mn
+                key_states_full_rt = key_states_full
+                value_states_full_rt = value_states_full
+
+            self.kv_cache[layer_idx] = (
+                key_states_quant_trans,
+                key_states_full,
+                key_scale_trans,
+                key_mn_trans,
+                value_states_quant,
+                value_states_full,
+                value_scale,
+                value_mn,
+            )
+
+            key_out = (
+                key_states_quant_trans,
+                key_states_full_rt,  # key_states_full
+                key_scale_trans,
+                key_mn_trans,
+            )
+            value_out = (
+                value_states_quant,
+                value_states_full_rt,
+                value_scale,
+                value_mn,
+            )
             return key_out, value_out
 
     def get_seq_length(self, layer_idx=0):
@@ -747,12 +938,20 @@ class KiviCache(Cache):
             return 0
         return self._seen_tokens
 
+    def clear_temp_kv_cache(self):
+        self._seen_tokens -= self.temp_key_cache[-1].shape[
+            -2
+        ]  # seq_len of temp_kv_cache
+        self.temp_key_cache = []
+        self.temp_value_cache = []
+
 
 def kivi_forward(query_states, key_states, value_states, decoding_kwargs):
     group_size = decoding_kwargs.get("group_size", 32)
     k_bits = decoding_kwargs.get("k_bits", 2)
     v_bits = decoding_kwargs.get("v_bits", 2)
     head_dim = query_states.size(-1)
+    q_len = query_states.shape[-2]
 
     key_states_quant_trans = key_states[0]
     key_states_full = key_states[1]
@@ -776,43 +975,96 @@ def kivi_forward(query_states, key_states, value_states, decoding_kwargs):
     value_states_full = repeat_kv(value_states_full, num_key_value_groups)
 
     if key_states_quant_trans is not None:
-        att_qkquant = cuda_bmm_fA_qB_outer(
-            group_size,
-            query_states.to(torch.float16),
-            key_states_quant_trans,
-            key_scale_trans,
-            key_mn_trans,
-            k_bits,
-        )
+        if q_len == 1:
+            att_qkquant = cuda_bmm_fA_qB_outer(
+                group_size,
+                query_states.to(torch.float16),
+                key_states_quant_trans,
+                key_scale_trans,
+                key_mn_trans,
+                k_bits,
+            )
+        else:  # cuda_bmm_fA_qB_outer will lead to nan when query_states.shape[-2] > 1, need a fix in the kernel side
+            attn_qkquants_t = []
+            for i in range(q_len):
+                att_qkquant_i = cuda_bmm_fA_qB_outer(
+                    group_size,
+                    query_states[:, :, i : i + 1, :].to(torch.float16),
+                    key_states_quant_trans,
+                    key_scale_trans,
+                    key_mn_trans,
+                    k_bits,
+                )
+                attn_qkquants_t.append(att_qkquant_i)
+            att_qkquant = torch.cat(attn_qkquants_t, dim=2)
     else:
         att_qkquant = None
 
+    if torch.isnan(att_qkquant).any():
+        print("NaN in att_qkquant")
     att_qkfull = torch.matmul(query_states, key_states_full.transpose(2, 3))
 
     if att_qkquant is not None:
         attn_weights = torch.cat(
-            [att_qkquant, att_qkfull.to(torch.float16)], dim=-1
+            [att_qkquant.to(query_states.dtype), att_qkfull], dim=-1
         ) / math.sqrt(head_dim)
     else:
         attn_weights = att_qkfull / math.sqrt(head_dim)
 
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(
-        query_states.dtype
-    )
+    value_full_length = value_states_full.shape[-2]
+    if q_len == 1:
+        attn_weights = nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32
+        ).to(query_states.dtype)
+    else:
+        attn_weights += (
+            torch.triu(
+                torch.ones_like(attn_weights), diagonal=value_full_length - q_len + 1
+            )
+            * torch.finfo(attn_weights.dtype).min
+        )
+        attn_weights = nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32
+        ).to(query_states.dtype)
+
     value_full_length = value_states_full.shape[-2]
     if value_states_quant is not None:
-        attn_output = cuda_bmm_fA_qB_outer(
-            group_size,
-            attn_weights[:, :, :, :-value_full_length].to(torch.float16),
-            value_states_quant,
-            value_scale,
-            value_mn,
-            v_bits,
-        ).to(torch.bfloat16)
-        attn_output += torch.matmul(
-            attn_weights[:, :, :, -value_full_length:], value_states_full
-        )
+        if q_len == 1:
+            attn_output = cuda_bmm_fA_qB_outer(
+                group_size,
+                attn_weights[:, :, :, :-value_full_length].to(torch.float16),
+                value_states_quant,
+                value_scale,
+                value_mn,
+                v_bits,
+            ).to(torch.bfloat16)
+            attn_output += torch.matmul(
+                attn_weights[:, :, :, -value_full_length:], value_states_full
+            )
+        else:
+            # if q_len > 1:
+            attn_outputs = []
+            for i in range(q_len):
+                attn_output_i = cuda_bmm_fA_qB_outer(
+                    group_size,
+                    attn_weights[:, :, i : i + 1, :-value_full_length].to(
+                        torch.float16
+                    ),
+                    value_states_quant,
+                    value_scale,
+                    value_mn,
+                    v_bits,
+                ).to(torch.bfloat16)
+                attn_outputs.append(attn_output_i)
+            attn_output = torch.cat(attn_outputs, dim=2)
+            attn_output += torch.matmul(
+                attn_weights[:, :, :, -value_full_length:], value_states_full
+            )
+            # torch.testing.assert_close(attn_output, attn_output_t)
     else:
         attn_output = torch.matmul(attn_weights, value_states_full)
+
+    if torch.isnan(attn_output).any():
+        print("NaN in attn_output")
 
     return attn_output

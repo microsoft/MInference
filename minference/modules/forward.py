@@ -79,6 +79,7 @@ def attn_forward(
             "attention_mask": attention_mask,
             "num_key_value_groups": self.num_key_value_groups,
             "query_states": query_states,
+            "update_global_past_kv": getattr(self, "update_global_past_kv", True),
         }
         (
             key_states,
@@ -94,9 +95,8 @@ def attn_forward(
 
     dropout_rate = self.attention_dropout if self.training else 0.0
 
-    # if q_len == key_states.size(-2):  # prefilling
-    if q_len == past_key_value.get_seq_length(self.layer_idx):
-        assert q_len != 1
+    if q_len == past_key_value.get_seq_length(self.layer_idx):  # prefilling
+        # if q_len != 1: # prefilling
         if prefill_forward is not None:  # eg, a-shape/tri-shape/minference
             prefill_kwargs = {
                 "attention_mask": attention_mask,
@@ -125,8 +125,8 @@ def attn_forward(
             )
 
     else:  # decoding
-        assert q_len == 1
-        if decoding_forward is not None:  # eg, llama-3.1
+        # assert q_len == 1
+        if decoding_forward is not None:  # eg, retr_attn
             decoding_kwargs = {
                 "layer_idx": self.layer_idx,
                 "attn_forward_config": attn_forward_config,
@@ -177,7 +177,7 @@ decoding_forwards = {
     "snapkv": None,
     "pyramidkv": None,
     "quest": quest_decode_kernel,
-    "streaming": None,
+    "streamingllm": None,
     "retr_attn": retr_attn,
     "kivi": kivi_forward,
 }

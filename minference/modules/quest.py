@@ -244,7 +244,11 @@ def quest_decode_kernel(
         query_states.size(-1)
     )
 
-    sign = (query_states > 0) + (~(query_states > 0)) * -1
+    sign = (query_states > 0) + (
+        ~(query_states > 0)
+    ) * -1  # [bsz, nh, q_len, kv_seq_len]
+    if sign.size(-2) != 1:
+        sign = sign.sum(dim=-2, keepdim=True)
     max_key = key_states * sign
     postive_query = query_states * sign
 
@@ -279,7 +283,7 @@ def quest_decode_kernel(
         chunk_max_key.shape[0], chunk_max_key.shape[1], -1, chunk_max_key.shape[-1]
     )[:, :, :seq_length, :]
 
-    quantized_weight = torch.matmul(
+    quantized_weight = torch.matmul(  # [bsz, nh, q_len, kv_seq_len]
         postive_query.float(),
         chunk_max_key.transpose(2, 3),
     )

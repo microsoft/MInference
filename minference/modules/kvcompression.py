@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+from transformers.cache_utils import Cache, SinkCache
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
 
@@ -159,6 +160,9 @@ class SnapKVCache(Cache):
         self.kv_clusters = []
         self.kv_cluster_class = SnapKVCluster
 
+        self.temp_key_cache = []
+        self.temp_value_cache = []
+
     def update(
         self,
         key_states,
@@ -168,9 +172,9 @@ class SnapKVCache(Cache):
     ):
         # if prefill, then compress
         # if decode, then update
-
         # [bsz, num_heads, q_len, head_dim]
 
+        update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
         query_states = cache_kwargs["query_states"]
         attention_mask = cache_kwargs["attention_mask"]
         num_key_value_groups = cache_kwargs["num_key_value_groups"]
@@ -182,10 +186,12 @@ class SnapKVCache(Cache):
         if layer_idx == 0:
             self._seen_tokens += key_states.shape[-2]
 
-        prefilling = False
-        if len(self.kv_clusters) == layer_idx:
-            # prefilling
-            prefilling = True
+        q_len = query_states.shape[-2]
+        initializing_kv_cluster = False
+        if (
+            len(self.kv_clusters) == layer_idx
+        ):  # initialize kv_cluster, ie, the first query/context
+            initializing_kv_cluster = True
             kv_cluster = self.kv_cluster_class(
                 self.window_size,
                 self.max_capacity_prompt,
@@ -201,35 +207,46 @@ class SnapKVCache(Cache):
                 attention_mask,
                 num_key_value_groups,
             )
-
-        if len(self.key_cache) == layer_idx:
             self.key_cache.append(key_compress)
             self.value_cache.append(value_compress)
-        else:
-            self.key_cache[layer_idx] = torch.cat(
-                [self.key_cache[layer_idx], key_states], dim=-2
-            )
-            self.value_cache[layer_idx] = torch.cat(
-                [self.value_cache[layer_idx], value_states], dim=-2
-            )
+
+        else:  # the follow up queries/contexts
+            if update_global_past_kv:
+                self.key_cache[layer_idx] = torch.cat(
+                    [self.key_cache[layer_idx], key_states], dim=-2
+                )
+                self.value_cache[layer_idx] = torch.cat(
+                    [self.value_cache[layer_idx], value_states], dim=-2
+                )
+            else:  # add KVs to temp_kv_cache
+                if len(self.temp_key_cache) == layer_idx:
+                    self.temp_key_cache.append(key_states)
+                    self.temp_value_cache.append(value_states)
+                else:
+                    self.temp_key_cache[layer_idx] = torch.cat(
+                        [self.temp_key_cache[layer_idx], key_states], dim=-2
+                    )
+                    self.temp_value_cache[layer_idx] = torch.cat(
+                        [self.temp_value_cache[layer_idx], value_states], dim=-2
+                    )
 
         torch.cuda.empty_cache()
-        if prefilling:
-            key_states = repeat_kv(
-                key_states, query_states.size(1) // key_states.size(1)
-            )
-            value_states = repeat_kv(
-                value_states, query_states.size(1) // value_states.size(1)
-            )
-        else:
-            key_states = repeat_kv(
-                self.key_cache[layer_idx],
-                query_states.size(1) // self.key_cache[layer_idx].size(1),
-            )
-            value_states = repeat_kv(
-                self.value_cache[layer_idx],
-                query_states.size(1) // self.value_cache[layer_idx].size(1),
-            )
+        if not initializing_kv_cluster:  # return the compressed KV cache
+            if self.temp_key_cache:  # concat global past_kv and temp_kv_cache
+                key_states = torch.cat(
+                    [self.key_cache[layer_idx], self.temp_key_cache[layer_idx]], dim=-2
+                )
+                value_states = torch.cat(
+                    [self.value_cache[layer_idx], self.temp_value_cache[layer_idx]],
+                    dim=-2,
+                )
+            else:
+                key_states = self.key_cache[layer_idx]
+                value_states = self.value_cache[layer_idx]
+        key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+        value_states = repeat_kv(
+            value_states, query_states.size(1) // value_states.size(1)
+        )
         return key_states, value_states
 
     def get_seq_length(self, layer_idx=0):
@@ -251,6 +268,13 @@ class SnapKVCache(Cache):
             cache.update(key_states, value_states, layer_idx)
         return cache
 
+    def clear_temp_kv_cache(self):
+        self._seen_tokens -= self.temp_key_cache[-1].shape[
+            -2
+        ]  # seq_len of temp_kv_cache
+        self.temp_key_cache = []
+        self.temp_value_cache = []
+
 
 class PyramidKVCache(SnapKVCache):
     def __init__(self, config):
@@ -268,7 +292,7 @@ class PyramidKVCache(SnapKVCache):
     ):
         # if prefill, then compress
         # if decode, then update
-
+        update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
         query_states = cache_kwargs["query_states"]
         attention_mask = cache_kwargs["attention_mask"]
         num_key_value_groups = cache_kwargs["num_key_value_groups"]
@@ -280,10 +304,9 @@ class PyramidKVCache(SnapKVCache):
         if layer_idx == 0:
             self._seen_tokens += key_states.shape[-2]
 
-        prefilling = False
+        initializing_kv_cluster = False
         if len(self.kv_clusters) == layer_idx:
-            # prefilling
-            prefilling = True
+            initializing_kv_cluster = True
             kv_cluster = self.kv_cluster_class(
                 self.num_layers,
                 self.window_size,
@@ -301,37 +324,46 @@ class PyramidKVCache(SnapKVCache):
                 attention_mask,
                 num_key_value_groups,
             )
-
-        if len(self.key_cache) == layer_idx:
             self.key_cache.append(key_compress)
             self.value_cache.append(value_compress)
         else:
-            self.key_cache[layer_idx] = torch.cat(
-                [self.key_cache[layer_idx], key_states], dim=-2
-            )
-            self.value_cache[layer_idx] = torch.cat(
-                [self.value_cache[layer_idx], value_states], dim=-2
-            )
+            if update_global_past_kv:
+                self.key_cache[layer_idx] = torch.cat(
+                    [self.key_cache[layer_idx], key_states], dim=-2
+                )
+                self.value_cache[layer_idx] = torch.cat(
+                    [self.value_cache[layer_idx], value_states], dim=-2
+                )
+            else:
+                if len(self.temp_key_cache) == layer_idx:
+                    self.temp_key_cache.append(key_states)
+                    self.temp_value_cache.append(value_states)
+                else:
+                    self.temp_key_cache[layer_idx] = torch.cat(
+                        [self.temp_key_cache[layer_idx], key_states], dim=-2
+                    )
+                    self.temp_value_cache[layer_idx] = torch.cat(
+                        [self.temp_value_cache[layer_idx], value_states], dim=-2
+                    )
 
-        if prefilling:
-            key_states = repeat_kv(
-                key_states, query_states.size(1) // key_states.size(1)
-            )
-            value_states = repeat_kv(
-                value_states, query_states.size(1) // value_states.size(1)
-            )
-        else:
-            key_states, value_states = (
-                self.key_cache[layer_idx],
-                self.value_cache[layer_idx],
-            )
-            key_states = repeat_kv(
-                key_states, query_states.size(1) // key_states.size(1)
-            )
-            value_states = repeat_kv(
-                value_states, query_states.size(1) // value_states.size(1)
-            )
-
+        if not initializing_kv_cluster:
+            if self.temp_key_cache:  # concat global past_kv and temp_kv_cache
+                key_states = torch.cat(
+                    [self.key_cache[layer_idx], self.temp_key_cache[layer_idx]], dim=-2
+                )
+                value_states = torch.cat(
+                    [self.value_cache[layer_idx], self.temp_value_cache[layer_idx]],
+                    dim=-2,
+                )
+            else:
+                key_states, value_states = (
+                    self.key_cache[layer_idx],
+                    self.value_cache[layer_idx],
+                )
+        key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+        value_states = repeat_kv(
+            value_states, query_states.size(1) // value_states.size(1)
+        )
         return key_states, value_states
 
 
@@ -349,11 +381,65 @@ class StreamingLLMKVCache(SnapKVCache):
 
 
 class DynamicCacheWithRepeat(DynamicCache):
-    def update(self, *args, **kwargs):
-        key_states, value_states = super().update(*args, **kwargs)
-        query_states = (
-            args[-1].get("query_states", None) if isinstance(args[-1], dict) else None
-        )
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.temp_key_cache = []
+        self.temp_value_cache = []
+
+    def update(
+        self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs=None,
+    ):
+        update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
+        if layer_idx == 0:
+            self._seen_tokens += key_states.shape[-2]
+
+        if update_global_past_kv:  # add KVs to global past_kv
+            assert len(self.temp_key_cache) == 0 and len(self.temp_value_cache) == 0, (
+                "when you updating global past_kv, make sure the temp_kv_cache is empty. "
+                "User past_key_values.clear_temp_kv_cache() to empty the temp_kv_cache"
+            )
+
+            # prefilling
+            if len(self.key_cache) == layer_idx:
+                self.key_cache.append(key_states)
+                self.value_cache.append(value_states)
+            else:  # decoding
+                self.key_cache[layer_idx] = torch.cat(
+                    [self.key_cache[layer_idx], key_states], dim=-2
+                )
+                self.value_cache[layer_idx] = torch.cat(
+                    [self.value_cache[layer_idx], value_states], dim=-2
+                )
+        else:  # add KVs to temp_kv_cache, this is used when you have a common context but different query, the KVs of the query will be added to temp_kv_cache, and will be cleaned in the next query
+            if len(self.temp_key_cache) == layer_idx:
+                self.temp_key_cache.append(key_states)
+                self.temp_value_cache.append(value_states)
+            else:  # decoding
+                self.temp_key_cache[layer_idx] = torch.cat(
+                    [self.temp_key_cache[layer_idx], key_states], dim=-2
+                )
+                self.temp_value_cache[layer_idx] = torch.cat(
+                    [self.temp_value_cache[layer_idx], value_states], dim=-2
+                )
+
+        if self.temp_key_cache:  # concat global past_kv and temp_kv_cache
+            key_states, value_states = torch.cat(
+                [self.key_cache[layer_idx], self.temp_key_cache[layer_idx]], dim=-2
+            ), torch.cat(
+                [self.value_cache[layer_idx], self.temp_value_cache[layer_idx]], dim=-2
+            )
+        else:
+            key_states, value_states = (
+                self.key_cache[layer_idx],
+                self.value_cache[layer_idx],
+            )
+
+        # repeat kv if needed
+        query_states = cache_kwargs.get("query_states", None)
         if query_states is not None:
             key_states = repeat_kv(
                 key_states, query_states.size(1) // key_states.size(1)
@@ -363,13 +449,25 @@ class DynamicCacheWithRepeat(DynamicCache):
             )
         return key_states, value_states
 
+    def get_seq_length(self, layer_idx=0):
+        if len(self.key_cache) <= layer_idx:
+            return 0
+        return self._seen_tokens
+
+    def clear_temp_kv_cache(self):
+        self._seen_tokens -= self.temp_key_cache[-1].shape[
+            -2
+        ]  # seq_len of temp_kv_cache
+        self.temp_key_cache = []
+        self.temp_value_cache = []
+
 
 method_to_cache_obj = {
     "": DynamicCacheWithRepeat,
     "dense": DynamicCacheWithRepeat,
     "snapkv": SnapKVCache,
     "pyramidkv": PyramidKVCache,
-    "streaming": StreamingLLMKVCache,
+    "streamingllm": StreamingLLMKVCache,
     "quest": DynamicCacheWithRepeat,
     "retr_attn": RetrAttnCache,
     "kivi": KiviCache,
