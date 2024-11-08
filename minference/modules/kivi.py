@@ -1037,7 +1037,7 @@ def kivi_forward(query_states, key_states, value_states, decoding_kwargs):
                 value_scale,
                 value_mn,
                 v_bits,
-            ).to(torch.bfloat16)
+            ).to(query_states.dtype)
             attn_output += torch.matmul(
                 attn_weights[:, :, :, -value_full_length:], value_states_full
             )
@@ -1054,7 +1054,7 @@ def kivi_forward(query_states, key_states, value_states, decoding_kwargs):
                     value_scale,
                     value_mn,
                     v_bits,
-                ).to(torch.bfloat16)
+                ).to(query_states.dtype)
                 attn_outputs.append(attn_output_i)
             attn_output = torch.cat(attn_outputs, dim=2)
             attn_output += torch.matmul(
