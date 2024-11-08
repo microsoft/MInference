@@ -49,6 +49,9 @@ class MInference:
             self.config.attn_kwargs["top_k"] = 1000
             self.config.attn_kwargs["from_layer"] = 0
 
+        if self.config.kv_type == "kivi":
+            self.config.attn_kwargs["bits"] = 2
+
         if "vllm" not in self.config.attn_type:
             model.config.starting_layer = self.config.starting_layer
             model.config.config_path = self.config.config_path

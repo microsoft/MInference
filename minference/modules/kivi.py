@@ -947,9 +947,9 @@ class KiviCache(Cache):
 
 
 def kivi_forward(query_states, key_states, value_states, decoding_kwargs):
-    group_size = decoding_kwargs.get("group_size", 32)
-    k_bits = decoding_kwargs.get("k_bits", 2)
-    v_bits = decoding_kwargs.get("v_bits", 2)
+    group_size = decoding_kwargs["attn_forward_config"].get("group_size", 32)
+    k_bits = decoding_kwargs["attn_forward_config"].get("bits", 2)
+    v_bits = decoding_kwargs["attn_forward_config"].get("bits", 2)
     head_dim = query_states.size(-1)
     q_len = query_states.shape[-2]
 
