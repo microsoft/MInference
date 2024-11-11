@@ -680,13 +680,15 @@ class KiviCache(Cache):
                         [self.temp_value_cache[layer_idx], value_states], dim=-2
                     )
 
-                key_states_full_rt = torch.cat(
-                    [key_states_full, self.temp_key_cache[layer_idx]], dim=-2
-                )
+                if key_states_full is not None:
+                    key_states_full_rt = torch.cat(
+                        [key_states_full, self.temp_key_cache[layer_idx]], dim=-2
+                    )
+                else:
+                    key_states_full_rt = self.temp_key_cache[layer_idx]
                 value_states_full_rt = torch.cat(
                     [value_states_full, self.temp_value_cache[layer_idx]], dim=-2
                 )
-
             else:
                 if key_states_full is not None:
                     key_states_full = torch.cat([key_states_full, key_states], dim=2)
