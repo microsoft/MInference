@@ -148,14 +148,10 @@ class SnapKVCache(Cache):
         self.key_cache: List[torch.Tensor] = []
         self.value_cache: List[torch.Tensor] = []
 
-        self.window_size = config.window_size if hasattr(config, "window_size") else 32
-        self.max_capacity_prompt = (
-            config.max_capacity_prompt
-            if hasattr(config, "max_capacity_prompt")
-            else 4096
-        )
-        self.kernel_size = config.kernel_size if hasattr(config, "kernel_size") else 5
-        self.pooling = config.pooling if hasattr(config, "pooling") else "avgpool"
+        self.window_size = config.attn_kwargs.get("window_size", 32)
+        self.max_capacity_prompt = config.attn_kwargs.get("max_capacity_prompt", 4096)
+        self.kernel_size = config.attn_kwargs.get("kernel_size", 5)
+        self.pooling = config.attn_kwargs.get("pooling", "avgpool")
 
         self.kv_clusters = []
         self.kv_cluster_class = SnapKVCluster
@@ -369,13 +365,10 @@ class PyramidKVCache(SnapKVCache):
 
 class StreamingLLMKVCache(SnapKVCache):
     def __init__(self, config):
-        if not hasattr(config, "window_size"):
-            config.max_capacity_prompt = (
-                config.max_capacity_prompt
-                if hasattr(config, "max_capacity_prompt")
-                else 4096
-            )
-            config.window_size = config.max_capacity_prompt - 128
+        n_local = config.attn_kwargs.get("n_local", 3968)
+        n_init = config.attn_kwargs.get("n_init", 128)
+        config.attn_kwargs["window_size"] = n_local
+        config.attn_kwargs["max_capacity_prompt"] = n_local + n_init
         super().__init__(config)
         self.kv_cluster_class = StreamingLLMKVCluster
 

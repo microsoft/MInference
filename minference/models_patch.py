@@ -41,16 +41,34 @@ class MInference:
 
     def patch_model(self, model):
         if self.config.kv_type == "retr_attn":
-            self.config.attn_kwargs[
-                "max_seq_length"
-            ] = model.config.max_position_embeddings
-            self.config.attn_kwargs["max_new_tokens"] = 1024
-            self.config.attn_kwargs["num_layers"] = model.config.num_hidden_layers
-            self.config.attn_kwargs["top_k"] = 1000
-            self.config.attn_kwargs["from_layer"] = 0
+            self.config.attn_kwargs.setdefault(
+                "max_seq_length", model.config.max_position_embeddings
+            )
+            self.config.attn_kwargs.setdefault("max_new_tokens", 1024)
+            self.config.attn_kwargs.setdefault(
+                "num_layers", model.config.num_hidden_layers
+            )
+            self.config.attn_kwargs.setdefault("top_k", 1000)
+            self.config.attn_kwargs.setdefault("from_layer", 0)
 
         if self.config.kv_type == "kivi":
-            self.config.attn_kwargs["bits"] = 2
+            self.config.attn_kwargs.setdefault("bits", 2)
+            self.config.attn_kwargs.setdefault("group_size", 32)
+            self.config.attn_kwargs.setdefault("residual_length", 32)
+
+        if self.config.kv_type in ["snapkv", "pyramidkv"]:
+            self.config.attn_kwargs.setdefault("window_size", 32)
+            self.config.attn_kwargs.setdefault("max_capacity_prompt", 4096)
+            self.config.attn_kwargs.setdefault("kernel_size", 5)
+            self.config.attn_kwargs.setdefault("pooling", "avgpool")
+
+        if self.config.kv_type == "quest":
+            self.config.attn_kwargs.setdefault("chunk_size", 16)
+            self.config.attn_kwargs.setdefault("token_budget", 1024)
+
+        if self.config.kv_type == "streamingllm":
+            self.config.attn_kwargs.setdefault("n_local", 3968)
+            self.config.attn_kwargs.setdefault("n_init", 128)
 
         if "vllm" not in self.config.attn_type:
             model.config.starting_layer = self.config.starting_layer
@@ -58,16 +76,22 @@ class MInference:
 
         if self.config.attn_type == "minference":
             with open(self.config.config_path, "r") as f:
-                self.config.attn_kwargs["best_pattern"] = json.load(f)
+                self.config.attn_kwargs.setdefault("best_pattern", json.load(f))
             model = new_patch(model, self.config)
 
-        elif self.config.attn_type == "minference":
-            model.config.is_search = self.config.is_search
-            model = minference_patch(model, self.config)
+        elif self.config.attn_type == "a_shape":
+            self.config.attn_kwargs.setdefault("n_local", 3968)
+            self.config.attn_kwargs.setdefault("n_init", 128)
+            model = new_patch(model, self.config)
 
-        elif self.config.attn_type in ["minference_with_dense", "dense_prefill"]:
-            model.config.dense = True
-            model = minference_patch(model, self.config)
+        elif self.config.attn_type == "tri_shape":
+            self.config.attn_kwargs.setdefault("n_local", 3968)
+            self.config.attn_kwargs.setdefault("n_init", 128)
+            self.config.attn_kwargs.setdefault("n_last", 100)
+            model = new_patch(model, self.config)
+
+        elif self.config.attn_type == "dense":
+            model = new_patch(model, self.config)
 
         elif self.config.attn_type == "dilated1":
             model.config.dilated1 = True
@@ -80,31 +104,6 @@ class MInference:
         elif self.config.attn_type == "dilated2":
             model.config.dilated2 = True
             model = minference_patch(model, self.config)
-
-        elif self.config.attn_type == "a_shape":
-            model.config.streaming = True
-            model.config.a_shape = True
-            model.config.streaming_kwargs = {
-                "n_local": 3968,
-                "n_init": 128,
-                **self.config.attn_kwargs,
-            }
-            # model = minference_patch(model, self.config)
-            self.config.attn_kwargs.update({"n_local": 3968, "n_init": 128})
-            model = new_patch(model, self.config)
-
-        elif self.config.attn_type == "tri_shape":
-            model.config.tri_shape = True
-            model.config.streaming_kwargs = {
-                "n_local": 3968,
-                "n_init": 128,
-                **self.config.attn_kwargs,
-            }
-            # model = minference_patch(model, self.config)
-            self.config.attn_kwargs.update(
-                {"n_local": 3968, "n_init": 128, "n_last": 100}
-            )
-            model = new_patch(model, self.config)
 
         elif self.config.attn_type == "streaming2":
             model = patch_hf(
@@ -154,8 +153,6 @@ class MInference:
                 **self.config.attn_kwargs,
             }
             model = minference_patch_vllm(model, self.config.config_path, patch_config)
-        elif self.config.attn_type == "dense":
-            model = new_patch(model, self.config)
         else:
             raise ValueError(
                 f"The attention type {self.config.attn_type} you specified is not supported."
