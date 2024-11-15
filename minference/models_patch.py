@@ -132,7 +132,9 @@ class MInference:
                 },
             )
         elif self.config.attn_type == "vllm":
-            model = minference_patch_vllm(model, self.config.config_path)
+            model = minference_patch_vllm(
+                model, self.config.config_path, self.config.attn_kwargs
+            )
         elif self.config.attn_type == "vllm_a_shape":
             patch_config = {
                 "a_shape": True,

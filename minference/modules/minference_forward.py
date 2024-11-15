@@ -617,6 +617,9 @@ def minference_prefill_kernel(
     q_len = q.shape[2]
     ty, vertical_size, slash_size, _ = config["best_pattern"][layer_idx].get(head_id, ("vertical_and_slash", 1000, 6096, 1))
 
+    if "minference_ratio" in config:
+        vertical_size = int(vertical_size * config.get("minference_ratio", 1))
+        slash_size = int(slash_size * config.get("minference_ratio", 1))
     fc = {
         "stream_llm": streaming_forward,
         "vertical_and_slash": vertical_and_slash_kernel,
@@ -804,6 +807,9 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     bsz = q.shape[0]
 
     ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
+    if "minference_ratio" in self.patch_config:
+        vertical_size = int(vertical_size * self.patch_config.get("minference_ratio", 1))
+        slash_size = int(slash_size * self.patch_config.get("minference_ratio", 1))
 
     if q_len == 1:
         return dense(q, k, v)
