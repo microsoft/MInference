@@ -941,9 +941,10 @@ class KiviCache(Cache):
         return self._seen_tokens
 
     def clear_temp_kv_cache(self):
-        self._seen_tokens -= self.temp_key_cache[-1].shape[
-            -2
-        ]  # seq_len of temp_kv_cache
+        if self.temp_key_cache:
+            self._seen_tokens -= self.temp_key_cache[-1].shape[
+                -2
+            ]  # seq_len of temp_kv_cache
         self.temp_key_cache = []
         self.temp_value_cache = []
 
