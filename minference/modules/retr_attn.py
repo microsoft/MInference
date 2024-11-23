@@ -356,7 +356,7 @@ def retr_attn(
         "num_key_value_groups", q.size(1) // kv_heads
     )
     layer_idx = decoding_kwargs.get("layer_idx", None)
-    top_k = decoding_kwargs["attn_forward_config"].get("top_k", 200)
+    top_k = decoding_kwargs["attn_forward_config"].get("top_k", 2000)
     from_layer = decoding_kwargs["attn_forward_config"].get("from_layer", 0)
     core = os.cpu_count() // 2
 
