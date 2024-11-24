@@ -1,6 +1,8 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+import functools
+
 from transformers.cache_utils import Cache, SinkCache
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
@@ -16,6 +18,7 @@ from .snap_kv import SnapKVCluster, StreamingLLMKVCluster
 def prepare_inputs_for_generation_kvcompression(
     method: str, config, original_prepare_inputs_for_generation
 ):
+    @functools.wraps(original_prepare_inputs_for_generation)
     def new_prepare_inputs_for_generation(self, *args, **kwargs):
         outputs = original_prepare_inputs_for_generation(*args, **kwargs)
         use_cache = kwargs.get("use_cache", True)
