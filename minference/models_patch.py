@@ -48,7 +48,7 @@ class MInference:
             self.config.attn_kwargs.setdefault(
                 "num_layers", model.config.num_hidden_layers
             )
-            self.config.attn_kwargs.setdefault("top_k", 1000)
+            self.config.attn_kwargs.setdefault("top_k", 4096)
             self.config.attn_kwargs.setdefault("from_layer", 0)
 
         if self.config.kv_type == "kivi":
