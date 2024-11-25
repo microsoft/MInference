@@ -10,11 +10,11 @@ class MInferenceConfig:
     MINFERENCE_ATTENTION_TYPES = [
         "minference",
         "vllm",
-        "dense",
         "minference_prefill",
     ]
-    STASTIC_ATTENTION_TYPES = [
+    STATIC_ATTENTION_TYPES = [
         "minference_with_dense",
+        "dense",
         "static",
         "dilated1",
         "dilated2",
@@ -41,7 +41,7 @@ class MInferenceConfig:
     ):
         super(MInferenceConfig, self).__init__()
         assert (
-            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.STASTIC_ATTENTION_TYPES
+            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.STATIC_ATTENTION_TYPES
         ), f"The attention_type {attn_type} you specified is not supported."
         self.attn_type = attn_type
         self.config_path = self.update_config_path(config_path, model_name)
@@ -54,7 +54,7 @@ class MInferenceConfig:
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):
-        if self.attn_type in self.STASTIC_ATTENTION_TYPES:
+        if self.attn_type in self.STATIC_ATTENTION_TYPES:
             return ""
         if config_path is not None:
             return config_path
