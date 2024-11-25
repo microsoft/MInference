@@ -9,10 +9,10 @@ from transformers.models.llama.modeling_llama import *
 
 from ..utils import apply_rotary_pos_emb_glm4
 from .kivi import KiviCache
-from .pyramid import PyramidKVCluster
+from .pyramidkv import PyramidKVCluster
 from .quest import *
 from .retr_attn import RetrAttnCache
-from .snap_kv import SnapKVCluster, StreamingLLMKVCluster
+from .snapkv import SnapKVCluster, StreamingLLMKVCluster
 
 
 def prepare_inputs_for_generation_kvcompression(
@@ -142,25 +142,58 @@ def snapkv_forward(
     return attn_output, attn_weights, past_key_value
 
 
-class SnapKVCache(Cache):
-    def __init__(self, config):
+class BaseKVCache(Cache):
+    def __init__(self):
         super().__init__()
-        self._seen_tokens = (
-            0  # Used in `generate` to keep tally of how many tokens the cache has seen
-        )
+        # Used in `generate` to keep tally of how many tokens the cache has seen
+        self._seen_tokens = 0
         self.key_cache: List[torch.Tensor] = []
         self.value_cache: List[torch.Tensor] = []
 
-        self.window_size = config.attn_kwargs.get("window_size", 32)
-        self.max_capacity_prompt = config.attn_kwargs.get("max_capacity_prompt", 4096)
-        self.kernel_size = config.attn_kwargs.get("kernel_size", 5)
-        self.pooling = config.attn_kwargs.get("pooling", "avgpool")
-
-        self.kv_clusters = []
-        self.kv_cluster_class = SnapKVCluster
+        self.kv_clusters = {}
+        self.kv_cluster_granularity = "layer"
 
         self.temp_key_cache = []
         self.temp_value_cache = []
+
+    def get_kv_cluster_class_config(self, layer_idx: int, head_idx: int = None):
+        raise NotImplementedError(
+            "Make sure to implement `get_kv_cluster_class_config` in a subclass."
+        )
+
+    def get_kv_cluster_class(self, layer_idx: int, head_idx=None):
+        cluster_name, cluster_class, cluster_config = self.get_kv_cluster_class_config(
+            layer_idx, head_idx
+        )
+        if cluster_name not in self.kv_clusters:
+            self.kv_clusters[cluster_name] = cluster_class(**cluster_config)
+        return self.kv_clusters[cluster_name]
+
+    def compresssed_kv(
+        self,
+        key_states,
+        query_states,
+        value_states,
+        attention_mask,
+        num_key_value_groups,
+        layer_idx: int,
+    ):
+        if self.kv_cluster_granularity == "layer":
+            kv_cluster = self.get_kv_cluster_class(layer_idx)
+
+            key_compress, value_compress = kv_cluster.update_kv(
+                key_states,
+                query_states,
+                value_states,
+                attention_mask,
+                num_key_value_groups,
+            )
+            self.key_cache.append(key_compress)
+            self.value_cache.append(value_compress)
+        else:
+            assert (
+                False
+            ), f"kv_cluster_granularity {self.kv_cluster_granularity} not supported"
 
     def update(
         self,
@@ -169,8 +202,7 @@ class SnapKVCache(Cache):
         layer_idx,
         cache_kwargs,
     ):
-        # if prefill, then compress
-        # if decode, then update
+        # if prefill, then compress; if decode, then update
         # [bsz, num_heads, q_len, head_dim]
 
         update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
@@ -188,27 +220,17 @@ class SnapKVCache(Cache):
         q_len = query_states.shape[-2]
         initializing_kv_cluster = False
         if (
-            len(self.kv_clusters) == layer_idx
+            len(self.key_cache) == layer_idx
         ):  # initialize kv_cluster, ie, the first query/context
             initializing_kv_cluster = True
-            kv_cluster = self.kv_cluster_class(
-                self.window_size,
-                self.max_capacity_prompt,
-                self.kernel_size,
-                self.pooling,
-            )
-            self.kv_clusters.append(kv_cluster)
-
-            key_compress, value_compress = self.kv_clusters[layer_idx].update_kv(
+            self.compresssed_kv(
                 key_states,
                 query_states,
                 value_states,
                 attention_mask,
                 num_key_value_groups,
+                layer_idx,
             )
-            self.key_cache.append(key_compress)
-            self.value_cache.append(value_compress)
-
         else:  # the follow up queries/contexts
             if update_global_past_kv:
                 self.key_cache[layer_idx] = torch.cat(
@@ -276,95 +298,43 @@ class SnapKVCache(Cache):
         self.temp_value_cache = []
 
 
+class SnapKVCache(BaseKVCache):
+    def __init__(self, config):
+        super().__init__()
+        self.window_size = config.attn_kwargs.get("window_size", 32)
+        self.max_capacity_prompt = config.attn_kwargs.get("max_capacity_prompt", 4096)
+        self.kernel_size = config.attn_kwargs.get("kernel_size", 5)
+        self.pooling = config.attn_kwargs.get("pooling", "avgpool")
+
+    def get_kv_cluster_class_config(self, layer_idx: int, head_idx: int = None):
+        cluster_config = {
+            "window_size": self.window_size,
+            "max_capacity_prompt": self.max_capacity_prompt,
+            "kernel_size": self.kernel_size,
+            "pooling": self.pooling,
+        }
+        cluster_name = ",".join(["snapv"] + [str(i) for i in cluster_config.values()])
+        return cluster_name, SnapKVCluster, cluster_config
+
+
 class PyramidKVCache(SnapKVCache):
     def __init__(self, config):
         super().__init__(config)
-
         self.num_layers = config.num_layers
-        self.kv_cluster_class = PyramidKVCluster
 
-    def update(
-        self,
-        key_states,
-        value_states,
-        layer_idx,
-        cache_kwargs,
-    ):
-        # if prefill, then compress
-        # if decode, then update
-        update_global_past_kv = cache_kwargs.get("update_global_past_kv", True)
-        query_states = cache_kwargs["query_states"]
-        attention_mask = cache_kwargs["attention_mask"]
-        num_key_value_groups = cache_kwargs["num_key_value_groups"]
-
-        if key_states.size(1) != query_states.size(1):  # GQA
-            key_states = repeat_kv(key_states, num_key_value_groups)
-            value_states = repeat_kv(value_states, num_key_value_groups)
-
-        if layer_idx == 0:
-            self._seen_tokens += key_states.shape[-2]
-
-        initializing_kv_cluster = False
-        if len(self.kv_clusters) == layer_idx:
-            initializing_kv_cluster = True
-            kv_cluster = self.kv_cluster_class(
-                self.num_layers,
-                self.window_size,
-                self.max_capacity_prompt,
-                self.kernel_size,
-                self.pooling,
-                layer_idx=layer_idx,
-            )
-            self.kv_clusters.append(kv_cluster)
-
-            key_compress, value_compress = self.kv_clusters[layer_idx].update_kv(
-                key_states,
-                query_states,
-                value_states,
-                attention_mask,
-                num_key_value_groups,
-            )
-            self.key_cache.append(key_compress)
-            self.value_cache.append(value_compress)
-        else:
-            if update_global_past_kv:
-                self.key_cache[layer_idx] = torch.cat(
-                    [self.key_cache[layer_idx], key_states], dim=-2
-                )
-                self.value_cache[layer_idx] = torch.cat(
-                    [self.value_cache[layer_idx], value_states], dim=-2
-                )
-            else:
-                if len(self.temp_key_cache) == layer_idx:
-                    self.temp_key_cache.append(key_states)
-                    self.temp_value_cache.append(value_states)
-                else:
-                    self.temp_key_cache[layer_idx] = torch.cat(
-                        [self.temp_key_cache[layer_idx], key_states], dim=-2
-                    )
-                    self.temp_value_cache[layer_idx] = torch.cat(
-                        [self.temp_value_cache[layer_idx], value_states], dim=-2
-                    )
-
-        if not initializing_kv_cluster:
-            if self.temp_key_cache:  # concat global past_kv and temp_kv_cache
-                key_states = torch.cat(
-                    [self.key_cache[layer_idx], self.temp_key_cache[layer_idx]], dim=-2
-                )
-                value_states = torch.cat(
-                    [self.value_cache[layer_idx], self.temp_value_cache[layer_idx]],
-                    dim=-2,
-                )
-            else:
-                key_states, value_states = (
-                    self.key_cache[layer_idx],
-                    self.value_cache[layer_idx],
-                )
-        key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-        value_states = repeat_kv(
-            value_states, query_states.size(1) // value_states.size(1)
+    def get_kv_cluster_class_config(self, layer_idx: int, head_idx: int = None):
+        cluster_config = {
+            "num_hidden_layers": self.num_layers,
+            "window_size": self.window_size,
+            "max_capacity_prompt": self.max_capacity_prompt,
+            "kernel_size": self.kernel_size,
+            "pooling": self.pooling,
+            "layer_idx": layer_idx,
+        }
+        cluster_name = ",".join(
+            ["pyramidv"] + [str(i) for i in cluster_config.values()]
         )
-        return key_states, value_states
+        return cluster_name, PyramidKVCluster, cluster_config
 
 
 class StreamingLLMKVCache(SnapKVCache):
@@ -374,7 +344,16 @@ class StreamingLLMKVCache(SnapKVCache):
         config.attn_kwargs["window_size"] = n_local
         config.attn_kwargs["max_capacity_prompt"] = n_local + n_init
         super().__init__(config)
-        self.kv_cluster_class = StreamingLLMKVCluster
+
+    def get_kv_cluster_class_config(self, layer_idx: int, head_idx: int = None):
+        cluster_config = {
+            "window_size": self.window_size,
+            "max_capacity_prompt": self.max_capacity_prompt,
+        }
+        cluster_name = ",".join(
+            ["streamingllm"] + [str(i) for i in cluster_config.values()]
+        )
+        return cluster_name, StreamingLLMKVCluster, cluster_config
 
 
 class DynamicCacheWithRepeat(DynamicCache):

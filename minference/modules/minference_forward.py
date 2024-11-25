@@ -28,7 +28,7 @@ from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .kvcompression import *
 from .quest import quest_forward
-from .snap_kv import *
+from .snapkv import *
 
 try:
     from flash_attn import flash_attn_func
