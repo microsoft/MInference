@@ -29,7 +29,13 @@ from .modules.minference_forward import (
     sum_all_diagonal_matrix,
 )
 from .ops.streaming_kernel import stream_llm_forward
-from .utils import patch_glm_4_1m
+from .utils import (
+    causal_model_forward,
+    convert_glm_4_1m,
+    glm_forward,
+    prepare_input,
+    update_kwargs,
+)
 
 KV_CACHE_CPU_DEVICE = "cpu"
 
@@ -796,8 +802,60 @@ def forward_llama_for_causal_lm(
     )
 
 
+def patch_glm_4_1m(model, config):
+    Attention = model.transformer.encoder.layers[0].self_attention.__class__
+    Transformer = model.transformer.encoder.__class__
+
+    prefill_forward = prefill_forwards[config.attn_type]
+    decoding_forward = decoding_forwards[config.kv_type]
+
+    attn_forward = glm_forward(
+        prefill_forward=prefill_forward,
+        decoding_forward=decoding_forward,
+        attn_forward_config=config.attn_kwargs,
+        class_name="attn_forward",
+    )
+    transformer_forward = glm_forward(
+        prefill_forward=None,
+        decoding_forward=None,
+        attn_forward_config=None,
+        class_name="transformer_forward",
+    )
+
+    def update_module(m):
+        if isinstance(m, Attention):
+            m.forward = (
+                lambda self, *args, **kwargs: attn_forward(self, *args, **kwargs)
+            ).__get__(m, Attention)
+        if isinstance(m, Transformer):
+            m.forward = (
+                lambda self, *args, **kwargs: transformer_forward(self, *args, **kwargs)
+            ).__get__(m, Transformer)
+
+    model.apply(update_module)
+    prepare_cache_func = prepare_cache(config.kv_type, config)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(
+        model, model.__class__
+    )
+    model.prepare_inputs_for_generation = prepare_input.__get__(model, model.__class__)
+    model._update_model_kwargs_for_generation = update_kwargs.__get__(
+        model, model.__class__
+    )
+    model.forward = causal_model_forward(model.forward).__get__(model, model.__class__)
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
+        config.kv_type, config, model.prepare_inputs_for_generation
+    )
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
+        model, model.__class__
+    )
+    print(f"Patched model for minference with {config.kv_type} ..")
+    return model
+
+
 def new_patch(model, config):
-    model = patch_glm_4_1m(model)
+    if model.__class__.__name__ == "ChatGLMForConditionalGeneration":
+        model = patch_glm_4_1m(model, config)
+        return model
 
     Attention = model.model.layers[0].self_attn.__class__
     Model = model.model.__class__
@@ -806,13 +864,7 @@ def new_patch(model, config):
     prefill_forward = prefill_forwards[config.attn_type]
     decoding_forward = decoding_forwards[config.kv_type]
 
-    custom_rope_func = None
-    if model.__class__.__name__ == "GlmForCausalLM":
-        from transformers.models.glm.modeling_glm import (
-            apply_rotary_pos_emb as glm_rope_func,
-        )
-
-        custom_rope_func = glm_rope_func
+    custom_rope_func = None  # apply custom rope func if needed
     forward = partial(
         attn_forward,
         prefill_forward=prefill_forward,
