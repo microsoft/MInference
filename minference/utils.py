@@ -77,6 +77,18 @@ def causal_model_forward(original_forward):
         if kwargs.get("num_logits_to_keep", None) == 1:
             kwargs["return_last_logit"] = True
             kwargs.pop("num_logits_to_keep")
+        if kwargs.get("position_ids", None) is None:
+            kv_cache = kwargs.get("past_key_values")
+            input_ids = kwargs.get("input_ids")
+            past_seen_tokens = kv_cache.get_seq_length() if kv_cache is not None else 0
+            pos_ids = torch.arange(
+                past_seen_tokens,
+                past_seen_tokens + input_ids.shape[1],
+                dtype=torch.long,
+                device=input_ids.device,
+            )
+            pos_ids = pos_ids.unsqueeze(0)
+            kwargs["position_ids"] = pos_ids
         return original_forward(*args, **kwargs)
 
     return new_forward
