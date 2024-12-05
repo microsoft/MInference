@@ -89,6 +89,7 @@ def causal_model_forward(original_forward):
             )
             pos_ids = pos_ids.unsqueeze(0)
             kwargs["position_ids"] = pos_ids
+            kv_cache.pos_ids = pos_ids
         return original_forward(*args, **kwargs)
 
     return new_forward
@@ -361,7 +362,7 @@ def glm_forward(
                 decoding_kwargs = {
                     "layer_idx": self.layer_number - 1,
                     "attn_forward_config": attn_forward_config,
-                    "position_ids": position_ids,
+                    "position_ids": kv_cache.pos_ids,
                     "num_key_value_groups": num_kv_groups,
                 }
                 attn_output = decoding_forward(  # [bsz, num_heads, q_len, head_dim]
