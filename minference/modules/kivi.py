@@ -548,9 +548,12 @@ def cuda_bmm_fA_qB_outer(
         .contiguous()
     )
     assert bits in [2, 4]
-    c = kivi_gemv.gemv_forward_cuda_outer_dim(
-        fA, qB, scales, zeros, bits, group_size, nh, mqa
-    )
+    try:
+        c = kivi_gemv.gemv_forward_cuda_outer_dim(
+            fA, qB, scales, zeros, bits, group_size, nh, mqa
+        )
+    except:
+        assert False, "Please install kivi. Refer to https://github.com/jy-yuan/KIVI"
     c = c.view(B, nh, c.shape[-2], c.shape[-1])
     return c
 
