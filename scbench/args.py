@@ -12,7 +12,6 @@ def parse_args() -> Namespace:
     p.add_argument(
         "--task",
         type=str,
-        # choices=list(DATA_NAME_TO_MAX_NEW_TOKENS.keys()) + ["all"],
         required=True,
         help='Which task to use. Note that "all" can only be used in `compute_scores.py`.',  # noqa
     )

@@ -1,3 +1,7 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Refer to the code in https://github.com/evalplus/repoqa
+
 import itertools
 import json
 import os

@@ -102,7 +102,27 @@ for vLLM,
 from vllm import LLM, SamplingParams
 + from minference import MInference
 
-llm = LLM(model_name, max_num_seqs=1, enforce_eager=True, max_model_len=128_000, enable_chunked_prefill=False)
+llm = LLM(model_name, enforce_eager=True, max_model_len=128_000, enable_chunked_prefill=False)
+
+# Patch MInference Module,
+# If you use the local path, please use the model_name from HF when initializing MInference.
++minference_patch = MInference("vllm", model_name)
++llm = minference_patch(llm)
+
+outputs = llm.generate(prompts, sampling_params)
+```
+
+for vLLM w/ TP,
+
+1. Copy `minference_patch_vllm_tp` and `minference_patch_vllm_executor` from `minference/patch.py` to the end of the `Worker` class in `vllm/worker/worker.py`. Make sure to indent `minference_patch_vllm_tp`.
+2. When calling VLLM, ensure `enable_chunked_prefill=False` is set.
+3. Refer to the script in https://github.com/microsoft/MInference/blob/hjiang/support_vllm_tp/experiments/benchmarks/run_e2e_vllm_tp.sh
+
+```diff
+from vllm import LLM, SamplingParams
++ from minference import MInference
+
+llm = LLM(model_name, enforce_eager=True, max_model_len=128_000, enable_chunked_prefill=False, tensor_parallel_size=2)
 
 # Patch MInference Module,
 # If you use the local path, please use the model_name from HF when initializing MInference.
@@ -132,6 +152,41 @@ python app.py
 ```
 
 For more details, please refer to our [Examples](https://github.com/microsoft/MInference/tree/main/examples) and [Experiments](https://github.com/microsoft/MInference/tree/main/experiments). You can find more information about the dynamic compiler PIT in this [paper](https://dl.acm.org/doi/10.1145/3600006.3613139) and on [GitHub](https://github.com/microsoft/SparTA/tree/pit_artifact).
+
+## SCBench
+
+### Load Data
+You can download and load the **SCBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/microsoft/SCBench)):
+```python
+from datasets import load_dataset
+
+datasets = ["scbench_kv", "scbench_prefix_suffix", "scbench_vt", "scbench_repoqa", "scbench_qa_eng", "scbench_qa_chn", "scbench_choice_eng", "scbench_many_shot", "scbench_summary", "scbench_mf", "scbench_summary_with_needles", "scbench_repoqa_and_kv"]
+
+for dataset in datasets:
+    data = load_dataset('microsoft/SCBench', dataset, split='train')
+```
+
+### Data Format
+
+All data in **SCBench** are standardized to the following format:
+
+```json
+{
+    "id": "Random id for each piece of data.",
+    "context": "The long context required for the task, such as repo-code, long-document, and many-shot.",
+    "multi_turns": [{"input": "multi-turn question.", "answer": "multi-turn reference answer."}],
+}
+```
+
+### Experiments
+
+We implement **Multi-Turn** and **Multi-Request** modes with HF and vLLM in [`GreedySearch`](https://github.com/microsoft/MInference/blob/yucheng/kvcompression/scbench/eval_utils.py#L1160) and [`GreedySearch_vllm`](https://github.com/microsoft/MInference/blob/yucheng/kvcompression/scbench/eval_utils.py#L1070) two class. Please refer the follow scripts to run the experiments.
+
+```bash
+cd scbench
+
+bash scripts/run_all_tasks.sh
+```
 
 ## FAQ
 
