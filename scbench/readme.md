@@ -11,6 +11,8 @@ SCBench (SharedContextBench) is a comprehensive benchmark to evaluate efficient 
 
 ## Run the benchmark
 
+First, build the environment, see [basic environment](#basic-dependencies).
+
 Run the test:
 
 ```bash
@@ -105,7 +107,7 @@ git clone https://github.com/microsoft/MInference.git && cd MInference/scbench
 pip install -r requirements.txt
 ```
 
-### Environment for efficient long-context methods
+### (Optional) Environment for efficient long-context methods
 
 MInference natively supports many efficient long-context methods, but you will need to build specific environment for the following methods:
 
