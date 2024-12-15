@@ -117,12 +117,6 @@ MInference natively supports many efficient long-context methods, but you will n
 bash setup/setup_kivi.sh
 ```
 
-**quest**:
-
-```bash
-bash setup/setup_quest.sh
-```
-
 ## Hyper-parameters of efficient long-context methods
 
 ### --attn_type
