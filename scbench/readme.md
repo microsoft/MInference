@@ -4,7 +4,7 @@
 [[Code]](https://github.com/microsoft/MInference/SCBench)
 [[Project Page]](https://aka.ms/scbench)
 
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/SCBench_onepage.png)
+![SCBench](../images/SCBench_onepage.png)
 
 SCBench (SharedContextBench) is a comprehensive benchmark to evaluate efficient long-context methods on **multi-turn** and **multi-request** interactions to analyze their performance across **the full KV cache lifecycle (generation, compression, retrieval, and loading)**.
 
@@ -62,7 +62,7 @@ You will need to build specific environment for different attention types and KV
 
 ## Dataset and Tasks Description
 
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench/overview.png)
+![SCBench](../images/scbench/overview.png)
 
 SCBench covers 12 diverse tasks that test four key long-context capabilities: string retrieval, semantic retrieval, global information processing, and multi-tasking.
 
@@ -167,7 +167,7 @@ python run_multiturnbench.py .... --hyper_param '{"n_local": 4096}'
 
 ## Compared to previous long-context benchmarks
 
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench/comparison.png)
+![SCBench](../images/scbench/comparison.png)
 
 Our SCBench is the first long-context benchmark that covers single-turn, multi-turn, and multi-request scenarios. In addition, our impelmentation also involves KV cache reuse techniques, thereby providing a more comprehensive analysis on the full KV cache lifecycle of efficient long-context methods.
 
