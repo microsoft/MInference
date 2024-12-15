@@ -67,7 +67,7 @@ python experiments/benchmarks/benchmark_e2e.py --run_benchmark
 4. After that, you should get the end-to-end latency results like this:
 
 ```json
-        FlashAttention-2 StreamingLLM   InfLLM          MInference
+        FlashAttention-2 A-Shape   InfLLM          MInference
 1K      0.54565         1.07110         2.94495         2.96450
 10K     0.97590         1.18339         2.21052         2.77618
 50K     8.52933         5.47972         14.63624        7.54537

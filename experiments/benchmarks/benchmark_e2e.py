@@ -43,10 +43,10 @@ def run_target_length(m: int, model, attn_type: str):
 
 def run_benchmark(model_name: str):
     TARGET_LENS = [l * 1000 for l in [10, 50, 100, 200, 300, 500, 1000]]
-    ATTN_TYPES = ["minference_with_dense", "streaming", "minference"]
+    ATTN_TYPES = ["minference_with_dense", "a_shape", "minference"]
     ATTN_TYPES2NAME = {
         "minference_with_dense": "FlashAttention-2",
-        "streaming": "StreamingLLM",
+        "a_shape": "A-Shape",
         "inf_llm": "InfLLM",
         "minference": "MInference",
     }
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         type=str,
         choices=[
             "hf",
-            "streaming",
+            "a_shape",
             "minference",
             "minference_with_dense",
             "inf_llm",

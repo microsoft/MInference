@@ -12,7 +12,7 @@ from .ops.streaming_kernel import streaming_forward
 from .patch import (
     minference_patch,
     minference_patch_kv_cache_cpu,
-    minference_patch_with_snapkv,
+    minference_patch_with_kvcompress,
     patch_hf,
 )
 from .version import VERSION as __version__
@@ -22,7 +22,7 @@ __all__ = [
     "MInferenceConfig",
     "minference_patch",
     "minference_patch_kv_cache_cpu",
-    "minference_patch_with_snapkv",
+    "minference_patch_with_kvcompress",
     "patch_hf",
     "vertical_slash_sparse_attention",
     "block_sparse_attention",

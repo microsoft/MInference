@@ -1,0 +1,8 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
+chunk_size: 256
+local_device: "cpu"
+
+# Enables KV blending
+enable_blending: True

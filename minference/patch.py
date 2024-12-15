@@ -2,26 +2,40 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 import json
+import types
+from functools import partial
 
 import torch
 import transformers
 from transformers.cache_utils import *
 from transformers.models.llama.modeling_llama import *
 
+from .modules.forward import attn_forward, decoding_forwards, prefill_forwards
 from .modules.inf_llm import InfLLMGenerator, inf_llm_forward
+from .modules.kvcompression import (
+    SnapKVCache,
+    method_to_cache_obj,
+    prepare_inputs_for_generation_kvcompression,
+)
 from .modules.minference_forward import (
     gather_last_q_vertical_slash_topk_v4,
     gather_last_q_vertical_slash_topk_vllm,
     init_minference_parameters,
+    kvcompress_forward,
     minference_forward,
     minference_kv_cache_cpu_forward,
     minference_vllm_forward,
-    minference_with_snapkv_forward,
     search_pattern,
     sum_all_diagonal_matrix,
 )
 from .ops.streaming_kernel import stream_llm_forward
-from .utils import patch_glm_4_1m
+from .utils import (
+    causal_model_forward,
+    convert_glm_4_1m,
+    glm_forward,
+    prepare_input,
+    update_kwargs,
+)
 
 KV_CACHE_CPU_DEVICE = "cpu"
 
@@ -193,7 +207,7 @@ def apply_rotary_pos_emb_glm4(
 
 
 ATTN_FORWRAD = {
-    "streaming": stream_llm_forward,
+    "a_shape": stream_llm_forward,
     "minference": minference_forward,
     "inf_llm": inf_llm_forward,
 }
@@ -443,70 +457,20 @@ def prepare_inputs_for_generation(
     return model_inputs
 
 
-def prepare_inputs_for_generation_snapkv(
-    self,
-    input_ids,
-    past_key_values=None,
-    attention_mask=None,
-    inputs_embeds=None,
-    **kwargs,
-):
-    if past_key_values is None:  # [SnapKV]
-        for layer in self.model.layers:
-            layer.self_attn.kv_seq_len = 0
-    if past_key_values is not None:
-        if isinstance(past_key_values, Cache):
-            cache_length = past_key_values.get_seq_length()
-            past_length = past_key_values.seen_tokens
-            max_cache_length = past_key_values.get_max_length()
-        else:
-            # cache_length = past_length = past_key_values[0][0].shape[2]
-            # max_cache_length = None
-            cache_length = past_length = self.model.layers[0].self_attn.kv_seq_len
-            max_cache_length = None
-        # Keep only the unprocessed tokens:
-        # 1 - If the length of the attention_mask exceeds the length of input_ids, then we are in a setting where
-        # some of the inputs are exclusively passed as part of the cache (e.g. when passing input_embeds as
-        # input)
-        if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-            input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
-        # 2 - If the past_length is smaller than input_ids', then input_ids holds all input tokens. We can discard
-        # input_ids based on the past_length.
-        elif past_length < input_ids.shape[1]:
-            input_ids = input_ids[:, past_length:]
-        # 3 - Otherwise (past_length >= input_ids.shape[1]), let's assume input_ids only has unprocessed tokens.
+def prepare_cache(method: str, config):
+    cache_obj: Cache = method_to_cache_obj[method]
 
-        # If we are about to go beyond the maximum cache length, we need to crop the input attention mask.
-        if (
-            max_cache_length is not None
-            and attention_mask is not None
-            and cache_length + input_ids.shape[1] > max_cache_length
-        ):
-            attention_mask = attention_mask[:, -max_cache_length:]
+    def _prepare_cache_for_generation(
+        self, generation_config, model_kwargs: Dict, *args, **kwargs
+    ) -> bool:
+        """
+        Prepares the cache for generation (if applicable), given `generate`'s paramaterization. If a cache is
+        instantiated, writes it to `model_kwargs`, under the name expected by the model.
+        """
+        config.num_layers = self.config.num_hidden_layers
+        model_kwargs["past_key_values"] = cache_obj(config)
 
-    position_ids = kwargs.get("position_ids", None)
-    if attention_mask is not None and position_ids is None:
-        # create position_ids on the fly for batch generation
-        position_ids = attention_mask.long().cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask == 0, 1)
-        if past_key_values:
-            position_ids = position_ids[:, -input_ids.shape[1] :]
-
-    # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-    if inputs_embeds is not None and past_key_values is None:
-        model_inputs = {"inputs_embeds": inputs_embeds}
-    else:
-        model_inputs = {"input_ids": input_ids}
-
-    model_inputs.update(
-        {
-            "position_ids": position_ids,
-            "past_key_values": past_key_values,
-            "use_cache": kwargs.get("use_cache"),
-            "attention_mask": attention_mask,
-        }
-    )
-    return model_inputs
+    return _prepare_cache_for_generation
 
 
 def _prepare_decoder_attention_mask_inference(
@@ -770,6 +734,7 @@ def forward_llama_for_causal_lm(
     output_attentions: Optional[bool] = None,
     output_hidden_states: Optional[bool] = None,
     return_dict: Optional[bool] = None,
+    num_logits_to_keep: int = 1,
 ) -> Union[Tuple, CausalLMOutputWithPast]:
     # assert labels is not None
     output_attentions = (
@@ -837,6 +802,100 @@ def forward_llama_for_causal_lm(
     )
 
 
+def patch_glm_4_1m(model, config):
+    Attention = model.transformer.encoder.layers[0].self_attention.__class__
+    Transformer = model.transformer.encoder.__class__
+
+    prefill_forward = prefill_forwards[config.attn_type]
+    decoding_forward = decoding_forwards[config.kv_type]
+
+    attn_forward = glm_forward(
+        prefill_forward=prefill_forward,
+        decoding_forward=decoding_forward,
+        attn_forward_config=config.attn_kwargs,
+        class_name="attn_forward",
+    )
+    transformer_forward = glm_forward(
+        prefill_forward=None,
+        decoding_forward=None,
+        attn_forward_config=None,
+        class_name="transformer_forward",
+    )
+
+    def update_module(m):
+        if isinstance(m, Attention):
+            m.forward = (
+                lambda self, *args, **kwargs: attn_forward(self, *args, **kwargs)
+            ).__get__(m, Attention)
+        if isinstance(m, Transformer):
+            m.forward = (
+                lambda self, *args, **kwargs: transformer_forward(self, *args, **kwargs)
+            ).__get__(m, Transformer)
+
+    model.apply(update_module)
+    prepare_cache_func = prepare_cache(config.kv_type, config)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(
+        model, model.__class__
+    )
+    model.prepare_inputs_for_generation = prepare_input.__get__(model, model.__class__)
+    model._update_model_kwargs_for_generation = update_kwargs.__get__(
+        model, model.__class__
+    )
+    model.forward = causal_model_forward(model.forward).__get__(model, model.__class__)
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
+        config.kv_type, config, model.prepare_inputs_for_generation
+    )
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
+        model, model.__class__
+    )
+    print(f"Patched model for minference with {config.kv_type} ..")
+    return model
+
+
+def new_patch(model, config):
+    if model.__class__.__name__ == "ChatGLMForConditionalGeneration":
+        model = patch_glm_4_1m(model, config)
+        return model
+
+    Attention = model.model.layers[0].self_attn.__class__
+    Model = model.model.__class__
+    DecoderLayer = model.model.layers[0].__class__
+
+    prefill_forward = prefill_forwards[config.attn_type]
+    decoding_forward = decoding_forwards[config.kv_type]
+
+    custom_rope_func = None  # apply custom rope func if needed
+    forward = partial(
+        attn_forward,
+        prefill_forward=prefill_forward,
+        decoding_forward=decoding_forward,
+        attn_forward_config=config.attn_kwargs,
+        customized_rope_func=custom_rope_func,
+    )
+
+    def update_module(m):
+        if isinstance(m, Attention):
+            m.forward = (
+                lambda self, *args, **kwargs: forward(self, *args, **kwargs)
+            ).__get__(m, Attention)
+
+    model.apply(update_module)
+    prepare_cache_func = prepare_cache(config.kv_type, config)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(
+        model, model.__class__
+    )
+
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
+        config.kv_type, config, model.prepare_inputs_for_generation
+    )
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
+        model, model.__class__
+    )
+
+    print(f"Patched model for minference with {config.kv_type} ..")
+    return model
+
+
 def minference_patch(model, config):
     from transformers import LlamaForCausalLM
 
@@ -845,8 +904,8 @@ def minference_patch(model, config):
         KV_CACHE_CPU_DEVICE = config.kv_cache_cpu_device
         model.config.kv_cache_cpu_device = config.kv_cache_cpu_device
         return minference_patch_kv_cache_cpu(model)
-    if config.use_snapkv:
-        return minference_patch_with_snapkv(model)
+    if config.kv_type:
+        return minference_patch_with_kvcompress(model, config)
 
     model = patch_glm_4_1m(model)
 
@@ -934,168 +993,276 @@ def minference_patch_kv_cache_cpu(model):
     return model
 
 
-def minference_patch_with_snapkv(model):
-    from transformers import LlamaForCausalLM
-
+def minference_patch_with_kvcompress(model, config):
     model = patch_glm_4_1m(model)
 
     Attention = model.model.layers[0].self_attn.__class__
     Model = model.model.__class__
     DecoderLayer = model.model.layers[0].__class__
 
-    forward = minference_with_snapkv_forward()
+    forward = kvcompress_forward(
+        Attention.forward, method=config.kv_type, config=config
+    )
 
     def update_module(m):
         if isinstance(m, Attention):
-            m.init_minference_parameters = init_minference_parameters.__get__(
-                m, Attention
-            )
-            m.gather_last_q_vertical_slash_topk_v4 = (
-                gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
-            )
+            # if use minference with kvcompress, then patch with minference kernels
+            if config.attn_type in ["minference"]:
+                m.init_minference_parameters = init_minference_parameters.__get__(
+                    m, Attention
+                )
+                m.gather_last_q_vertical_slash_topk_v4 = (
+                    gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
+                )
+            if config.kv_type == "quest":
+                m.flash_forward = types.MethodType(LlamaFlashAttention2.forward, m)
+                m.token_budget = (
+                    1024 if not hasattr(m, "token_budget") else m.token_budget
+                )
+                m.chunk_size = 16 if not hasattr(m, "chunk_size") else m.chunk_size
             m.forward = forward.__get__(m, Attention)
-        if isinstance(m, DecoderLayer):
-            m.forward = forward_llama_decoder_layer.__get__(m, DecoderLayer)
 
     model.apply(update_module)
-    model.prepare_inputs_for_generation = prepare_inputs_for_generation_snapkv.__get__(
+    prepare_cache_func = prepare_cache(config.kv_type, config)
+    model._prepare_cache_for_generation = prepare_cache_func.__get__(
         model, model.__class__
     )
-    model.model._use_sdpa = False
 
-    model.model._prepare_decoder_attention_mask = (
-        _prepare_decoder_attention_mask_inference.__get__(
-            model.model, model.model.__class__
-        )
+    prepare_inputs_func = prepare_inputs_for_generation_kvcompression(
+        config.kv_type, config, model.prepare_inputs_for_generation
     )
-    model.model.forward = forward_llama_model.__get__(
-        model.model, model.model.__class__
+    model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
+        model, model.__class__
     )
-    model.forward = forward_llama_for_causal_lm.__get__(model, model.__class__)
 
-    print("Patched model for minference with SanpKV..")
+    # model.model._use_sdpa = False
+    # model.model._prepare_decoder_attention_mask = (
+    #     _prepare_decoder_attention_mask_inference.__get__(
+    #         model.model, model.model.__class__
+    #     )
+    # )
+    print(f"Patched model for minference with {config.kv_type} ..")
     return model
 
 
-def llama_model_forward_vllm(
-    self,
-    input_ids: Optional[torch.Tensor],
-    positions: torch.Tensor,
-    kv_caches: List[torch.Tensor],
-    attn_metadata,
-    inputs_embeds: Optional[torch.Tensor] = None,
-) -> torch.Tensor:
-    if inputs_embeds is not None:
-        hidden_states = inputs_embeds
-    else:
-        hidden_states = self.get_input_embeddings(input_ids)
-    residual = None
-    for i in range(len(self.layers)):
-        layer = self.layers[i]
-        hidden_states, residual = layer(
-            positions,
-            hidden_states,
-            kv_caches[i],
-            attn_metadata,
-            residual,
-            layer_idx=i,
-        )
-    hidden_states, _ = self.norm(hidden_states, residual)
-    return hidden_states
-
-
-def llama_layer_forward_vllm(
-    self,
-    positions: torch.Tensor,
-    hidden_states: torch.Tensor,
-    kv_cache: torch.Tensor,
-    attn_metadata,
-    residual: Optional[torch.Tensor],
-    layer_idx: int,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    # Self Attention
-    if residual is None:
-        residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-    else:
-        hidden_states, residual = self.input_layernorm(hidden_states, residual)
-    hidden_states = self.self_attn(
-        positions=positions,
-        hidden_states=hidden_states,
-        kv_cache=kv_cache,
-        attn_metadata=attn_metadata,
-        layer_idx=layer_idx,
+def minference_patch_vllm_tp(self, config_file, patch_config):
+    self.model_runner.model.apply(
+        minference_patch_vllm_executor(config_file, patch_config)
     )
 
-    # Fully Connected
-    hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
-    hidden_states = self.mlp(hidden_states)
-    return hidden_states, residual
 
+def minference_patch_vllm_executor(config_file: str, patch_config={}):
+    import json
+    from collections import defaultdict
 
-def llama_attn_forward_vllm(
-    vllm_version: str = "0.4.2",
-):
-    def llama_attn_forward_vllm(
+    import vllm
+    from vllm.attention import Attention
+    from vllm.model_executor.models.chatglm import (
+        GLMAttention,
+        GLMBlock,
+        GLMTransformer,
+    )
+    from vllm.model_executor.models.llama import (
+        LlamaAttention,
+        LlamaDecoderLayer,
+        LlamaModel,
+    )
+
+    from minference.modules.minference_forward import (
+        gather_last_q_vertical_slash_topk_vllm,
+        minference_vllm_forward,
+    )
+
+    vllm_version = vllm.__version__
+
+    config = defaultdict(dict)
+    if os.path.exists(config_file):
+        config = json.load(open(config_file))
+    attn_forward = minference_vllm_forward(
+        config, vllm_version=vllm_version, patch_config=patch_config
+    )
+
+    def vllm_attn_forward(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        kv_cache: Optional[torch.Tensor],
+        attn_metadata,
+        kv_scale: float = 1.0,
+        layer_idx: int = 0,
+    ) -> torch.Tensor:
+        # check self._kv_scale
+        kv_scale = getattr(self, "_kv_scale", getattr(self, "_k_scale", kv_scale))
+        return self.impl.forward(
+            query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
+        )
+
+    def llama_model_forward_vllm(
+        self,
+        input_ids: Optional[torch.Tensor],
+        positions: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata,
+        inputs_embeds: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        if inputs_embeds is not None:
+            hidden_states = inputs_embeds
+        else:
+            hidden_states = self.get_input_embeddings(input_ids)
+        residual = None
+        for i in range(len(self.layers)):
+            layer = self.layers[i]
+            hidden_states, residual = layer(
+                positions,
+                hidden_states,
+                kv_caches[i],
+                attn_metadata,
+                residual,
+                layer_idx=i,
+            )
+        hidden_states, _ = self.norm(hidden_states, residual)
+        return hidden_states
+
+    def chatglm_model_forward_vllm(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: torch.Tensor,
+        kv_caches: List[torch.Tensor],
+        attn_metadata,
+    ) -> torch.Tensor:
+        for i in range(self.num_layers):
+            layer = self.layers[i]
+            hidden_states = layer(
+                hidden_states=hidden_states,
+                position_ids=position_ids,
+                kv_cache=kv_caches[i],
+                attn_metadata=attn_metadata,
+                layer_idx=i,
+            )
+        # Final layer norm.
+        if self.post_layer_norm:
+            hidden_states = self.final_layernorm(hidden_states)
+
+        return hidden_states
+
+    def llama_layer_forward_vllm(
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata,
+        residual: Optional[torch.Tensor],
         layer_idx: int,
-    ) -> torch.Tensor:
-        qkv, _ = self.qkv_proj(hidden_states)
-        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-        q, k = self.rotary_emb(positions, q, k)
-        if "0.4.1" <= vllm_version <= "0.4.2":
-            attn_output = self.attn(
-                q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
-            )
-        elif vllm_version >= "0.4.3":
-            attn_output = self.attn(q, k, v, kv_cache, attn_metadata, layer_idx)
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Self Attention
+        if residual is None:
+            residual = hidden_states
+            hidden_states = self.input_layernorm(hidden_states)
         else:
-            assert False, "Only support 'vllm>=0.4.1'. Please update your vllm version."
+            hidden_states, residual = self.input_layernorm(hidden_states, residual)
+        hidden_states = self.self_attn(
+            positions=positions,
+            hidden_states=hidden_states,
+            kv_cache=kv_cache,
+            attn_metadata=attn_metadata,
+            layer_idx=layer_idx,
+        )
 
-        output, _ = self.o_proj(attn_output)
+        # Fully Connected
+        hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
+        hidden_states = self.mlp(hidden_states)
+        return hidden_states, residual
+
+    def chatglm_layer_forward_vllm(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        layer_idx=0,
+    ) -> torch.Tensor:
+        # hidden_states: [num_tokens, h]
+        # Layer norm at the beginning of the transformer layer.
+        layernorm_output = self.input_layernorm(hidden_states)
+        # Self attention.
+        attention_output = self.self_attention(
+            hidden_states=layernorm_output,
+            position_ids=position_ids,
+            kv_cache=kv_cache,
+            attn_metadata=attn_metadata,
+            layer_idx=layer_idx,
+        )
+
+        # Residual connection.
+        if self.apply_residual_connection_post_layernorm:
+            residual = layernorm_output
+        else:
+            residual = hidden_states
+        layernorm_input = residual + attention_output
+        # Layer norm post the self attention.
+        layernorm_output = self.post_attention_layernorm(layernorm_input)
+        # Second residual connection.
+        if self.apply_residual_connection_post_layernorm:
+            residual = layernorm_output
+        else:
+            residual = layernorm_input
+        output = self.mlp(layernorm_output) + residual
         return output
 
-    return llama_attn_forward_vllm
+    def llama_attn_forward_vllm(
+        vllm_version: str = "0.4.2",
+    ):
+        def llama_attn_forward_vllm(
+            self,
+            positions: torch.Tensor,
+            hidden_states: torch.Tensor,
+            kv_cache: torch.Tensor,
+            attn_metadata,
+            layer_idx: int,
+        ) -> torch.Tensor:
+            qkv, _ = self.qkv_proj(hidden_states)
+            q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+            q, k = self.rotary_emb(positions, q, k)
+            if "0.4.1" <= vllm_version <= "0.4.2":
+                attn_output = self.attn(
+                    q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
+                )
+            elif vllm_version >= "0.4.3":
+                attn_output = self.attn(
+                    q, k, v, kv_cache, attn_metadata, layer_idx=layer_idx
+                )
+            else:
+                assert (
+                    False
+                ), "Only support 'vllm>=0.4.1'. Please update your vllm version."
 
+            output, _ = self.o_proj(attn_output)
+            return output
 
-def vllm_attn_forward(
-    self,
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
-    kv_cache: Optional[torch.Tensor],
-    attn_metadata,
-    kv_scale: float = 1.0,
-    layer_idx: int = 0,
-) -> torch.Tensor:
-    # check self._kv_scale
-    kv_scale = getattr(self, "_kv_scale", kv_scale)
-    return self.impl.forward(
-        query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
-    )
+        return llama_attn_forward_vllm
 
-
-def minference_patch_vllm(
-    llm,
-    config_file,
-):
-    import vllm
-    from vllm.attention import Attention
-    from vllm.model_executor.models.llama import (
-        LlamaAttention,
-        LlamaDecoderLayer,
-        LlamaForCausalLM,
-        LlamaModel,
-    )
-
-    vllm_version = vllm.__version__
-
-    config = json.load(open(config_file))
-    attn_forward = minference_vllm_forward(config, vllm_version=vllm_version)
+    def chatglm_attn_forward_vllm(
+        self,
+        hidden_states: torch.Tensor,
+        position_ids: torch.Tensor,
+        kv_cache: torch.Tensor,
+        attn_metadata,
+        layer_idx: int = 0,
+    ) -> torch.Tensor:
+        qkv, _ = self.query_key_value(hidden_states)
+        q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
+        q, k = self.rotary_emb(position_ids, q, k)
+        context_layer = self.attn(
+            q,
+            k,
+            v,
+            kv_cache,
+            attn_metadata,
+            layer_idx=layer_idx,
+        )
+        attn_output, _ = self.dense(context_layer)
+        return attn_output
 
     def update_module(m):
         if isinstance(m, Attention):
@@ -1113,8 +1280,31 @@ def minference_patch_vllm(
             m.forward = llama_model_forward_vllm.__get__(m, LlamaModel)
         if isinstance(m, LlamaAttention):
             m.forward = llama_attn_forward_vllm(vllm_version).__get__(m, LlamaAttention)
+        if isinstance(m, GLMBlock):
+            m.forward = chatglm_layer_forward_vllm.__get__(m, GLMBlock)
+        if isinstance(m, GLMTransformer):
+            m.forward = chatglm_model_forward_vllm.__get__(m, GLMTransformer)
+        if isinstance(m, GLMAttention):
+            m.forward = chatglm_attn_forward_vllm.__get__(m, GLMAttention)
 
-    llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(update_module)
+    return update_module
+
+
+def minference_patch_vllm(
+    llm,
+    config_file,
+    patch_config: dict = {},
+):
+    if "workers" in llm.llm_engine.model_executor.__dict__:
+        llm.llm_engine.model_executor._run_workers(
+            "minference_patch_vllm_tp",
+            config_file=config_file,
+            patch_config=patch_config,
+        )
+    else:
+        llm.llm_engine.model_executor.driver_worker.model_runner.model.apply(
+            minference_patch_vllm_executor(config_file, patch_config)
+        )
 
     print("Patched model for minference with vLLM..")
     return llm

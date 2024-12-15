@@ -84,8 +84,9 @@ class MInferenceModel:
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = None,
-        use_snapkv: bool = False,
+        kv_type: str = "",
         trust_remote_code: bool = False,
+        attn_type: str = "minference",
     ) -> None:
         from transformers import (
             AutoConfig,
@@ -109,11 +110,11 @@ class MInferenceModel:
             trust_remote_code=trust_remote_code,
         )
         minference_patch = MInference(
-            "minference",
+            attn_type,
             name_or_path,
             config_path=config_path,
             starting_layer=starting_layer,
-            use_snapkv=use_snapkv,
+            kv_type=kv_type,
             kv_cache_cpu=kv_cache_cpu,
             kv_cache_cpu_device=kv_cache_cpu_device,
             is_search=False,
@@ -214,7 +215,7 @@ class Streaming(MInferenceModel):
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = None,
-        use_snapkv: bool = False,
+        kv_type: str = "",
         trust_remote_code: bool = False,
     ) -> None:
         from transformers import (
@@ -239,11 +240,11 @@ class Streaming(MInferenceModel):
             trust_remote_code=trust_remote_code,
         )
         minference_patch = MInference(
-            "streaming",
+            "a_shape",
             name_or_path,
             config_path=config_path,
             starting_layer=starting_layer,
-            use_snapkv=use_snapkv,
+            kv_type=kv_type,
             kv_cache_cpu=kv_cache_cpu,
             kv_cache_cpu_device=kv_cache_cpu_device,
             is_search=False,

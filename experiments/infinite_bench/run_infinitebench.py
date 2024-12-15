@@ -81,7 +81,7 @@ def get_pred(
         print("...")
         print(tok.decode(input_tokens[-200:]))
         print("=====================================")
-    if attn_type == "vllm":
+    if "vllm" in attn_type:
         if len(input_tokens) != 1:
             input_tokens = [input_tokens]
         outputs = model.generate(
@@ -117,33 +117,36 @@ def load_model(
     attn_type: str = "vllm",
     max_seq_length: int = None,
     is_search: bool = False,
-    use_snapkv: bool = False,
+    kv_type: str = "",
     trust_remote_code: bool = False,
     kv_cache_cpu: bool = False,
     kv_cache_cpu_device: str = "cpu",
+    tensor_parallel_size: int = 1,
 ):
     tok = AutoTokenizer.from_pretrained(
         model_name, resume_download=None, trust_remote_code=trust_remote_code
     )
     tok.pad_token = tok.eos_token
-    minference_patch = MInference(
-        attn_type,
-        model_name,
-        config_path=topk_dims_file_path,
-        starting_layer=starting_layer,
-        use_snapkv=use_snapkv,
-        is_search=is_search,
-        kv_cache_cpu=kv_cache_cpu,
-        kv_cache_cpu_device=kv_cache_cpu_device,
-    )
-
-    if attn_type == "vllm":
-        llm = LLM(
+    if attn_type != "vllm":
+        minference_patch = MInference(
+            "vllm" if "vllm_minference" in attn_type else attn_type,
             model_name,
-            max_num_seqs=1,
-            swap_space=64,
-            gpu_memory_utilization=0.98,
+            config_path=topk_dims_file_path,
+            starting_layer=starting_layer,
+            kv_type=kv_type,
+            is_search=is_search,
+            kv_cache_cpu=kv_cache_cpu,
+            kv_cache_cpu_device=kv_cache_cpu_device,
+        )
+
+    if "vllm" in attn_type:
+        llm = LLM(
+            model=model_name,
             max_model_len=max_seq_length,
+            enable_chunked_prefill=False,
+            tensor_parallel_size=tensor_parallel_size,
+            trust_remote_code=trust_remote_code,
+            swap_space=64,
         )
     else:
         config = AutoConfig.from_pretrained(
@@ -170,7 +173,9 @@ def load_model(
             resume_download=None,
             trust_remote_code=trust_remote_code,
         )
-    llm = minference_patch(llm)
+
+    if attn_type not in ["vllm", "hf"]:
+        llm = minference_patch(llm)
 
     print("Model and tokenizer loaded.")
     return llm, tok
@@ -200,10 +205,11 @@ if __name__ == "__main__":
         attn_type=args.attn_type,
         max_seq_length=max_seq_length,
         is_search=args.is_search,
-        use_snapkv=args.use_snapkv,
+        kv_type=args.kv_type,
         trust_remote_code=args.trust_remote_code,
         kv_cache_cpu=args.kv_cache_cpu,
         kv_cache_cpu_device=args.kv_cache_cpu_device,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
     results = {}
 
@@ -212,7 +218,7 @@ if __name__ == "__main__":
         if max_new_tokens >= max_seq_length:
             max_new_tokens = 500
 
-        if args.attn_type == "vllm":
+        if "vllm" in args.attn_type:
             generation_config = SamplingParams(
                 temperature=0,
                 max_tokens=max_new_tokens,
@@ -257,6 +263,11 @@ if __name__ == "__main__":
             ground_truth = get_answer(eg, data_name)
             # print(input_text.index(ground_truth), len(input_text), input_text.index(ground_truth) / len(input_text))
             # print(f"====== Example {i} ======")
+
+            msgs = [dict(role="system", content=input_text)]
+            input_text = tok.apply_chat_template(
+                msgs, add_generation_prompt=True, tokenize=False
+            )
             pred = get_pred(
                 model,
                 tok,

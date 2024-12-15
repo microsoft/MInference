@@ -10,13 +10,18 @@ class MInferenceConfig:
     MINFERENCE_ATTENTION_TYPES = [
         "minference",
         "vllm",
+        "minference_prefill",
     ]
-    STASTIC_ATTENTION_TYPES = [
+    STATIC_ATTENTION_TYPES = [
         "minference_with_dense",
+        "dense",
         "static",
         "dilated1",
         "dilated2",
-        "streaming",
+        "a_shape",
+        "tri_shape",
+        "vllm_a_shape",
+        "vllm_tri_shape",
         "inf_llm",
         "hf",
     ]
@@ -29,14 +34,14 @@ class MInferenceConfig:
         starting_layer: int = -1,
         kv_cache_cpu: bool = False,
         kv_cache_cpu_device: str = "cpu",
-        use_snapkv: bool = False,
+        kv_type: str = "dense",
         is_search: bool = False,
         attn_kwargs: dict = {},
         **kwargs,
     ):
         super(MInferenceConfig, self).__init__()
         assert (
-            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.STASTIC_ATTENTION_TYPES
+            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.STATIC_ATTENTION_TYPES
         ), f"The attention_type {attn_type} you specified is not supported."
         self.attn_type = attn_type
         self.config_path = self.update_config_path(config_path, model_name)
@@ -45,11 +50,11 @@ class MInferenceConfig:
         self.starting_layer = starting_layer
         self.kv_cache_cpu = kv_cache_cpu
         self.kv_cache_cpu_device = kv_cache_cpu_device
-        self.use_snapkv = use_snapkv
+        self.kv_type = kv_type
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):
-        if self.attn_type in self.STASTIC_ATTENTION_TYPES:
+        if self.attn_type in self.STATIC_ATTENTION_TYPES:
             return ""
         if config_path is not None:
             return config_path
@@ -57,3 +62,6 @@ class MInferenceConfig:
             model_name in MODEL2PATH
         ), f"The model {model_name} you specified is not supported. You are welcome to add it and open a PR :)"
         return MODEL2PATH[model_name]
+
+    def get(self, attr, default=None):
+        return getattr(self, attr, default)

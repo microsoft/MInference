@@ -1,0 +1,10 @@
+tree_sitter_languages
+tempdir
+tree_sitter==0.21.3
+rich
+datasets
+jieba
+rouge
+evaluate
+nltk
+rouge_score

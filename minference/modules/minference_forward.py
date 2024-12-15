@@ -15,7 +15,8 @@ if _is_package_available("vllm"):
     try:
         from vllm import _custom_ops as vllm_ops
         from vllm.attention.ops.paged_attn import PagedAttention
-        from vllm_flash_attn import flash_attn_with_kvcache
+        from vllm.distributed import get_tensor_model_parallel_rank
+        from vllm_flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
     except:
         import vllm
         vllm_version = vllm.__version__
@@ -25,7 +26,9 @@ if _is_package_available("vllm"):
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
-from .snap_kv import *
+from .kvcompression import *
+from .quest import quest_forward
+from .snapkv import *
 
 try:
     from flash_attn import flash_attn_func
@@ -53,7 +56,7 @@ def set_rope_type(self):
         ROPE_TYPE = "position_ids"
 
 def get_cos_sin(self, value_states, kv_seq_len, position_ids):
-    if self.rotary_emb.inv_freq is not None and value_states.device != self.rotary_emb.inv_freq.device:
+    if "inv_freq" in self.rotary_emb.__dict__ is not None and value_states.device != self.rotary_emb.inv_freq.device:
         value_states = value_states.to(self.rotary_emb.inv_freq.device)
         position_ids = position_ids.to(self.rotary_emb.inv_freq.device)
     if value_states.device != position_ids.device:
@@ -63,9 +66,12 @@ def get_cos_sin(self, value_states, kv_seq_len, position_ids):
     elif ROPE_TYPE == "seq_len,position_ids":
         cos, sin = self.rotary_emb(value_states, position_ids=position_ids, seq_len=kv_seq_len)
     elif ROPE_TYPE == "max_seq_len":
+        if position_ids is not None and position_ids[0][0] < 0:
+            kv_seq_len -= position_ids[0][0].item()
+            position_ids = position_ids - position_ids[0][0]
         cos = self.rotary_emb(kv_seq_len)
         if position_ids is not None:
-            cos = cos[position_ids]
+            cos = cos[position_ids.to(cos.device)]
         else:
             cos = cos[None, :kv_seq_len]
         sin = None
@@ -433,6 +439,18 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         topk = 100
         return block_sparse_attention(q, k, v, topk)
 
+    def tri_shape_kernel(q, k, v, n_init, n_local, n_last=100):
+        q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
+        y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
+
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(self.head_dim)
+        arange = torch.arange(n_last, device="cuda")
+        mask = arange[None, None, :, None] >= arange[None, None, None, :]
+        qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
+        y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
+        return torch.cat([y1, y2], dim=2)
+
     q_len = q.shape[2]
     bsz = q.shape[0]
 
@@ -445,8 +463,10 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         return dialted(q, k, v, 'dilated2')
     if self.config.to_dict().get("dense", False):
         return dense(q, k, v)
-    if self.config.to_dict().get("streaming", False):
+    if self.config.to_dict().get("a_shape", False):
         return streaming_forward(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
+    if self.config.to_dict().get("tri_shape", False):
+        return tri_shape_kernel(q, k, v, self.config.streaming_kwargs["n_init"], self.config.streaming_kwargs["n_local"])
 
     ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
 
@@ -567,6 +587,65 @@ def minference_forward():
 
     return forward
 
+
+def minference_prefill_kernel(
+    q, k, v, head_id, layer_idx,
+    config,
+):
+    head_dim = q.size(-1)
+    def vertical_and_slash_kernel(q, k, v, vertical_size, slash_size):
+        vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
+        last_q = min(64, q_len)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k) / math.sqrt(head_dim)
+        qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
+        vertical = qk.sum(-2, keepdim=True)
+        vertical[...,:30] = torch.inf
+        vertical_topk = torch.topk(vertical, vertical_size, -1).indices
+
+        slash = sum_all_diagonal_matrix(qk)[...,:-last_q + 1]
+        slash[...,-100:] = torch.inf
+        slash_topk = slash
+        slash = (q_len - 1) - torch.topk(slash, slash_size, -1).indices
+
+        return vertical_slash_sparse_attention(q, k, v, vertical_topk, slash)
+
+    def block_sparse_kernel(q, k, v, vertical_size=None, slash_size=None):
+        topk = 100
+        return block_sparse_attention(q, k, v, topk)
+
+    q_len = q.shape[2]
+    ty, vertical_size, slash_size, _ = config["best_pattern"][layer_idx].get(head_id, ("vertical_and_slash", 1000, 6096, 1))
+
+    if "minference_ratio" in config:
+        vertical_size = int(vertical_size * config.get("minference_ratio", 1))
+        slash_size = int(slash_size * config.get("minference_ratio", 1))
+    fc = {
+        "stream_llm": streaming_forward,
+        "vertical_and_slash": vertical_and_slash_kernel,
+        "block_sparse": block_sparse_kernel,
+    }[ty]
+    return fc(q, k, v, vertical_size, slash_size)
+
+def minference_prefill_forward(
+    query_states, key_states, value_states,
+    prefill_kwargs,
+):
+    starting_layer = prefill_kwargs["attn_forward_config"].get("starting_layer", 0)
+    layer_idx = prefill_kwargs["layer_idx"]
+
+    output = torch.empty_like(query_states)
+    for head in range(query_states.size(1)):
+        q = query_states[:, head, :, :].unsqueeze(1)
+        k = key_states[:, head, :, :].unsqueeze(1)
+        v = value_states[:, head, :, :].unsqueeze(1)
+        if layer_idx >= starting_layer:
+            attn_output = minference_prefill_kernel(q, k, v, head, layer_idx, prefill_kwargs["attn_forward_config"])
+        else:
+            attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, self.head_dim)
+        output[:, head:head + 1] = attn_output
+    return output
+
 def minference_kv_cache_cpu_forward():
     def forward(
         self,
@@ -666,104 +745,23 @@ def minference_kv_cache_cpu_forward():
 
     return forward
 
-def minference_with_snapkv_forward():
-    def forward(
-        self,
-        hidden_states,
-        attention_mask,
-        position_ids,
-        past_key_value,
-        output_attentions,
-        use_cache,
-        **kwargs,
-    ):
-        self.init_minference_parameters()
-        self.ne_inf = torch.finfo(hidden_states.dtype).min
+def kvcompress_forward(
+    original_forward,
+    method: str = "snapkv",
+    config: dict = {},
+):
+    if config.attn_type in ["minference"]:
+        return minference_forward()
 
-        init_snapkv(self)
+    forward_map = {
+        "snapkv": snapkv_forward,
+        "pyramidkv": snapkv_forward,
+        "streaming": snapkv_forward,
+        "quest": quest_forward,
+        "dense": snapkv_forward,
+    }
 
-        bsz, q_len, _ = hidden_states.size()
-
-        query_states = self.q_proj(hidden_states)
-        key_states = self.k_proj(hidden_states)
-        value_states = self.v_proj(hidden_states)
-
-        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-
-        kv_seq_len = key_states.shape[-2]
-        if past_key_value is not None:
-            if self.layer_idx is None:
-                raise ValueError(
-                    f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
-                    "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
-                    "with a layer index."
-                )
-
-            if hasattr(self, "kv_seq_len"): #[SnapKV] add kv_seq_len
-                if self.kv_seq_len != 0:
-                    kv_seq_len += self.kv_seq_len
-                else:
-                    kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-            else:
-                kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-        set_rope_type(self)
-        cos, sin = get_cos_sin(self, value_states, kv_seq_len, position_ids)
-        if ROPE_TYPE == "max_seq_len":
-            if cos.device != query_states.device:
-                cos = cos.to(query_states.device)
-            query_states = apply_rotary_pos_emb(query_states, cos)
-            key_states = apply_rotary_pos_emb(key_states, cos)
-        else:
-            if position_ids is not None and position_ids.device != cos.device:
-                position_ids = position_ids.to(cos.device)
-            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
-        key_states = repeat_kv(key_states, self.num_key_value_groups)
-        value_states = repeat_kv(value_states, self.num_key_value_groups)
-
-        if past_key_value is not None:
-            cache_kwargs = {"sin": sin, "cos": cos}  # Specific to RoPE models
-            if key_states.shape[-2] == kv_seq_len: # [SnapKV] add kv_cluster
-                self.kv_seq_len = kv_seq_len # [SnapKV] register kv_seq_len
-                key_states_compress, value_states_compress = self.kv_cluster.update_kv(key_states, query_states, value_states, attention_mask, self.num_key_value_groups)
-                past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
-            else:
-                self.kv_seq_len += q_len
-                key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
-
-        if self.layer_idx >= self.starting_layer:
-            assert query_states.size(1) == key_states.size(1) == value_states.size(1)
-            output = torch.empty_like(query_states)
-            for head in range(query_states.size(1)):
-                q = query_states[:, head, :, :].unsqueeze(1)
-                k = key_states[:, head, :, :].unsqueeze(1)
-                v = value_states[:, head, :, :].unsqueeze(1)
-                output[:, head:head + 1] = self.gather_last_q_vertical_slash_topk_v4(q, k, v, head)
-
-            attn_output = output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
-            attn_output = self.o_proj(attn_output)
-            return attn_output, None, past_key_value
-
-        else:
-            output = torch.empty_like(query_states)
-            for head in range(query_states.size(1)):
-                q = query_states[:, head, :, :].unsqueeze(1)
-                k = key_states[:, head, :, :].unsqueeze(1)
-                v = value_states[:, head, :, :].unsqueeze(1)
-                if is_flash_attn_2_available():
-                    attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q.shape[2], self.head_dim)
-                else:
-                    attn_output = gather_qkv(q, k, v, attention_mask)
-                output[:, head:head + 1] = attn_output
-            attn_output = output.transpose(1, 2).contiguous()
-            attn_output = attn_output.reshape(bsz, q_len, self.num_heads * self.head_dim)
-            attn_output = self.o_proj(attn_output)
-
-            return attn_output, None, past_key_value
-
-    return forward
+    return forward_map[method]
 
 def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     kv_seq_len = k.size(2)
@@ -772,9 +770,9 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     def vertical_and_slash_kernel(q, k, v, vertical_size, slash_size):
         vertical_size, slash_size  = min(q_len, max(vertical_size, 30)), min(q_len, max(slash_size, 50))
         last_q = min(64, q_len)
-        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q[:,:,-last_q:,:], k) / math.sqrt(q.shape[-1])
 
-        qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:], qk[:, :, :, -last_q:], -torch.inf)
+        qk[:, :, :, -last_q:] = torch.where(LAST_Q_MASK[...,-last_q:,-last_q:].to(q.device), qk[:, :, :, -last_q:], -torch.inf)
         qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)
         vertical = qk.sum(-2, keepdim=True)
         vertical[...,:30] = torch.inf
@@ -794,13 +792,32 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     def dense(q, k, v, vertical_size=None, slash_size=None):
         return flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)
 
+    def tri_shape_kernel(q, k, v, n_init, n_local, n_last=100):
+        q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
+        y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(q2.shape[-1])
+        arange = torch.arange(n_last, device="cuda")
+        mask = arange[None, None, :, None] >= arange[None, None, None, :]
+        qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
+        y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
+        return torch.cat([y1, y2], dim=2)
+
     q_len = q.shape[2]
     bsz = q.shape[0]
 
-    ty, vertical_size, slash_size, _ = self.best_pattern[head_id]
+    ty, vertical_size, slash_size, _ = self.best_pattern.get(head_id, ("vertical_and_slash", 1000, 6096, 1))
+    if "minference_ratio" in self.patch_config:
+        vertical_size = int(vertical_size * self.patch_config.get("minference_ratio", 1))
+        slash_size = int(slash_size * self.patch_config.get("minference_ratio", 1))
 
     if q_len == 1:
         return dense(q, k, v)
+
+    if self.patch_config.get("a_shape", False):
+        return streaming_forward(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
+    if self.patch_config.get("tri_shape", False):
+        return tri_shape_kernel(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
 
     fc = {
         "stream_llm": streaming_forward,
@@ -811,7 +828,8 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
 
 def minference_vllm_forward(
     pattern_config,
-    vllm_version = "0.4.1"
+    vllm_version = "0.4.1",
+    patch_config = {},
 ):
     def forward(
         self,
@@ -834,6 +852,7 @@ def minference_vllm_forward(
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
+        self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
         def repeat_kv(hidden_states, n_rep):
             sqlen, num_head, head_dim = hidden_states.shape
@@ -851,6 +870,7 @@ def minference_vllm_forward(
                 v = repeat_kv(v, q.size(-2) // v.size(-2))
 
             output = torch.empty_like(q)
+            head_idx_st = get_tensor_model_parallel_rank() * q.size(-2)
             for head in range(q.size(-2)):
                 q_head = q[:, head, :].unsqueeze(1)
                 k_head = k[:, head, :].unsqueeze(1)
@@ -865,7 +885,7 @@ def minference_vllm_forward(
                 k_head = k_head.transpose(1, 2)
                 v_head = v_head.transpose(1, 2)
 
-                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head + head_idx_st)
 
                 out = out.transpose(1, 2).squeeze(0).contiguous()
                 output[:, head:head+1, :] = out
@@ -987,6 +1007,7 @@ def minference_vllm_forward(
         Returns:
             shape = [num_tokens, num_heads * head_size]
         """
+        self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
         def repeat_kv(hidden_states, n_rep):
             sqlen, num_head, head_dim = hidden_states.shape
@@ -1004,6 +1025,7 @@ def minference_vllm_forward(
                 v = repeat_kv(v, q.size(-2) // v.size(-2))
 
             output = torch.empty_like(q)
+            head_idx_st = get_tensor_model_parallel_rank() * q.size(-2)
             for head in range(q.size(-2)):
                 q_head = q[:, head, :].unsqueeze(1)
                 k_head = k[:, head, :].unsqueeze(1)
@@ -1018,7 +1040,7 @@ def minference_vllm_forward(
                 k_head = k_head.transpose(1, 2)
                 v_head = v_head.transpose(1, 2)
 
-                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head + head_idx_st)
 
                 out = out.transpose(1, 2).squeeze(0).contiguous()
                 output[:, head:head+1, :] = out
@@ -1141,6 +1163,7 @@ def minference_vllm_forward(
             shape = [num_tokens, num_heads * head_size]
         """
         # NOTE(woosuk): FlashAttention does not support FP8 KV cache.
+        self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
         assert kv_scale == 1.0, "kv_scale is not supported in FlashAttention."
 
@@ -1160,6 +1183,7 @@ def minference_vllm_forward(
                 v = repeat_kv(v, q.size(-2) // v.size(-2))
 
             output = torch.empty_like(q)
+            head_idx_st = get_tensor_model_parallel_rank() * q.size(-2)
             for head in range(q.size(-2)):
                 q_head = q[:, head, :].unsqueeze(1)
                 k_head = k[:, head, :].unsqueeze(1)
@@ -1174,7 +1198,7 @@ def minference_vllm_forward(
                 k_head = k_head.transpose(1, 2)
                 v_head = v_head.transpose(1, 2)
 
-                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head)
+                out = self.gather_last_q_vertical_slash_topk_vllm(q_head, k_head, v_head, head + head_idx_st)
 
                 out = out.transpose(1, 2).squeeze(0).contiguous()
                 output[:, head:head+1, :] = out
@@ -1193,6 +1217,9 @@ def minference_vllm_forward(
             # Reshape the input keys and values and store them in the cache.
             # If kv_cache is not provided, the new key and value tensors are
             # not cached. This happens during the initial memory profiling run.
+            addition_params = {}
+            if "k_scale" in inspect.signature(vllm_ops.reshape_and_cache_flash).parameters:
+                addition_params = {"k_scale": 1.0, "v_scale": 1.0}
             vllm_ops.reshape_and_cache_flash(
                 key,
                 value,
@@ -1200,6 +1227,7 @@ def minference_vllm_forward(
                 value_cache,
                 attn_metadata.slot_mapping.flatten(),
                 self.kv_cache_dtype,
+                **addition_params,
             )
 
         num_prefill_tokens = attn_metadata.num_prefill_tokens
@@ -1220,8 +1248,11 @@ def minference_vllm_forward(
 
         if prefill_meta := attn_metadata.prefill_metadata:
             # Prompt run.
-            if (kv_cache is None or prefill_meta.block_tables is None
-                    or prefill_meta.block_tables.numel() == 0):
+            if (
+                kv_cache is None or prefill_meta.block_tables is None
+                or prefill_meta.block_tables.numel() == 0
+                or query.shape[0] > 10_000 # temporary solution in enable_prefix_caching=True
+            ):
                 # normal attention
                 # When block_tables are not filled, it means q and k are the
                 # prompt, and they have the same length.

@@ -48,6 +48,7 @@ if __name__ == "__main__":
         choices=["flash_attn", "minference"],
     )
     args.add_argument("--context_window", type=int, default=100_000)
+    args.add_argument("--tensor_parallel_size", type=int, default=2)
     args = args.parse_args()
 
     model_name = args.model_name
@@ -64,6 +65,7 @@ if __name__ == "__main__":
         enforce_eager=True,
         max_model_len=args.context_window + 10_000,
         enable_chunked_prefill=False,
+        tensor_parallel_size=args.tensor_parallel_size,
     )
 
     # Patch MInference Module

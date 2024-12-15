@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+import json
 from argparse import ArgumentParser, Namespace
 
 from eval_utils import DATA_NAME_TO_MAX_NEW_TOKENS
@@ -11,7 +12,6 @@ def parse_args() -> Namespace:
     p.add_argument(
         "--task",
         type=str,
-        # choices=list(DATA_NAME_TO_MAX_NEW_TOKENS.keys()) + ["all"],
         required=True,
         help='Which task to use. Note that "all" can only be used in `compute_scores.py`.',  # noqa
     )
@@ -58,9 +58,28 @@ def parse_args() -> Namespace:
     p.add_argument("--topk_dims_file_path", type=str, default=None)
     p.add_argument("--kv_cache_cpu", action="store_true")
     p.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
-    p.add_argument("--kv_type", type=str, default="")
+    p.add_argument(
+        "--kv_type",
+        type=str,
+        default="dense",
+        choices=[
+            "dense",
+            "snapkv",
+            "pyramidkv",
+            "quest",
+            "streamingllm",
+            "retr_attn",
+            "kivi",
+        ],
+    )
     p.add_argument("--trust_remote_code", action="store_true")
+    p.add_argument("--use_chat_template", action="store_true")
+    p.add_argument("--same_context_different_query", action="store_true")
     p.add_argument("--tensor_parallel_size", type=int, default=1)
+    p.add_argument("--max_turns", type=int, default=5)
+    p.add_argument("--use_llmlingua", action="store_true")
+    p.add_argument("--disable_golden_context", action="store_true")
+    p.add_argument("--use_v2_data", action="store_true")
     p.add_argument(
         "--attn_type",
         type=str,
@@ -68,16 +87,25 @@ def parse_args() -> Namespace:
             "vllm",
             "vllm_minference",
             "vllm_a_shape",
+            "vllm_tri_shape",
+            "vllm_blend",
             "hf",
             "a_shape",
+            "tri_shape",
             "inf_llm",
             "flash_attn",
             "minference",
             "minference_with_dense",
+            "minference_with_dense_sink",
             "dilated1",
             "dilated2",
+            "retrieval_attn",
+            "minference_with_retr_attn",
+            "vllm_kv",
+            "dense",
         ],
         default="hf",
     )
     p.add_argument("--is_search", action="store_true")
+    p.add_argument("--hyper_param", type=json.loads, default={})
     return p.parse_args()

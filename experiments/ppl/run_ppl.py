@@ -231,7 +231,7 @@ if __name__ == "__main__":
         type=str,
         choices=[
             "hf",
-            "streaming",
+            "a_shape",
             "minference",
             "dilated1",
             "dilated2",
