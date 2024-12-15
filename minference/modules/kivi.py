@@ -656,8 +656,8 @@ class KiviCache(Cache):
             )
 
             return (
-                repeat_kv(key_states, query_states.size(-1) // key_states.size(-1)),
-                repeat_kv(value_states, query_states.size(-1) // value_states.size(-1)),
+                repeat_kv(key_states, query_states.size(1) // key_states.size(1)),
+                repeat_kv(value_states, query_states.size(1) // value_states.size(1)),
             )
 
         else:  # decoding
