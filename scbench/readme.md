@@ -8,6 +8,33 @@
 
 SCBench (SharedContextBench) is a comprehensive benchmark to evaluate efficient long-context methods on **multi-turn** and **multi-request** interactions to analyze their performance across **the full KV cache lifecycle (generation, compression, retrieval, and loading)**.
 
+### Load Data
+You can download and load the **SCBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/microsoft/SCBench)):
+```python
+from datasets import load_dataset
+
+datasets = ["scbench_kv", "scbench_prefix_suffix", "scbench_vt", "scbench_repoqa", "scbench_qa_eng", "scbench_qa_chn", "scbench_choice_eng", "scbench_many_shot", "scbench_summary", "scbench_mf", "scbench_summary_with_needles", "scbench_repoqa_and_kv"]
+
+for dataset in datasets:
+    data = load_dataset('microsoft/SCBench', dataset, split='train')
+```
+
+### Data Format
+
+All data in **SCBench** are standardized to the following format:
+
+```json
+{
+    "id": "Random id for each piece of data.",
+    "context": "The long context required for the task, such as repo-code, long-document, and many-shot.",
+    "multi_turns": [{"input": "multi-turn question.", "answer": "multi-turn reference answer."}],
+}
+```
+
+### Experiments
+
+We implement **Multi-Turn** and **Multi-Request** modes with HF and vLLM in [`GreedySearch`](https://github.com/microsoft/MInference/blob/yucheng/kvcompression/scbench/eval_utils.py#L1160) and [`GreedySearch_vllm`](https://github.com/microsoft/MInference/blob/yucheng/kvcompression/scbench/eval_utils.py#L1070) two class. Please refer the follow scripts to run the experiments.
+
 
 ## Run the benchmark
 
@@ -22,7 +49,7 @@ bash scripts/test_llama.sh
 Run multiple tasks in one command:
 
 ```bash
-bash scripts/test_all_tasks.sh
+bash scripts/run_all_tasks.sh
 ```
 
 Specify the max sequence length, max number of turns, and number of eval examples:
