@@ -4,7 +4,7 @@
 [[Code]](https://github.com/microsoft/MInference/SCBench)
 [[Project Page]](https://aka.ms/scbench)
 
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench_framework.png)
+![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/SCBench_onepage.png)
 
 SCBench (SharedContextBench) is a comprehensive benchmark to evaluate efficient long-context methods on **multi-turn** and **multi-request** interactions to analyze their performance across **the full KV cache lifecycle (generation, compression, retrieval, and loading)**.
 
@@ -62,7 +62,7 @@ You will need to build specific environment for different attention types and KV
 
 ## Dataset and Tasks Description
 
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench_overview.png)
+![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench/overview.png)
 
 SCBench covers 12 diverse tasks that test four key long-context capabilities: string retrieval, semantic retrieval, global information processing, and multi-tasking.
 
@@ -167,35 +167,10 @@ python run_multiturnbench.py .... --hyper_param '{"n_local": 4096}'
 
 ## Compared to previous long-context benchmarks
 
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench_comparison.png)
+![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench/comparison.png)
 
 Our SCBench is the first long-context benchmark that covers single-turn, multi-turn, and multi-request scenarios. In addition, our impelmentation also involves KV cache reuse techniques, thereby providing a more comprehensive analysis on the full KV cache lifecycle of efficient long-context methods.
 
-## Results and Findings
-
-![SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/scbench_results.png)
-
-Our SCBench reveals that the following key insights:
-
-### Finding 1: Sub-O(n) Memory is Problematic in Multi-Request/Multi-Turn Decoding
-- Sparse decoding methods with sub-O(n) memory perform well on first queries but lose accuracy in subsequent requests
-- Methods maintaining O(n) memory with sub-O(n²) computation during pre-filling can better approximate full attention accuracy across multiple queries
-
-### Finding 2: Task Performance Shows Varying Decline Patterns
-- Sparse KV cache methods excel in tasks requiring global information processing
-- O(n) memory is essential for tasks involving exact match retrieval
-
-### Finding 3: Performance vs Compression Rate
-- All methods show performance degradation as compression rates increase
-- Sub-O(n) memory methods exhibit significant drop at 1/4 compression rate
-- Methods like RetrievalAttention and KIVI that maintain O(n) memory with sparse decoding show better resilience at higher compression rates
-
-### Finding 4: Issues with Long-Generation Scenarios
-- Attention distribution shifts significantly as generation length and number of rounds increase
-- This out-of-distribution (OOD) issue impacts performance even for O(n) memory methods
-
-### Finding 5: Dynamic vs Static Patterns
-- Dynamic sparse patterns generally outperform static patterns
 
 ## Citation
 
