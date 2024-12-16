@@ -35,7 +35,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 **SCBench** analyzes long-context methods from a **KV cache-centric perspective** across the full KV cache lifecycle (e.g., KV cache generation, compression, retrieval, and loading). It evaluates 12 tasks under two shared context modes, covering four categories of long-context capabilities: string retrieval, semantic retrieval, global information, and multi-task scenarios.
 
-- [SCBench: A KV Cache-Centric Analysis of Long-Context Methods](https://drive.google.com/file/d/1_DFu11V7HbktvEMRqMUAWGm7DTkVXlOR/view?usp=drive_link) (Under Review, ENLSP @ NeurIPS'24)<br>
+- [SCBench: A KV Cache-Centric Analysis of Long-Context Methods](https://arxiv.org/abs/2412.10319) (Under Review, ENLSP @ NeurIPS'24)<br>
   _Yucheng Li, Huiqiang Jiang, Qianhui Wu, Xufang Luo, Surin Ahn, Chengruidong Zhang, Amir H. Abdi, Dongsheng Li, Jianfeng Gao, Yuqing Yang and Lili Qiu_
 
 
