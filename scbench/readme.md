@@ -1,7 +1,7 @@
 # SCBench
 
-[[Paper]]()
-[[Code]](https://github.com/microsoft/MInference/SCBench)
+[[Paper]](https://arxiv.org/abs/2412.10319)
+[[Code]](https://github.com/microsoft/MInference/tree/main/scbench)
 [[Project Page]](https://aka.ms/scbench)
 
 ![SCBench](../images/SCBench_onepage.png)
@@ -201,7 +201,7 @@ Our SCBench is the first long-context benchmark that covers single-turn, multi-t
 @article{li2024scbench,
     title={SCBench: A KV cache-centric analysis of long-context methods},
     author={Li, Yucheng and Jiang, Huiqiang and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Zhang, Chengruidong and Abdi, Amir H and Li, Dongsheng and Gao, Jianfeng and Yang, Yuqing and Qiu, Lili},
-    journal={arXiv preprint arXiv:2407.02490},
+    journal={arXiv preprint arXiv:2412.10319},
     year={2024}
 }
 ```
