@@ -11,6 +11,7 @@ class MInferenceConfig:
         "minference",
         "vllm",
         "minference_prefill",
+        "flexprefill",
     ]
     STATIC_ATTENTION_TYPES = [
         "minference_with_dense",
