@@ -9,6 +9,8 @@ from datetime import datetime
 from needle_tools import LLMNeedleHaystackTester
 from needle_viz import plot_needle_viz
 
+from minference import MInferenceConfig
+
 
 @dataclass
 class Config:
@@ -29,6 +31,7 @@ class Config:
     kv_cache_cpu: bool = False
     trust_remote_code: bool = False
     kv_cache_cpu_device: str = "cpu"
+    kv_type: str = "dense"
 
     def __post_init__(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -51,6 +54,7 @@ def main(
     kv_cache_cpu: bool = False,
     trust_remote_code: bool = False,
     kv_cache_cpu_device: str = "cpu",
+    kv_type: str = "dense",
 ):
     config = Config(
         model_name=model_name,
@@ -65,6 +69,7 @@ def main(
         kv_cache_cpu=kv_cache_cpu,
         trust_remote_code=trust_remote_code,
         kv_cache_cpu_device=kv_cache_cpu_device,
+        kv_type=kv_type,
     )
     kwargs = {
         "swap_space": 64,
@@ -95,15 +100,14 @@ if __name__ == "__main__":
     args.add_argument(
         "--attn_type",
         type=str,
-        required=True,
-        choices=[
-            "vllm",
-            "hf",
-            "a_shape",
-            "minference",
-            "inf_llm",
-            "minference_with_dense",
-        ],
+        choices=MInferenceConfig.get_available_attn_types(),
+        default="hf",
+    )
+    args.add_argument(
+        "--kv_type",
+        type=str,
+        default="dense",
+        choices=MInferenceConfig.get_available_kv_types(),
     )
     args.add_argument("--output_path", type=str, default="results/needle/")
     args.add_argument("--pattern_path", type=str, default=None)
@@ -120,6 +124,7 @@ if __name__ == "__main__":
         model_name=args.model_name,
         run_name=args.run_name,
         attn_type=args.attn_type,
+        kv_type=args.kv_type,
         output_path=args.output_path,
         pattern_path=args.pattern_path,
         rounds=args.rounds,

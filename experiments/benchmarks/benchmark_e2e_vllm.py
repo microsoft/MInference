@@ -68,7 +68,7 @@ if __name__ == "__main__":
 
     # Patch MInference Module
     if args.attn_type == "minference":
-        minference_patch = MInference("vllm", model_name)
+        minference_patch = MInference("vllm_minference", model_name)
         llm = minference_patch(llm)
 
     run_target_length(args.context_window, llm, sampling_params, args.attn_type)

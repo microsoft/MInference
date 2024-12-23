@@ -127,17 +127,17 @@ def load_model(
         model_name, resume_download=None, trust_remote_code=trust_remote_code
     )
     tok.pad_token = tok.eos_token
-    if attn_type != "vllm":
-        minference_patch = MInference(
-            "vllm" if "vllm_minference" in attn_type else attn_type,
-            model_name,
-            config_path=topk_dims_file_path,
-            starting_layer=starting_layer,
-            kv_type=kv_type,
-            is_search=is_search,
-            kv_cache_cpu=kv_cache_cpu,
-            kv_cache_cpu_device=kv_cache_cpu_device,
-        )
+
+    minference_patch = MInference(
+        attn_type,
+        model_name,
+        config_path=topk_dims_file_path,
+        starting_layer=starting_layer,
+        kv_type=kv_type,
+        is_search=is_search,
+        kv_cache_cpu=kv_cache_cpu,
+        kv_cache_cpu_device=kv_cache_cpu_device,
+    )
 
     if "vllm" in attn_type:
         llm = LLM(

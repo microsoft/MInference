@@ -70,6 +70,13 @@ class MInference:
             self.config.attn_kwargs.setdefault("n_local", 3968)
             self.config.attn_kwargs.setdefault("n_init", 128)
 
+        if self.config.attn_type == "flexprefill":
+            self.config.attn_kwargs.setdefault("gamma", 0.9)
+            self.config.attn_kwargs.setdefault("tau", 0.1)
+            self.config.attn_kwargs.setdefault("min_budget", None)
+            self.config.attn_kwargs.setdefault("max_budget", None)
+            self.config.attn_kwargs.setdefault("block_size", 128)
+
         if "vllm" not in self.config.attn_type:
             model.config.starting_layer = self.config.starting_layer
             model.config.config_path = self.config.config_path
@@ -90,7 +97,7 @@ class MInference:
             self.config.attn_kwargs.setdefault("n_last", 100)
             model = new_patch(model, self.config)
 
-        elif self.config.attn_type == "dense":
+        elif self.config.attn_type in ["flexprefill", "dense"]:
             model = new_patch(model, self.config)
 
         elif self.config.attn_type == "dilated1":
@@ -111,7 +118,7 @@ class MInference:
                 attn_type="a_shape",
                 attn_kwargs={"n_local": 3968, "n_init": 128, **self.config.attn_kwargs},
             )
-        elif self.config.attn_type == "hf":
+        elif self.config.attn_type in ["hf", "vllm"]:
             pass
         elif self.config.attn_type == "inf_llm":
             model = patch_hf(
@@ -131,10 +138,17 @@ class MInference:
                     **self.config.attn_kwargs,
                 },
             )
-        elif self.config.attn_type == "vllm":
+        elif self.config.attn_type == "vllm_minference":
             model = minference_patch_vllm(
                 model, self.config.config_path, self.config.attn_kwargs
             )
+        elif self.config.attn_type == "vllm_flexprefill":
+            patch_config = {
+                "flexprefill": True,
+                "flexprefill_kwargs": {},
+                **self.config.attn_kwargs,
+            }
+            model = minference_patch_vllm(model, self.config.config_path, patch_config)
         elif self.config.attn_type == "vllm_a_shape":
             patch_config = {
                 "a_shape": True,

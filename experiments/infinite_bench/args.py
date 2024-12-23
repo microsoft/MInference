@@ -5,6 +5,8 @@ from argparse import ArgumentParser, Namespace
 
 from eval_utils import DATA_NAME_TO_MAX_NEW_TOKENS
 
+from minference import MInferenceConfig
+
 
 def parse_args() -> Namespace:
     p = ArgumentParser()
@@ -58,26 +60,19 @@ def parse_args() -> Namespace:
     p.add_argument("--topk_dims_file_path", type=str, default=None)
     p.add_argument("--kv_cache_cpu", action="store_true")
     p.add_argument("--kv_cache_cpu_device", type=str, default="cpu")
-    p.add_argument("--kv_type", type=str, default="")
     p.add_argument("--trust_remote_code", action="store_true")
     p.add_argument("--tensor_parallel_size", type=int, default=1)
     p.add_argument(
         "--attn_type",
         type=str,
-        choices=[
-            "vllm",
-            "vllm_minference",
-            "vllm_a_shape",
-            "hf",
-            "a_shape",
-            "inf_llm",
-            "flash_attn",
-            "minference",
-            "minference_with_dense",
-            "dilated1",
-            "dilated2",
-        ],
+        choices=MInferenceConfig.get_available_attn_types(),
         default="hf",
+    )
+    p.add_argument(
+        "--kv_type",
+        type=str,
+        default="dense",
+        choices=MInferenceConfig.get_available_kv_types(),
     )
     p.add_argument("--is_search", action="store_true")
     return p.parse_args()

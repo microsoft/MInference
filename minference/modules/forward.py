@@ -4,6 +4,7 @@
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
 
+from ..modules.flexprefill import flexprefill_forward
 from ..modules.kivi import kivi_forward
 from ..modules.minference_forward import minference_prefill_forward
 from ..modules.quest import quest_decode_kernel
@@ -170,6 +171,7 @@ prefill_forwards = {  # None = use flash attention
     "a_shape": a_shape_kernel,
     "tri_shape": tri_shape_kernel,
     "minference": minference_prefill_forward,
+    "flexprefill": flexprefill_forward,
 }
 
 decoding_forwards = {

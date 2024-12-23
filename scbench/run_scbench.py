@@ -201,7 +201,7 @@ def load_model(
         )
         if attn_type != "vllm":
             minference_patch = MInference(
-                "vllm" if attn_type == "vllm_minference" else attn_type,
+                attn_type,
                 model_name,
                 config_path=topk_dims_file_path,
                 starting_layer=starting_layer,

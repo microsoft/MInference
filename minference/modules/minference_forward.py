@@ -26,6 +26,7 @@ if _is_package_available("vllm"):
 from ..ops.block_sparse_flash_attention import block_sparse_attention
 from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
+from .flexprefill import flexprefill_forward
 from .kvcompression import *
 from .quest import quest_forward
 from .snapkv import *
@@ -814,6 +815,8 @@ def gather_last_q_vertical_slash_topk_vllm(self, q, k, v, head_id):
     if q_len == 1:
         return dense(q, k, v)
 
+    if self.patch_config.get("flexprefill", False):
+        return flexprefill_forward(q, k, v, {"attn_forward_config": self.patch_config["flexprefill_kwargs"]})
     if self.patch_config.get("a_shape", False):
         return streaming_forward(q, k, v, self.patch_config["streaming_kwargs"]["n_init"], self.patch_config["streaming_kwargs"]["n_local"])
     if self.patch_config.get("tri_shape", False):
