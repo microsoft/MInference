@@ -58,6 +58,24 @@ To get started with MInference, simply install it using pip:
 pip install minference
 ```
 
+### Supported Efficient Methods
+
+You can get the complete list of supported efficient methods by running the following code:
+```python
+from minference import MInferenceConfig
+supported_attn_types = MInferenceConfig.get_available_attn_types()
+supported_kv_types = MInferenceConfig.get_available_kv_types()
+```
+
+Currently, we support the following long-context methods:
+
+- **[① KV Cache Generation]:** [MInference](https://arxiv.org/abs/2407.02490), [FlexPrefill](https://openreview.net/forum?id=OfjIlbelrT), [A-shape](https://arxiv.org/abs/2309.17453), [Tri-shape](https://arxiv.org/abs/2412.10319), [MInference w/ static](https://arxiv.org/abs/2407.02490), [Dilated](https://arxiv.org/abs/2004.05150), [Strided](https://arxiv.org/abs/1904.10509)
+- **[② KV Cache Compression]:** [StreamingLLM](https://arxiv.org/abs/2309.17453), [SnapKV](https://arxiv.org/abs/2404.14469), [PyramidKV](https://arxiv.org/abs/2406.02069), [KIVI](https://arxiv.org/abs/2402.02750)
+- **[③ KV Cache Retrieval]:** [CacheBlend](https://arxiv.org/abs/2405.16444)
+- **[④ KV Cache Loading]:** [Quest](https://arxiv.org/abs/2406.10774), [RetrievalAttention](https://arxiv.org/abs/2409.10516)
+
+For more details about the KV cache lifecycle, please refer to [**SCBench**](https://arxiv.org/abs/2412.10319). Note that some modes are supported by vLLM, while all modes are supported by HF.
+
 ### Supported Models
 
 General *MInference* **supports any decoding LLMs**, including LLaMA-style models, and Phi models.

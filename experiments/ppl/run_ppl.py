@@ -18,7 +18,7 @@ from transformers import (
     LlamaForCausalLM,
 )
 
-from minference import MInference
+from minference import MInference, MInferenceConfig
 
 
 class LongPPL:
@@ -33,6 +33,7 @@ class LongPPL:
         output_path: str = "results/long-ppl/",
         data_path: str = "liyucheng/pg19-4k",
         num_eval_examples: int = 100,
+        kv_type: str = "dense",
         **kwargs,
     ) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -43,7 +44,7 @@ class LongPPL:
             intervals,
             num_eval_examples,
         )
-        self.load_model(model_name, attn_type, **kwargs)
+        self.load_model(model_name, attn_type, kv_type, **kwargs)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
         self.output_path = os.path.join(
@@ -58,9 +59,10 @@ class LongPPL:
         self,
         model_name: str,
         attn_type: str = "vllm",
+        kv_type: str = "dense",
         **kwargs,
     ):
-        if attn_type == "vllm":
+        if "vllm" in attn_type:
             pass
         else:
             topk_dims_file_path = kwargs.get("topk_dims_file_path", None)
@@ -70,6 +72,7 @@ class LongPPL:
                 model_name,
                 topk_dims_file_path,
                 starting_layer=topk_from_layer,
+                kv_type=kv_type,
             )
             self.model = LlamaForCausalLM.from_pretrained(
                 model_name,
@@ -229,14 +232,14 @@ if __name__ == "__main__":
     args.add_argument(
         "--attn_type",
         type=str,
-        choices=[
-            "hf",
-            "a_shape",
-            "minference",
-            "dilated1",
-            "dilated2",
-        ],
+        choices=MInferenceConfig.get_available_attn_types(),
         default="hf",
+    )
+    args.add_argument(
+        "--kv_type",
+        type=str,
+        default="dense",
+        choices=MInferenceConfig.get_available_kv_types(),
     )
     args.add_argument("--do_plot", action="store_true")
     args.add_argument("--min_seq_length", type=int, default=1_000)
@@ -264,6 +267,7 @@ if __name__ == "__main__":
         topk=args.topk,
         topk_from_layer=args.topk_from_layer,
         topk_dims_file_path=args.topk_dims_file_path,
+        kv_type=args.kv_type,
     )
     test.start_test()
 

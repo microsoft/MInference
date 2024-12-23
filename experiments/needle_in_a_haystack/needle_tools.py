@@ -212,8 +212,9 @@ class LLMNeedleHaystackTester:
             attn_kwargs=(
                 {} if self.config.attn_type != "inf_llm" else {"dense_decoding": False}
             ),
+            kv_type=self.config.kv_type,
         )
-        if self.config.attn_type == "vllm":
+        if "vllm" in self.config.attn_type:
             #### use vllm implementation
             self.model = LLM(
                 model=self.config.model_name,

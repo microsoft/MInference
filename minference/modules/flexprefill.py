@@ -1,3 +1,7 @@
+# Copyright (c) 2024 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Refer to the code in https://openreview.net/forum?id=OfjIlbelrT
+
 import math
 from typing import List, Optional, Tuple, Union
 
@@ -729,6 +733,7 @@ def bnhd_pool_kernel(
 
 
 def triton_bnhd_pool(x: torch.Tensor, kernel_size: int, pool_type: str = "avg"):
+    x = x.to("cuda")
     b, n, h, d = x.shape
     assert d in {16, 32, 64, 128}
     assert kernel_size in {16, 32, 64, 128, 256, 512}
@@ -976,7 +981,7 @@ def get_active_blocks(
         causal_mask = causal_mask[:, None] >= causal_mask[None, :]
         causal_mask = causal_mask[None, None, None, ...]
     qk[..., -block_size:].masked_fill_(
-        ~causal_mask[..., :block_size, :block_size], float("-inf")
+        ~causal_mask[..., :block_size, :block_size].to(qk.device), float("-inf")
     )
     # softmax
     qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32)

@@ -9,14 +9,15 @@ from .configs.model2path import MODEL2PATH
 class MInferenceConfig:
     MINFERENCE_ATTENTION_TYPES = [
         "minference",
-        "vllm",
-        "minference_prefill",
-        "flexprefill",
+        "vllm_minference",
     ]
-    STATIC_ATTENTION_TYPES = [
-        "minference_with_dense",
+    OTHER_ATTENTION_TYPES = [
+        # original implement
+        "hf",
+        "vllm",
+        # our custom implement
         "dense",
-        "static",
+        "static",  # minference w/ static
         "dilated1",
         "dilated2",
         "a_shape",
@@ -24,7 +25,17 @@ class MInferenceConfig:
         "vllm_a_shape",
         "vllm_tri_shape",
         "inf_llm",
-        "hf",
+        "flexprefill",
+        "vllm_flexprefill",
+    ]
+    KV_TYPES = [
+        "dense",
+        "streamingllm",
+        "snapkv",
+        "pyramidkv",
+        "quest",
+        "retr_attn",
+        "kivi",
     ]
 
     def __init__(
@@ -41,9 +52,16 @@ class MInferenceConfig:
         **kwargs,
     ):
         super(MInferenceConfig, self).__init__()
+        attn_type, kv_type = self.update_config_type(attn_type, kv_type)
         assert (
-            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.STATIC_ATTENTION_TYPES
-        ), f"The attention_type {attn_type} you specified is not supported."
+            attn_type in self.MINFERENCE_ATTENTION_TYPES + self.OTHER_ATTENTION_TYPES
+        ), f"The attn_type {attn_type} you specified is not supported."
+        assert (
+            kv_type in self.KV_TYPES
+        ), f"The kv_type {kv_type} you specified is not supported."
+        print(
+            f"<---- MInference Config Detail ----> attn_type {attn_type}, kv_type {kv_type}"
+        )
         self.attn_type = attn_type
         self.config_path = self.update_config_path(config_path, model_name)
         self.model_name = model_name
@@ -55,7 +73,7 @@ class MInferenceConfig:
         self.attn_kwargs = attn_kwargs
 
     def update_config_path(self, config_path: str, model_name: str):
-        if self.attn_type in self.STATIC_ATTENTION_TYPES:
+        if self.attn_type in self.OTHER_ATTENTION_TYPES:
             return ""
         if config_path is not None:
             return config_path
@@ -66,3 +84,18 @@ class MInferenceConfig:
 
     def get(self, attr, default=None):
         return getattr(self, attr, default)
+
+    def update_config_type(self, attn_type: str, kv_type: str):
+        if kv_type == "":
+            kv_type = "dense"
+        if attn_type == "minference_with_dense":
+            attn_type = "dense"
+        return attn_type, kv_type
+
+    @classmethod
+    def get_available_attn_types(cls):
+        return cls.MINFERENCE_ATTENTION_TYPES + cls.OTHER_ATTENTION_TYPES
+
+    @classmethod
+    def get_available_kv_types(cls):
+        return cls.KV_TYPES

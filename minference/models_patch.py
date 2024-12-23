@@ -118,7 +118,7 @@ class MInference:
                 attn_type="a_shape",
                 attn_kwargs={"n_local": 3968, "n_init": 128, **self.config.attn_kwargs},
             )
-        elif self.config.attn_type == "hf":
+        elif self.config.attn_type in ["hf", "vllm"]:
             pass
         elif self.config.attn_type == "inf_llm":
             model = patch_hf(
@@ -138,10 +138,17 @@ class MInference:
                     **self.config.attn_kwargs,
                 },
             )
-        elif self.config.attn_type == "vllm":
+        elif self.config.attn_type == "vllm_minference":
             model = minference_patch_vllm(
                 model, self.config.config_path, self.config.attn_kwargs
             )
+        elif self.config.attn_type == "vllm_flexprefill":
+            patch_config = {
+                "flexprefill": True,
+                "flexprefill_kwargs": {},
+                **self.config.attn_kwargs,
+            }
+            model = minference_patch_vllm(model, self.config.config_path, patch_config)
         elif self.config.attn_type == "vllm_a_shape":
             patch_config = {
                 "a_shape": True,
