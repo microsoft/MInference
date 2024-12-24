@@ -50,7 +50,8 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 - Torch
 - FlashAttention-2 (Optional)
-- Triton == 2.1.0
+- Triton
+- Transformers >= 4.46.0
 
 To get started with MInference, simply install it using pip:
 
@@ -181,7 +182,7 @@ from datasets import load_dataset
 datasets = ["scbench_kv", "scbench_prefix_suffix", "scbench_vt", "scbench_repoqa", "scbench_qa_eng", "scbench_qa_chn", "scbench_choice_eng", "scbench_many_shot", "scbench_summary", "scbench_mf", "scbench_summary_with_needles", "scbench_repoqa_and_kv"]
 
 for dataset in datasets:
-    data = load_dataset('microsoft/SCBench', dataset, split='train')
+    data = load_dataset("microsoft/SCBench", dataset, split="test")
 ```
 
 ### Data Format

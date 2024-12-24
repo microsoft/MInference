@@ -12,6 +12,7 @@ from typing import Any, List, Tuple
 import torch
 from args import parse_args
 from compute_scores import compute_scores
+from datasets import load_dataset
 from eval_utils import (
     DATA_NAME_TO_MAX_NEW_TOKENS,
     GreedySearch,
@@ -112,7 +113,6 @@ def get_pred(
             use_vllm=("vllm" in attn_type),
             disable_golden_context=disable_golden_context,
         )
-
     context = truncate_by_tokens(
         encoded_eg["prompts"][0], model.tokenizer, max_input_length
     )
@@ -148,7 +148,14 @@ def load_model(
     tensor_parallel_size: int = 1,
     hyper_param: dict = None,
 ):
-    tok = AutoTokenizer.from_pretrained(model_name, trust_remote_code=trust_remote_code)
+    if model_name == "THUDM/glm-4-9b-chat-1m":
+        tok = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code, revision="refs/pr/19"
+        )
+    else:
+        tok = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code
+        )
     # tok.pad_token = tok.eos_token
 
     if attn_type == "vllm_blend":
@@ -264,7 +271,7 @@ def load_model(
 if __name__ == "__main__":
     args = parse_args()
 
-    check_benchmark_availability(args.data_dir)
+    # check_benchmark_availability(args.data_dir)
     model_name = args.model_name_or_path
     max_seq_length = args.max_seq_length
     real_model_name = model_name.split("/")[-1]
@@ -328,9 +335,7 @@ if __name__ == "__main__":
         output_path = (
             result_dir / f"prediction_{data_name}{use_scdq}{use_llmlingua}.jsonl"
         )
-        examples = load_data(
-            data_name, data_dir=args.data_dir, use_v2_data=args.use_v2_data
-        )
+        examples = load_dataset("microsoft/SCBench", data_name, split="test")
 
         if args.use_llmlingua:
             # do prompt compression here
@@ -377,8 +382,8 @@ if __name__ == "__main__":
             if i < args.start_example_id or i in done:
                 continue
             if data_name in [
-                "multi_turn_summary_with_needles",
-                "multi_turn_repoqa_and_kv",
+                "scbench_summary_with_needles",
+                "scbench_repoqa_and_kv",
             ]:
                 max_input_length = max_seq_length - (
                     sum(list(max_new_tokens.values())) * max_turn_size // 2
@@ -413,16 +418,16 @@ if __name__ == "__main__":
                 }
                 if "task" in pred:
                     case["task"] = pred["task"][turn_idx]
-                if data_name == "multi_turn_repoqa":
+                if data_name == "scbench_repoqa":
                     case["lang"] = eg["lang"]
                     case["repo"] = eg["repo"]
                     case["func_name"] = turn["name"]
-                if data_name == "multi_turn_repoqa_and_kv":
+                if data_name == "scbench_repoqa_and_kv":
                     case["lang"] = eg["lang"]
                     case["repo"] = eg["repo"]
-                    if turn["task"] == "multi_turn_repoqa":
+                    if turn["task"] == "scbench_repoqa":
                         case["func_name"] = turn["name"]
-                if data_name == "multi_turn_kv_compressible":
+                if data_name == "scbench_kv_compressible":
                     case["task"] = eg["task"]
                 preds.append(case)
             dump_jsonl(preds, output_path)
