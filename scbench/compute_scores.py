@@ -357,10 +357,10 @@ def get_score_one(pred: str, label: str, task_name: str, model_name: str) -> flo
         "math_find": get_score_one_math_find,
         "math_calc": get_score_one_math_calc,
         # multi-turn nativ
-        "multi_turn_summary": get_score_one_longbook_sum_eng,
-        "multi_turn_vt": string_match_all,
-        "multi_turn_many_shot": get_score_one_longdialogue_qa_eng,
-        "multi_turn_kv_compressible": get_score_one_kv_retrieval,
+        "scbench_summary": get_score_one_longbook_sum_eng,
+        "scbench_vt": string_match_all,
+        "scbench_many_shot": get_score_one_longdialogue_qa_eng,
+        "scbench_kv_compressible": get_score_one_kv_retrieval,
     }
     assert task_name in NAME_TO_SCORE_GETTER, f"Invalid task name: {task_name}"
     score = NAME_TO_SCORE_GETTER[task_name](pred, label, model_name)
@@ -415,15 +415,15 @@ def get_score(labels: list, preds: list, data_name: str, model_name: str) -> flo
 
 
 Multiturnbench_to_Infinitebench = {
-    "multi_turn_choice_eng": "longbook_choice_eng",
-    "multi_turn_qa_eng": "longdialogue_qa_eng",
-    "multi_turn_qa_chn": "longbook_qa_chn",
-    "multi_turn_kv": "kv_retrieval",
-    "multi_turn_kv_hard": "kv_retrieval",
-    "multi_turn_hashhop": "kv_retrieval",
-    "multi_turn_prefix_suffix": "kv_retrieval",
-    "multi_turn_mf": "math_find",
-    "multi_turn_passkey": "passkey",
+    "scbench_choice_eng": "longbook_choice_eng",
+    "scbench_qa_eng": "longdialogue_qa_eng",
+    "scbench_qa_chn": "longbook_qa_chn",
+    "scbench_kv": "kv_retrieval",
+    "scbench_kv_hard": "kv_retrieval",
+    "scbench_hashhop": "kv_retrieval",
+    "scbench_prefix_suffix": "kv_retrieval",
+    "scbench_mf": "math_find",
+    "scbench_passkey": "passkey",
 }
 
 
@@ -438,12 +438,12 @@ def compute_scores(
     else:
         task_name = data_name
 
-    if task_name in ["multi_turn_repoqa", "multi_turn_repoqa_and_kv"]:
+    if task_name in ["scbench_repoqa", "scbench_repoqa_and_kv"]:
         # collect needle wrt repos
         needle_by_repo = {}
         for pred in preds:
-            if task_name == "multi_turn_repoqa_and_kv":
-                if pred["task"] != "multi_turn_repoqa":
+            if task_name == "scbench_repoqa_and_kv":
+                if pred["task"] != "scbench_repoqa":
                     continue
             repo = pred["repo"]
             if repo not in needle_by_repo:
@@ -453,11 +453,11 @@ def compute_scores(
             )
 
     if scdq_mode:
-        if task_name == "multi_turn_repoqa":
+        if task_name == "scbench_repoqa":
             labels = get_labels(preds)
             acc = compute_repoqa_score(model_name, preds, labels, needle_by_repo)
-        elif task_name == "multi_turn_summary_with_needles":
-            subtasks = ["multi_turn_summary", "multi_turn_passkey"]
+        elif task_name == "scbench_summary_with_needles":
+            subtasks = ["scbench_summary", "scbench_passkey"]
             acc = {}
             for subtask in subtasks:
                 try:
@@ -473,8 +473,8 @@ def compute_scores(
                     task_ = subtask
                 acc_ = get_score(labels, preds_, task_, model_name)
                 acc[subtask] = acc_
-        elif task_name == "multi_turn_repoqa_and_kv":
-            subtasks = ["multi_turn_repoqa", "multi_turn_kv"]
+        elif task_name == "scbench_repoqa_and_kv":
+            subtasks = ["scbench_repoqa", "scbench_kv"]
             acc = {}
             for subtask in subtasks:
                 try:
@@ -485,17 +485,17 @@ def compute_scores(
                     acc[subtask] = 0
                     continue
 
-                if subtask == "multi_turn_repoqa":
+                if subtask == "scbench_repoqa":
                     acc_ = compute_repoqa_score(
                         model_name, preds_, labels, needle_by_repo
                     )
                     acc_ = acc_[model_name]["scores"]["all"][0.8]["pass@1"]
-                elif subtask == "multi_turn_kv":
+                elif subtask == "scbench_kv":
                     acc_ = get_score(labels, preds_, "kv_retrieval", model_name)
                 else:
                     raise ValueError(f"Invalid subtask: {subtask}")
                 acc[subtask] = acc_
-        elif task_name in ["multi_turn_kv_compressible"]:
+        elif task_name in ["scbench_kv_compressible"]:
             subtasks = list(set(pred["task"] for pred in preds))
             acc = {}
             for subtask in subtasks:
@@ -523,13 +523,15 @@ def compute_scores(
 
         print(f"Saving results to {save_file}")
         with open(save_file, "a") as f:
-            if task_name == "multi_turn_repoqa":
+            if task_name == "scbench_repoqa":
                 acc_str = f"{acc[model_name]['scores']['all'][0.8]['pass@1'] * 100:.3f}"
-            elif task_name == "multi_turn_summary_with_needles":
-                acc_str = f"{acc['multi_turn_summary'] * 100:.3f},{acc['multi_turn_passkey'] * 100:.3f}"
-            elif task_name == "multi_turn_repoqa_and_kv":
-                acc_str = f"{acc['multi_turn_repoqa'] * 100:.3f},{acc['multi_turn_kv'] * 100:.3f}"
-            elif task_name == "multi_turn_kv_compressible":
+            elif task_name == "scbench_summary_with_needles":
+                acc_str = f"{acc['scbench_summary'] * 100:.3f},{acc['scbench_passkey'] * 100:.3f}"
+            elif task_name == "scbench_repoqa_and_kv":
+                acc_str = (
+                    f"{acc['scbench_repoqa'] * 100:.3f},{acc['scbench_kv'] * 100:.3f}"
+                )
+            elif task_name == "scbench_kv_compressible":
                 acc_str = f"{acc}"
             else:
                 acc_str = f"{acc * 100:.3f}"
@@ -551,12 +553,12 @@ def compute_scores(
 
     acc_by_turns = {}
     for turn_idx, preds in preds_by_turns.items():
-        if task_name == "multi_turn_repoqa":
+        if task_name == "scbench_repoqa":
             labels = get_labels(preds)
             acc = compute_repoqa_score(model_name, preds, labels, needle_by_repo)
-        elif task_name == "multi_turn_summary_with_needles":
+        elif task_name == "scbench_summary_with_needles":
             # compute acc for each task
-            subtasks = ["multi_turn_summary", "multi_turn_passkey"]
+            subtasks = ["scbench_summary", "scbench_passkey"]
             acc = {}
             for subtask in subtasks:
                 try:
@@ -572,8 +574,8 @@ def compute_scores(
                     task_ = subtask
                 acc_ = get_score(labels, preds_, task_, model_name)
                 acc[subtask] = acc_
-        elif task_name == "multi_turn_repoqa_and_kv":
-            subtasks = ["multi_turn_repoqa", "multi_turn_kv"]
+        elif task_name == "scbench_repoqa_and_kv":
+            subtasks = ["scbench_repoqa", "scbench_kv"]
             acc = {}
             for subtask in subtasks:
                 try:
@@ -583,19 +585,19 @@ def compute_scores(
                     acc[subtask] = 0
                     continue
 
-                if subtask == "multi_turn_repoqa":
+                if subtask == "scbench_repoqa":
                     preds_ = [pred for pred in preds if pred["task"] == subtask]
                     acc_ = compute_repoqa_score(
                         model_name, preds_, labels, needle_by_repo
                     )
                     acc_ = acc_[model_name]["scores"]["all"][0.8]["pass@1"]
-                elif subtask == "multi_turn_kv":
+                elif subtask == "scbench_kv":
                     preds_ = get_preds(preds, subtask)
                     acc_ = get_score(labels, preds_, "kv_retrieval", model_name)
                 else:
                     raise ValueError(f"Invalid subtask: {subtask}")
                 acc[subtask] = acc_
-        elif task_name in ["multi_turn_kv_compressible"]:
+        elif task_name in ["scbench_kv_compressible"]:
             subtasks = list(set(pred["task"] for pred in preds))
             acc = {}
             for subtask in subtasks:
@@ -626,32 +628,32 @@ def compute_scores(
 
     print(f"Saving results to {save_file}")
     with open(save_file, "a") as f:
-        if task_name == "multi_turn_repoqa":
+        if task_name == "scbench_repoqa":
             acc_str = ",".join(
                 [
                     f"{v[model_name]['scores']['all'][0.8]['pass@1'] * 100:.3f}"
                     for k, v in acc_by_turns.items()
                 ]
             )
-        elif task_name == "multi_turn_summary_with_needles":
+        elif task_name == "scbench_summary_with_needles":
             # summary/passkey
             acc_str = ",".join(
                 [
-                    f"{v['multi_turn_summary'] * 100:.3f},{v['multi_turn_passkey'] * 100:.3f}"
+                    f"{v['scbench_summary'] * 100:.3f},{v['scbench_passkey'] * 100:.3f}"
                     for k, v in acc_by_turns.items()
                 ]
             )
-            # acc_str = ",".join([f"summary: {v['multi_turn_summary'] * 100:.3f}, passkey: {v['multi_turn_passkey'] * 100:.3f}" for k, v in acc_by_turns.items()])
-        elif task_name == "multi_turn_repoqa_and_kv":
+            # acc_str = ",".join([f"summary: {v['scbench_summary'] * 100:.3f}, passkey: {v['scbench_passkey'] * 100:.3f}" for k, v in acc_by_turns.items()])
+        elif task_name == "scbench_repoqa_and_kv":
             # repoqa/kv
             acc_str = ",".join(
                 [
-                    f"{v['multi_turn_repoqa'] * 100:.3f},{v['multi_turn_kv'] * 100:.3f}"
+                    f"{v['scbench_repoqa'] * 100:.3f},{v['scbench_kv'] * 100:.3f}"
                     for k, v in acc_by_turns.items()
                 ]
             )
-            # acc_str = ",".join([f"repoqa: {v['multi_turn_repoqa'] * 100:.3f}, kv: {v['multi_turn_kv'] * 100:.3f}" for k, v in acc_by_turns.items()])
-        elif task_name == "multi_turn_kv_compressible":
+            # acc_str = ",".join([f"repoqa: {v['scbench_repoqa'] * 100:.3f}, kv: {v['scbench_kv'] * 100:.3f}" for k, v in acc_by_turns.items()])
+        elif task_name == "scbench_kv_compressible":
             acc_str = ",".join([f"Turn-{k}:{v}" for k, v in acc_by_turns.items()])
         else:
             acc_str = ",".join([f"{v * 100:.3f}" for k, v in acc_by_turns.items()])
