@@ -60,6 +60,8 @@ VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 CUDA_VISIBLE_DEVICES=0,1 VLLM_WORKER_MULTIPROC_M
 VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 CUDA_VISIBLE_DEVICES=0,1 VLLM_WORKER_MULTIPROC_METHOD=spawn bash scripts/run_single_method.sh meta-llama/Llama-3.1-8B-Instruct 2 scdq vllm dense
 ```
 
+More details about **attn_type** and **kv_type**, please refer to this section: [Supported Efficient Methods](https://github.com/microsoft/MInference/tree/main?tab=readme-ov-file#supported-efficient-methods).
+
 ## Run the benchmark
 
 First, build the environment, see [basic environment](#basic-dependencies).
