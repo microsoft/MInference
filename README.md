@@ -51,7 +51,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 - Torch
 - FlashAttention-2 (Optional)
 - Triton
-- Transformers >= 4.46.0
+- **Transformers >= 4.46.0**
 
 To get started with MInference, simply install it using pip:
 
@@ -173,6 +173,9 @@ python app.py
 For more details, please refer to our [Examples](https://github.com/microsoft/MInference/tree/main/examples) and [Experiments](https://github.com/microsoft/MInference/tree/main/experiments). You can find more information about the dynamic compiler PIT in this [paper](https://dl.acm.org/doi/10.1145/3600006.3613139) and on [GitHub](https://github.com/microsoft/SparTA/tree/pit_artifact).
 
 ## SCBench
+
+> [!Note]
+> - **datasets >= 2.15.0**
 
 ### Load Data
 You can download and load the **SCBench** data through the Hugging Face datasets ([🤗 HF Repo](https://huggingface.co/datasets/microsoft/SCBench)):

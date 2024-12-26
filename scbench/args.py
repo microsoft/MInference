@@ -52,7 +52,7 @@ def parse_args() -> Namespace:
     p.add_argument("--verbose", action="store_true")
     p.add_argument("--use_sparq", action="store_true")
     p.add_argument("--device", type=str, default="cuda")
-    p.add_argument("--max_seq_length", type=int, default=100000)
+    p.add_argument("--max_seq_length", type=int, default=131_072)
     p.add_argument("--rewrite", action="store_true")
     p.add_argument("--topk", type=int, default=-1)
     p.add_argument("--starting_layer", type=int, default=-1)
