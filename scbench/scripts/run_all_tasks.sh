@@ -10,6 +10,13 @@ ATTN_KV_TYPES=(
     "dense;quest" "dense;retr_attn" # 4) KV Cache Loading Stage
 )
 
+MODE=$3
+if [ "$MODE" == "scdq" ]; then
+    MODE="--same_context_different_query"
+else
+    MODE=""
+fi
+
 for attn_kv_type in ${ATTN_KV_TYPES[@]}; do
 IFS=';' read -r attn_type kv_type <<< "$attn_kv_type"
 echo "attn_type: $attn_type, kv_type: $kv_type"
@@ -17,7 +24,7 @@ for task in ${TASKS[@]}; do
 echo $task
 python run_scbench.py \
     --task $task \
-    --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
+    --model_name_or_path $1 \
     --data_dir ./data \
     --output_dir ./results \
     --attn_type $attn_type \
@@ -25,6 +32,10 @@ python run_scbench.py \
     --use_chat_template \
     --trust_remote_code \
     --max_seq_length 131_072 \
-    --tensor_parallel_size 1
+    --tensor_parallel_size $2 ${MODE}
 done
 done
+
+# VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 CUDA_VISIBLE_DEVICES=0 VLLM_WORKER_MULTIPROC_METHOD=spawn bash scripts/run_all_tasks.sh meta-llama/Llama-3.1-8B-Instruct 1 multi-turn
+# VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 CUDA_VISIBLE_DEVICES=0,1 VLLM_WORKER_MULTIPROC_METHOD=spawn bash scripts/run_all_tasks.sh meta-llama/Llama-3.1-8B-Instruct 2 multi-turn
+# VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 CUDA_VISIBLE_DEVICES=0,1 VLLM_WORKER_MULTIPROC_METHOD=spawn bash scripts/run_all_tasks.sh meta-llama/Llama-3.1-8B-Instruct 2 scdq
