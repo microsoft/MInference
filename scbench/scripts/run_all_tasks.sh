@@ -20,10 +20,11 @@ python run_scbench.py \
     --model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
     --data_dir ./data \
     --output_dir ./results \
-    --rewrite \
     --attn_type $attn_type \
     --kv_type $kv_type \
     --use_chat_template \
-    --trust_remote_code
+    --trust_remote_code \
+    --max_seq_length 131_072 \
+    --tensor_parallel_size 1
 done
 done
