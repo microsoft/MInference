@@ -848,7 +848,7 @@ def patch_glm_4_1m(model, config):
     model.prepare_inputs_for_generation = prepare_inputs_func.__get__(
         model, model.__class__
     )
-    print(f"Patched model for minference with {config.kv_type} ..")
+    print(f"Patched model for {config.attn_type} with {config.kv_type} ..")
     return model
 
 
@@ -892,7 +892,6 @@ def new_patch(model, config):
         model, model.__class__
     )
 
-    print(f"Patched model for minference with {config.kv_type} ..")
     return model
 
 

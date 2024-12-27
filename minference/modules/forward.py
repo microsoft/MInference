@@ -91,12 +91,17 @@ def attn_forward(
             self.layer_idx,
             cache_kwargs,
         )
-    # key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
-    # value_states = repeat_kv(value_states, query_states.size(1) // value_states.size(1))
+    else:  # in case of use_cache == False
+        key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
+        value_states = repeat_kv(
+            value_states, query_states.size(1) // value_states.size(1)
+        )
 
     dropout_rate = self.attention_dropout if self.training else 0.0
 
-    if q_len == past_key_value.get_seq_length(self.layer_idx):  # prefilling
+    if not use_cache or q_len == past_key_value.get_seq_length(
+        self.layer_idx
+    ):  # use no cache or prefilling
         # if q_len != 1: # prefilling
         if prefill_forward is not None:  # eg, a-shape/tri-shape/minference
             prefill_kwargs = {
