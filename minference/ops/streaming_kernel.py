@@ -858,8 +858,8 @@ def a_shape_kernel_fa(q, k, v, config):
     local_lse = local_lse.transpose(-2, -1).unsqueeze(dim=-1)
     global_lse = local_lse + torch.log(1 + torch.exp(init_lse - local_lse))
     global_out = (
-        torch.exp(init_lse - global_lse) * init_out +
-        torch.exp(local_lse - global_lse) * local_out
+        torch.exp(init_lse - global_lse).to(q.dtype) * init_out +
+        torch.exp(local_lse - global_lse).to(q.dtype) * local_out
     )
     global_out = global_out.transpose(1, 2).to(q.dtype)
     global_out = torch.cat([up_left_out, global_out], dim=2)
