@@ -19,6 +19,10 @@ import math
 import torch
 import triton
 import triton.language as tl
+from transformers.utils.import_utils import _is_package_available
+
+if _is_package_available("flash_attn"):
+    from flash_attn import flash_attn_func
 
 _BLOCK_N=64
 _BLOCK_M=64
@@ -767,7 +771,7 @@ def stream_llm_forward(n_local, n_init, *args, **kwargs):
 
     return forward
 
-def a_shape_kernel(
+def a_shape_kernel_triton(
     q, k, v, config,
 ):
     # q,k,v should be tensors already equipped with RoPE
@@ -806,16 +810,85 @@ def a_shape_kernel(
     score, _ = attn.get_result()
     return score[...,:head_dim]
 
+def a_shape_kernel_fa(q, k, v, config):
+    n_init = config["attn_forward_config"].get("n_init", 128)
+    n_local = config["attn_forward_config"].get("n_local", 3968)
+
+    assert q.dim() == 4 # (bsz, num_heads, seqlen, head_dim)
+    assert q.shape == k.shape == v.shape
+
+    q_len = q.size(2)
+    k_len = k.size(2)
+
+    q_up_left, k_up_left, v_up_left = q[:, :, :n_init, :], k[:, :, :n_init, :], v[:, :, :n_init, :]
+    q_bottom_right, k_bottom_right, v_bottom_right = q[:, :, n_init:, :], k[:, :, n_init:, :], v[:, :, n_init:, :]
+
+    up_left_out, up_left_lse, _ = flash_attn_func(
+        q_up_left.transpose(1, 2),
+        k_up_left.transpose(1, 2), v_up_left.transpose(1, 2),
+        dropout_p=0,
+        causal=True,
+        window_size=(-1, -1),
+        alibi_slopes=None,
+        deterministic=False,
+        return_attn_probs=True
+    )
+    up_left_out = up_left_out.transpose(1, 2).to(q.dtype)
+    init_out, init_lse, _ = flash_attn_func(
+        q_bottom_right.transpose(1, 2),
+        k_up_left.transpose(1, 2), v_up_left.transpose(1, 2),
+        dropout_p=0,
+        causal=False,
+        window_size=(-1, -1),
+        alibi_slopes=None,
+        deterministic=False,
+        return_attn_probs=True
+    )
+    local_out, local_lse, _ = flash_attn_func(
+        q_bottom_right.transpose(1, 2),
+        k_bottom_right.transpose(1, 2), v_bottom_right.transpose(1, 2),
+        dropout_p=0,
+        causal=True,
+        window_size=(n_local, 0),
+        alibi_slopes=None,
+        deterministic=False,
+        return_attn_probs=True
+    )
+    init_lse = init_lse.transpose(-2, -1).unsqueeze(dim=-1)
+    local_lse = local_lse.transpose(-2, -1).unsqueeze(dim=-1)
+    global_lse = local_lse + torch.log(1 + torch.exp(init_lse - local_lse))
+    global_out = (
+        torch.exp(init_lse - global_lse) * init_out +
+        torch.exp(local_lse - global_lse) * local_out
+    )
+    global_out = global_out.transpose(1, 2).to(q.dtype)
+    global_out = torch.cat([up_left_out, global_out], dim=2)
+    return global_out
+
+def a_shape_kernel(q, k, v, config):
+    if _is_package_available("flash_attn"):
+        return a_shape_kernel_fa(q, k, v, config)
+    else:
+        return a_shape_kernel_triton(q, k, v, config)
+
 def tri_shape_kernel(q, k, v, config):
     n_last = config["attn_forward_config"].get("n_last", 100)
 
     q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
     y1 = a_shape_kernel(q1, k[:,:,:-n_last], v[:,:,:-n_last], config)
 
-    qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(q.shape[-1])
-    arange = torch.arange(n_last, device="cuda")
-    mask = arange[None, None, :, None] >= arange[None, None, None, :]
-    qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
-    qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
-    y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
+    if _is_package_available("flash_attn"):
+        y2 = flash_attn_func(
+            q2.transpose(1, 2),
+            k.transpose(1, 2), v.transpose(1, 2),
+            causal=True,
+        )
+        y2 = y2.transpose(1, 2).to(q.dtype)
+    else:
+        qk = torch.einsum(f'bhmk, bhnk -> bhmn', q2, k) / math.sqrt(q.shape[-1])
+        arange = torch.arange(n_last, device="cuda")
+        mask = arange[None, None, :, None] >= arange[None, None, None, :]
+        qk[:, :, :, -n_last:] = torch.where(mask, qk[:, :, :, -n_last:], -torch.inf)
+        qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
+        y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
     return torch.cat([y1, y2], dim=2)
