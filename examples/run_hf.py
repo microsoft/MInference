@@ -7,7 +7,7 @@ from minference import MInference
 
 prompt = "Hello, my name is"
 
-model_name = "gradientai/Llama-3-8B-Instruct-262k"
+model_name = "microsoft/Phi-3-mini-128k-instruct"#"gradientai/Llama-3-8B-Instruct-262k"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,

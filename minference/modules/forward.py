@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+import torch
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.llama.modeling_llama import *
 
@@ -32,6 +33,9 @@ def attn_forward(
     output_attentions = False
 
     bsz, q_len, _ = hidden_states.size()
+
+    # if self.layer_idx == 0:
+    #     print("attn_forward is called with: ", position_ids.size() if position_ids.size(-1) > 1 else position_ids)
 
     if "q_proj" in self.__dict__["_modules"]:
         query_states = self.q_proj(hidden_states)
@@ -109,13 +113,49 @@ def attn_forward(
                 "layer_idx": self.layer_idx,
                 "attn_forward_config": attn_forward_config,
             }
-            attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
-                query_states,
-                key_states,
-                value_states,
-                prefill_kwargs,
-            )
-            attn_output = attn_output.transpose(1, 2).contiguous()
+
+
+            #===================================================================
+            CHUNKED_PREFILL = True
+            if CHUNKED_PREFILL:
+                query_states = query_states.transpose(1, 2)
+                key_states = key_states.transpose(1, 2)
+                value_states = value_states.transpose(1, 2)
+                CHUNK_SIZE = 512
+                attn_outputs = []
+
+                position = 0
+                while position < q_len:
+                    c_end = min(position + CHUNK_SIZE, q_len)
+                    if q_len - c_end < 128:
+                        c_end = q_len
+                    attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
+                        query_states[:, position:c_end].transpose(1, 2),
+                        key_states[:, position:c_end].transpose(1, 2),
+                        value_states[:, position:c_end].transpose(1, 2),
+                        # torch.slice(query_states, 1, position, c_end).transpose(1, 2),
+                        # torch.slice(key_states, 1, position, c_end).transpose(1, 2),
+                        # torch.slice(value_states, 1, position, c_end).transpose(1, 2),
+                        prefill_kwargs,
+                    )
+                    position = c_end
+                    attn_outputs.append(attn_output.transpose(1, 2))
+
+                attn_output = torch.cat(attn_outputs, dim=1)
+                query_states = query_states.transpose(1, 2)
+                key_states = key_states.transpose(1, 2)
+                value_states = value_states.transpose(1, 2)
+            else:
+                attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
+                        query_states,
+                        key_states,
+                        value_states,
+                        prefill_kwargs,
+                    )
+                attn_output = attn_output.transpose(1, 2).contiguous()
+
+            if self.layer_idx == 0:
+                print(attn_output.shape)
 
         else:  # if not specified, use flash attention
             attn_output = _flash_attention_forward(  # [bsz, q_len, num_heads, head_dim]
