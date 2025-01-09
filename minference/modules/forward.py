@@ -122,6 +122,7 @@ def attn_forward(
                 key_states = key_states.transpose(1, 2)
                 value_states = value_states.transpose(1, 2)
                 CHUNK_SIZE = 512
+                PREFIX_SIZE = 128
                 attn_outputs = []
 
                 position = 0
@@ -129,17 +130,25 @@ def attn_forward(
                     c_end = min(position + CHUNK_SIZE, q_len)
                     if q_len - c_end < 128:
                         c_end = q_len
-                    attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
-                        query_states[:, position:c_end].transpose(1, 2),
-                        key_states[:, position:c_end].transpose(1, 2),
-                        value_states[:, position:c_end].transpose(1, 2),
-                        # torch.slice(query_states, 1, position, c_end).transpose(1, 2),
-                        # torch.slice(key_states, 1, position, c_end).transpose(1, 2),
-                        # torch.slice(value_states, 1, position, c_end).transpose(1, 2),
-                        prefill_kwargs,
-                    )
-                    position = c_end
-                    attn_outputs.append(attn_output.transpose(1, 2))
+
+                    if position > 0:
+                        attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
+                            torch.cat((query_states[:, :PREFIX_SIZE], query_states[:, position:c_end]), dim=1).transpose(1, 2),
+                            torch.cat((key_states[:, :PREFIX_SIZE], key_states[:, position:c_end]), dim=1).transpose(1, 2),
+                            torch.cat((value_states[:, :PREFIX_SIZE], value_states[:, position:c_end]), dim=1).transpose(1, 2),
+                            prefill_kwargs,
+                        )
+                        position = c_end
+                        attn_outputs.append(attn_output.transpose(1, 2)[:, PREFIX_SIZE:])
+                    else:
+                        attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
+                            query_states[:, position:c_end].transpose(1, 2),
+                            key_states[:, position:c_end].transpose(1, 2),
+                            value_states[:, position:c_end].transpose(1, 2),
+                            prefill_kwargs,
+                        )
+                        position = c_end
+                        attn_outputs.append(attn_output.transpose(1, 2)[:, ])
 
                 attn_output = torch.cat(attn_outputs, dim=1)
                 query_states = query_states.transpose(1, 2)
