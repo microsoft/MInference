@@ -138,7 +138,6 @@ def attn_forward(
                             torch.cat((value_states[:, :PREFIX_SIZE], value_states[:, position:c_end]), dim=1).transpose(1, 2),
                             prefill_kwargs,
                         )
-                        position = c_end
                         attn_outputs.append(attn_output.transpose(1, 2)[:, PREFIX_SIZE:])
                     else:
                         attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
@@ -147,8 +146,9 @@ def attn_forward(
                             value_states[:, position:c_end].transpose(1, 2),
                             prefill_kwargs,
                         )
-                        position = c_end
-                        attn_outputs.append(attn_output.transpose(1, 2)[:, ])
+                        attn_outputs.append(attn_output.transpose(1, 2))
+
+                    position = c_end
 
                 attn_output = torch.cat(attn_outputs, dim=1)
                 query_states = query_states.transpose(1, 2)
