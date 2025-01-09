@@ -503,7 +503,6 @@ def minference_forward():
         use_cache,
         **kwargs,
     ):
-        logger.error("Method is called")
         self.init_minference_parameters()
         self.ne_inf = torch.finfo(hidden_states.dtype).min
 

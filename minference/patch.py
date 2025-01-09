@@ -226,8 +226,6 @@ def huggingface_forward(forward):
     ):
         assert not output_attentions
 
-        logger.error("huggingface_forward is called")
-
         # for GLM-4
         if "q_proj" not in self.__dict__["_modules"]:
             query_pos = self.num_heads * self.head_dim
