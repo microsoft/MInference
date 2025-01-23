@@ -17,14 +17,21 @@ https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-
 
 _Now, you can process **1M context 10x faster in a single A100** using Long-context LLMs like LLaMA-3-8B-1M, GLM-4-1M, with even **better accuracy**, try **MInference 1.0** right now!_
 
-## News
+## 📰 News
+
+- 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
 - 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
 - 🧤 [24/09/26] MInference has been accepted as **spotlight** at **NeurIPS'24**. See you in Vancouver!
 - 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, [RetrievalAttention](https://aka.ms/RetrievalAttention), which accelerates long-context LLM inference via vector retrieval.
 - 🥤 [24/07/24] MInference support [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct) now.
-- 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the [HF Demo](https://huggingface.co/spaces/microsoft/MInference) with ZeroGPU.
-- 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this [link](https://export.arxiv.org/pdf/2407.02490).
-- 🧩 [24/07/03] We will present **MInference 1.0** at the _**Microsoft Booth**_ and _**ES-FoMo**_ at ICML'24. See you in Vienna!
+<details>
+<summary>More News</summary>
+ <ul>
+  <li> 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the <a href="https://huggingface.co/spaces/microsoft/MInference">HF Demo</a> with ZeroGPU.</li>
+  <li> 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this <a href="https://export.arxiv.org/pdf/2407.02490">link</a>.</li>
+  <li> 🧩 [24/07/03] We will present <b>MInference 1.0</b> at the <b><i>Microsoft Booth</i></b> and <b><i>ES-FoMo</i></b> at ICML'24. See you in Vienna!</li>
+</ul>
+</details>
 
 ## TL;DR
 
@@ -35,7 +42,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 **SCBench** analyzes long-context methods from a **KV cache-centric perspective** across the full KV cache lifecycle (e.g., KV cache generation, compression, retrieval, and loading). It evaluates 12 tasks under two shared context modes, covering four categories of long-context capabilities: string retrieval, semantic retrieval, global information, and multi-task scenarios.
 
-- [SCBench: A KV Cache-Centric Analysis of Long-Context Methods](https://arxiv.org/abs/2412.10319) (Under Review, ENLSP @ NeurIPS'24)<br>
+- [SCBench: A KV Cache-Centric Analysis of Long-Context Methods](https://arxiv.org/abs/2412.10319) (ICLR'25, ENLSP @ NeurIPS'24)<br>
   _Yucheng Li, Huiqiang Jiang, Qianhui Wu, Xufang Luo, Surin Ahn, Chengruidong Zhang, Amir H. Abdi, Dongsheng Li, Jianfeng Gao, Yuqing Yang and Lili Qiu_
 
 
@@ -135,7 +142,7 @@ for vLLM w/ TP,
 
 1. Copy `minference_patch_vllm_tp` and `minference_patch_vllm_executor` from `minference/patch.py` to the end of the `Worker` class in `vllm/worker/worker.py`. Make sure to indent `minference_patch_vllm_tp`.
 2. When calling VLLM, ensure `enable_chunked_prefill=False` is set.
-3. Refer to the script in https://github.com/microsoft/MInference/blob/hjiang/support_vllm_tp/experiments/benchmarks/run_e2e_vllm_tp.sh
+3. Refer to the script in https://github.com/microsoft/MInference/blob/main/experiments/benchmarks/run_e2e_vllm_tp.sh
 
 ```diff
 from vllm import LLM, SamplingParams

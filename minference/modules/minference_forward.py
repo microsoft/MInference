@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import inspect
@@ -7,7 +7,7 @@ import os
 import warnings
 from importlib import import_module
 
-from transformers.models.llama.modeling_llama import *
+from transformers.models.llama.modeling_llama import rotate_half
 from transformers.utils import is_flash_attn_2_available
 from transformers.utils.import_utils import _is_package_available
 
@@ -292,7 +292,6 @@ def repeat(self, q, k, v, attention_mask):
     return attn_output
 
 def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
-    kv_seq_len = k.size(2)
 
     def vertical_and_slash(attn_weights, vertical_size, slash_size):
         last_q = 64
@@ -342,10 +341,10 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
 
     def block_sparse(attn_weights, topk_ratio, slash_size=None, block_size=8):
         block_num = (q_len -1) // block_size + 1
-        block_q = torch.zeros(1,1,block_num * block_size,head_dim).to(q)
+        block_q = torch.zeros(1,1,block_num * block_size, head_dim).to(q)
         block_q[:,:,:q_len] = q
         block_q = block_q.reshape(1,1,block_num,block_size,-1).mean(-2)
-        block_k = torch.zeros(1,1,block_num * block_size,head_dim).to(k)
+        block_k = torch.zeros(1,1,block_num * block_size, head_dim).to(k)
         block_k[:,:,:q_len] = k
         block_k = block_k.reshape(1,1,block_num,block_size,-1).mean(-2)
 
@@ -441,6 +440,7 @@ def gather_last_q_vertical_slash_topk_v4(self, q, k, v, head_id):
         return block_sparse_attention(q, k, v, topk)
 
     def tri_shape_kernel(q, k, v, n_init, n_local, n_last=100):
+        n_last = min(n_last, q.size(2) - 1)
         q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
         y1 = streaming_forward(q1, k[:,:,:-n_last], v[:,:,:-n_last], n_init, n_local)
 
@@ -636,6 +636,7 @@ def minference_prefill_forward(
     layer_idx = prefill_kwargs["layer_idx"]
 
     output = torch.empty_like(query_states)
+    bsz, _, q_len, head_dim = query_states.shape
     for head in range(query_states.size(1)):
         q = query_states[:, head, :, :].unsqueeze(1)
         k = key_states[:, head, :, :].unsqueeze(1)
@@ -643,7 +644,7 @@ def minference_prefill_forward(
         if layer_idx >= starting_layer:
             attn_output = minference_prefill_kernel(q, k, v, head, layer_idx, prefill_kwargs["attn_forward_config"])
         else:
-            attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, self.head_dim)
+            attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)
         output[:, head:head + 1] = attn_output
     return output
 

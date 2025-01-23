@@ -1,17 +1,23 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import functools
 import inspect
 import types
+from typing import Optional
 
 import torch
+from transformers.cache_utils import Cache, StaticCache
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
 from transformers.models.glm.modeling_glm import GlmMLP, GlmRotaryEmbedding
-from transformers.models.glm.modeling_glm import (
-    apply_rotary_pos_emb as apply_rotary_pos_emb_glm4,
+from transformers.models.llama.modeling_llama import (
+    ACT2FN,
+    LlamaDecoderLayer,
+    LlamaForCausalLM,
+    LlamaModel,
+    LlamaPreTrainedModel,
+    logger,
 )
-from transformers.models.llama.modeling_llama import *
 
 
 def update_kwargs(
@@ -296,8 +302,14 @@ def glm_forward(
             mixed_x_layer = mixed_x_layer.view(*new_tensor_shape)
 
             # [b, sq, np, 3 * hn] --> 3 [b, sq, np, hn]
-            (query_layer, key_layer, value_layer) = split_tensor_along_last_dim(
-                mixed_x_layer, 3
+            (query_layer, key_layer, value_layer) = torch.split(
+                mixed_x_layer,
+                [
+                    self.hidden_size_per_attention_head,
+                    self.hidden_size_per_attention_head,
+                    self.hidden_size_per_attention_head,
+                ],
+                dim=-1,
             )
 
         # [b, sq, np, hn] -> [b, np, sq, hn]
@@ -455,6 +467,12 @@ def glm_forward(
 
 def convert_glm_4_1m(model):
     # Support THUDM/glm-4-9b-chat-1m
+    from transformers.models.llama.modeling_llama import LlamaAttention
+
+    try:
+        from transformers.models.llama.modeling_llama import LlamaFlashAttention2
+    except ImportError:
+        pass
 
     def patch_forward(model):
         if model.__class__.__name__ == "ChatGLMForConditionalGeneration":

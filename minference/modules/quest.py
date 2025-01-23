@@ -1,17 +1,15 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 # Refer to the code in https://github.com/mit-han-lab/Quest/blob/main/evaluation/quest_attention.py
 
 import math
 import types
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch import nn
-from torch.cuda.amp import autocast
 from transformers import DynamicCache
 from transformers.models.llama.modeling_llama import (
     LlamaAttention,
@@ -239,6 +237,7 @@ def quest_decode_kernel(
     attention_mask = decoding_kwargs.get("attention_mask", None)
     position_ids = decoding_kwargs.get("position_ids", None)
     kv_seq_len = key_states.size(-2)
+    bsz, _, q_len, _ = query_states.shape
 
     attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(
         query_states.size(-1)
