@@ -1,8 +1,12 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+from typing import Optional, Tuple
+
+import torch
+from transformers.cache_utils import Cache
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
-from transformers.models.llama.modeling_llama import *
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv
 
 from ..modules.flexprefill import flexprefill_forward
 from ..modules.kivi import kivi_forward
@@ -33,6 +37,10 @@ def attn_forward(
 
     bsz, q_len, _ = hidden_states.size()
 
+    if "num_heads" not in self.__dict__:
+        self.is_transformers_v448_or_later = True
+        self.num_heads = self.config.num_attention_heads
+        self.num_key_value_heads = self.config.num_key_value_heads
     if "q_proj" in self.__dict__["_modules"]:
         query_states = self.q_proj(hidden_states)
         key_states = self.k_proj(hidden_states)
@@ -91,7 +99,7 @@ def attn_forward(
             self.layer_idx,
             cache_kwargs,
         )
-    else:  # in case of use_cache == False
+    if query_states.size(1) != key_states.size(1):
         key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
         value_states = repeat_kv(
             value_states, query_states.size(1) // value_states.size(1)
@@ -168,6 +176,8 @@ def attn_forward(
     if not output_attentions:
         attn_weights = None
 
+    if "is_transformers_v448_or_later" in self.__dict__:
+        return attn_output, attn_weights
     return attn_output, attn_weights, past_key_value
 
 

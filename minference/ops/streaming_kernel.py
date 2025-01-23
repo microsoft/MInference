@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 """
@@ -808,6 +808,7 @@ def a_shape_kernel(
 
 def tri_shape_kernel(q, k, v, config):
     n_last = config["attn_forward_config"].get("n_last", 100)
+    n_last = min(n_last, q.size(2) - 1)
 
     q1, q2 = q[:,:,:-n_last], q[:,:,-n_last:]
     y1 = a_shape_kernel(q1, k[:,:,:-n_last], v[:,:,:-n_last], config)

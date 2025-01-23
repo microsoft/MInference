@@ -1,9 +1,8 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 # Refer to the code in https://github.com/jy-yuan/KIVI/tree/main/quant
 
 import math
-import random
 
 import numpy as np
 import torch

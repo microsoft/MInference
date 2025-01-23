@@ -1,41 +1,42 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
-import json
+import os
 import types
 from functools import partial
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import transformers
-from transformers.cache_utils import *
-from transformers.models.llama.modeling_llama import *
+from torch.nn import CrossEntropyLoss
+from transformers.cache_utils import Cache, DynamicCache
+from transformers.models.llama.modeling_llama import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
+    LlamaAttention,
+    logger,
+)
+
+try:
+    from transformers.models.llama.modeling_llama import LlamaFlashAttention2
+except:
+    LlamaFlashAttention2 = None
 
 from .modules.forward import attn_forward, decoding_forwards, prefill_forwards
 from .modules.inf_llm import InfLLMGenerator, inf_llm_forward
 from .modules.kvcompression import (
-    SnapKVCache,
     method_to_cache_obj,
     prepare_inputs_for_generation_kvcompression,
 )
 from .modules.minference_forward import (
     gather_last_q_vertical_slash_topk_v4,
-    gather_last_q_vertical_slash_topk_vllm,
     init_minference_parameters,
     kvcompress_forward,
     minference_forward,
     minference_kv_cache_cpu_forward,
-    minference_vllm_forward,
-    search_pattern,
-    sum_all_diagonal_matrix,
 )
 from .ops.streaming_kernel import stream_llm_forward
-from .utils import (
-    causal_model_forward,
-    convert_glm_4_1m,
-    glm_forward,
-    prepare_input,
-    update_kwargs,
-)
+from .utils import causal_model_forward, glm_forward, prepare_input, update_kwargs
 
 KV_CACHE_CPU_DEVICE = "cpu"
 
@@ -191,7 +192,6 @@ def apply_rotary_pos_emb_glm4(
     rot_dim = rope_cache.shape[-2] * 2
     x, x_pass = x[..., :rot_dim], x[..., rot_dim:]
     # truncate to support variable sizes
-    # import ipdb;ipdb.set_trace()
     rope_cache = rope_cache[:sq]
     xshaped = x.reshape(b, np, sq, rot_dim // 2, 2)
     rope_cache = rope_cache.view(-1, 1, sq, xshaped.size(3), 2)
@@ -896,8 +896,6 @@ def new_patch(model, config):
 
 
 def minference_patch(model, config):
-    from transformers import LlamaForCausalLM
-
     if config.kv_cache_cpu:
         global KV_CACHE_CPU_DEVICE
         KV_CACHE_CPU_DEVICE = config.kv_cache_cpu_device
@@ -947,8 +945,6 @@ def minference_patch(model, config):
 
 
 def minference_patch_kv_cache_cpu(model):
-    from transformers import LlamaForCausalLM
-
     transformers.cache_utils.DynamicCache.update = cpu_cache_update
     transformers.cache_utils.DynamicCache.get = cpu_cache_get
 
@@ -1014,7 +1010,10 @@ def minference_patch_with_kvcompress(model, config):
                     gather_last_q_vertical_slash_topk_v4.__get__(m, Attention)
                 )
             if config.kv_type == "quest":
-                m.flash_forward = types.MethodType(LlamaFlashAttention2.forward, m)
+                if LlamaFlashAttention2 is not None:
+                    m.flash_forward = types.MethodType(LlamaFlashAttention2.forward, m)
+                else:
+                    m.flash_forward = types.MethodType(LlamaAttention.forward, m)
                 m.token_budget = (
                     1024 if not hasattr(m, "token_budget") else m.token_budget
                 )
@@ -1320,16 +1319,7 @@ def patch_hf(
     attn_kwargs.update(kwargs)
     # This approach lacks scalability and will be refactored.
     from transformers import LlamaForCausalLM, MistralForCausalLM, Qwen2ForCausalLM
-    from transformers.models.llama.modeling_llama import (
-        BaseModelOutputWithPast,
-        LlamaAttention,
-        LlamaModel,
-    )
-    from transformers.models.mistral.modeling_mistral import (
-        MistralAttention,
-        MistralModel,
-    )
-    from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention, Qwen2Model
+    from transformers.models.llama.modeling_llama import BaseModelOutputWithPast
 
     def model_forward(
         self,

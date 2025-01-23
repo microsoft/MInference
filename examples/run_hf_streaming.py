@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import warnings
@@ -6,14 +6,9 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
-import json
-import os
-import re
-import sys
 import time
 
 import torch
-from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from minference import MInference
@@ -111,7 +106,7 @@ def main(args):
 
     # Patch MInference Module
     minference_patch = MInference(
-        args.attn_type if args.attn_type != "hf" else "minference_with_dense",
+        args.attn_type,
         model_name_or_path,
         kv_cache_cpu=True,
     )
@@ -148,12 +143,13 @@ if __name__ == "__main__":
         type=str,
         required=True,
         choices=[
-            "vllm",
             "hf",
             "a_shape",
+            "tri_shape",
             "minference",
             "inf_llm",
-            "minference_with_dense",
+            "dense",
+            "flexprefill",
         ],
     )
     args = parser.parse_args()

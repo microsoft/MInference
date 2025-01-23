@@ -1,20 +1,16 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+import math
 import os
 import threading
-import time
-from multiprocessing.dummy import Pool as ThreadPool
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
-import numpy as np
 import torch
-import transformers
+import torch.nn as nn
 from flash_attn import flash_attn_func
-from transformers import LogitsProcessorList, MaxLengthCriteria, StoppingCriteriaList
-from transformers.generation import GenerateDecoderOnlyOutput
-from transformers.models.llama.modeling_llama import *
-from transformers.utils import ModelOutput
+from transformers.cache_utils import Cache
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv
 from transformers.utils.import_utils import _is_package_available
 
 if _is_package_available("papyfaiss"):
@@ -498,7 +494,7 @@ def llama_retr_flash_attention_forward(
         )
 
         # (2) computation
-        attn_output = flash_attn(
+        attn_output = flash_attn_func(
             query_states,
             key_states,
             value_states,

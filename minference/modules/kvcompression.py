@@ -1,13 +1,15 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import functools
+from typing import List
 
-from transformers.cache_utils import Cache, SinkCache
+from transformers.cache_utils import Cache
 from transformers.modeling_flash_attention_utils import _flash_attention_forward
-from transformers.models.llama.modeling_llama import *
+from transformers.models.glm.modeling_glm import (
+    apply_rotary_pos_emb as apply_rotary_pos_emb_glm4,
+)
 
-from ..utils import apply_rotary_pos_emb_glm4
 from .kivi import KiviCache
 from .pyramidkv import PyramidKVCluster
 from .quest import *
