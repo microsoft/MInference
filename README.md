@@ -28,7 +28,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 <details>
 <summary>More News</summary>
  <ul>
-  <li> 🥤 [24/07/24] MInference support <a href="https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct">meta-llama/Meta-Llama-3.1-8B-Instruct</a> now.</li>
+  <li> 🥤 [24/07/24] MInference supports <a href="https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct">meta-llama/Meta-Llama-3.1-8B-Instruct</a> now.</li>
   <li> 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the <a href="https://huggingface.co/spaces/microsoft/MInference">HF Demo</a> with ZeroGPU.</li>
   <li> 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this <a href="https://export.arxiv.org/pdf/2407.02490">link</a>.</li>
   <li> 🧩 [24/07/03] We will present <b>MInference 1.0</b> at the <b><i>Microsoft Booth</i></b> and <b><i>ES-FoMo</i></b> at ICML'24. See you in Vienna!</li>
