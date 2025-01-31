@@ -19,14 +19,16 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 ## 📰 News
 
+- 🤗 [25/01/27] MInference has been integrated into [Qwen-Turbo-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
 - 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
 - 🧤 [24/09/26] MInference has been accepted as **spotlight** at **NeurIPS'24**. See you in Vancouver!
 - 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, [RetrievalAttention](https://aka.ms/RetrievalAttention), which accelerates long-context LLM inference via vector retrieval.
-- 🥤 [24/07/24] MInference support [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct) now.
+
 <details>
 <summary>More News</summary>
  <ul>
+  <li> 🥤 [24/07/24] MInference support <a href="https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct">meta-llama/Meta-Llama-3.1-8B-Instruct</a> now.</li>
   <li> 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the <a href="https://huggingface.co/spaces/microsoft/MInference">HF Demo</a> with ZeroGPU.</li>
   <li> 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this <a href="https://export.arxiv.org/pdf/2407.02490">link</a>.</li>
   <li> 🧩 [24/07/03] We will present <b>MInference 1.0</b> at the <b><i>Microsoft Booth</i></b> and <b><i>ES-FoMo</i></b> at ICML'24. See you in Vienna!</li>
