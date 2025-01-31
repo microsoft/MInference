@@ -19,7 +19,6 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 ## 📰 News
 
-- 🤗 [25/01/27] MInference has been integrated into [Qwen-Turbo-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
 - 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
 - 🧤 [24/09/26] MInference has been accepted as **spotlight** at **NeurIPS'24**. See you in Vancouver!
@@ -270,11 +269,20 @@ All four approaches (MInference, SSM, Linear Attention, and Sparse Attention) ef
 If you find MInference useful or relevant to your project and research, please kindly cite our paper:
 
 ```bibtex
-@article{jiang2024minference,
-    title={MInference 1.0: Accelerating Pre-filling for Long-Context LLMs via Dynamic Sparse Attention},
-    author={Jiang, Huiqiang and Li, Yucheng and Zhang, Chengruidong and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Han, Zhenhua and Abdi, Amir H and Li, Dongsheng and Lin, Chin-Yew and Yang, Yuqing and Qiu, Lili},
-    journal={arXiv preprint arXiv:2407.02490},
-    year={2024}
+@inproceedings{jiang2024minference,
+  author = {Huiqiang Jiang and Yucheng Li and Chengruidong Zhang and Qianhui Wu and Xufang Luo and Surin Ahn and Zhenhua Han and Amir H. Abdi and Dongsheng Li and Chin-Yew Lin and Yuqing Yang and Lili Qiu},
+  booktitle = {The Thirty-eighth Annual Conference on Neural Information Processing Systems},
+  title = {{MI}nference 1.0: Accelerating Pre-filling for Long-Context {LLM}s via Dynamic Sparse Attention},
+  url = {https://openreview.net/forum?id=fPBACAbqSN},
+  year = {2024}
+}
+
+@inproceedings{li2025scbench,
+  title={{SCB}ench: A {KV} Cache-Centric Analysis of Long-Context Methods},
+  author={Yucheng Li and Huiqiang Jiang and Qianhui Wu and Xufang Luo and Surin Ahn and Chengruidong Zhang and Amir H. Abdi and Dongsheng Li and Jianfeng Gao and Yuqing Yang and Lili Qiu},
+  booktitle={The Thirteenth International Conference on Learning Representations},
+  year={2025},
+  url={https://openreview.net/forum?id=gkUyYcY1W9}
 }
 ```
 
