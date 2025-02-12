@@ -616,7 +616,7 @@ def minference_prefill_kernel(
         return block_sparse_attention(q, k, v, topk)
 
     q_len = q.shape[2]
-    ty, vertical_size, slash_size, _ = config["best_pattern"][layer_idx].get(head_id, ("vertical_and_slash", 1000, 6096, 1))
+    ty, vertical_size, slash_size, _ = config["best_pattern"][layer_idx].get(str(head_id), ("vertical_and_slash", 1000, 6096, 1))
 
     if "minference_ratio" in config:
         vertical_size = int(vertical_size * config.get("minference_ratio", 1))

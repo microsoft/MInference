@@ -1,15 +1,19 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 # Refer to the code in https://openreview.net/forum?id=OfjIlbelrT
 
 import math
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import torch
 import triton
 import triton.language as tl
 from einops import rearrange
-from flash_attn import flash_attn_func
+
+try:
+    from flash_attn import flash_attn_func
+except ImportError:
+    from ..ops.flash_attn_triton import _flash_attn_triton_decoding as flash_attn_func
 
 
 def torch_block_wise_attention(
