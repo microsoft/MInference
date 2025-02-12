@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import os
@@ -9,7 +9,7 @@ import urllib
 import warnings
 
 import torch
-from packaging.version import Version, parse
+from packaging.version import parse
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import CUDA_HOME, BuildExtension, CUDAExtension
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
@@ -38,6 +38,7 @@ INSTALL_REQUIRES = [
     "accelerate",
     "torch",
     "triton",
+    "einops",
 ]
 QUANLITY_REQUIRES = [
     "black==21.4b0",

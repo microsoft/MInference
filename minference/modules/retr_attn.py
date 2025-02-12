@@ -8,10 +8,14 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from flash_attn import flash_attn_func
 from transformers.cache_utils import Cache
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv
 from transformers.utils.import_utils import _is_package_available
+
+try:
+    from flash_attn import flash_attn_func
+except ImportError:
+    from ..ops.flash_attn_triton import _flash_attn_triton_decoding as flash_attn_func
 
 if _is_package_available("papyfaiss"):
     import papyfaiss
