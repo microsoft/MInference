@@ -113,6 +113,21 @@ def _attn_fwd_inner(acc, l_i, m_i, q,
     return acc, l_i, m_i
 
 
+@triton.autotune(
+   configs=[
+       triton.Config({}, num_stages=1, num_warps=4),
+       triton.Config({}, num_stages=1, num_warps=8),
+       triton.Config({}, num_stages=2, num_warps=4),
+       triton.Config({}, num_stages=2, num_warps=8),
+       triton.Config({}, num_stages=3, num_warps=4),
+       triton.Config({}, num_stages=3, num_warps=8),
+       triton.Config({}, num_stages=4, num_warps=4),
+       triton.Config({}, num_stages=4, num_warps=8),
+       triton.Config({}, num_stages=5, num_warps=4),
+       triton.Config({}, num_stages=5, num_warps=8),
+   ],
+   key=['N_CTX'],
+)
 @triton.heuristics(
     {
         "IS_EVEN_M": lambda args: args["N_CTX"] % args["BLOCK_M"] == 0,
@@ -411,7 +426,7 @@ def _forward(
     Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
 
     assert Lq == Lk and Lk == Lv
-    assert Lk in {16, 32, 64, 128}
+    assert Lk in {16, 32, 64, 128, 256}
 
     q_round_len = math.ceil(q.shape[2] / 64) * 64
 
@@ -449,8 +464,6 @@ def _forward(
                 BLOCK_N=_BLOCK_N,
                 SLIDING_WINDOW=(sliding_window is not None),
                 COMPLEMENT_SLIDING_WINDOW=complement_sliding_window,
-                num_warps=4,
-                num_stages=4
             )
     except triton.OutOfResources as E:
         _BLOCK_N = _BLOCK_N // 2
@@ -477,8 +490,6 @@ def _forward(
                 BLOCK_N=_BLOCK_N,
                 SLIDING_WINDOW=(sliding_window is not None),
                 COMPLEMENT_SLIDING_WINDOW=complement_sliding_window,
-                num_warps=4,
-                num_stages=4
             )
 
 
@@ -780,7 +791,7 @@ def a_shape_kernel(
     assert q.shape == k.shape == v.shape
 
     head_dim = q.shape[-1]
-    if head_dim not in [16, 32, 64, 128, 256, 512]:
+    if head_dim not in [16, 32, 64, 128, 256]:
         target_dim = 2 ** math.ceil(math.log2(head_dim)) - head_dim
         q = torch.nn.functional.pad(q, [0, target_dim, 0, 0, 0, 0, 0, 0])
         k = torch.nn.functional.pad(k, [0, target_dim, 0, 0, 0, 0, 0, 0])
@@ -820,3 +831,9 @@ def tri_shape_kernel(q, k, v, config):
     qk = torch.nn.functional.softmax(qk, dim=-1, dtype=torch.float32).to(q.dtype)
     y2 = torch.einsum(f'bhmn, bhnk -> bhmk', qk, v)
     return torch.cat([y1, y2], dim=2)
+
+
+if __name__ == "__main__":
+    b, h, m, k = 1, 1, 1024, 192
+    q, k, v = torch.rand(b, h, m, k).cuda(), torch.rand(b, h, m, k).cuda(), torch.rand(b, h, m, k).cuda()
+    output = a_shape_kernel(q, k, v, {"attn_forward_config": {"n_init": 128, "n_local": 512}})
