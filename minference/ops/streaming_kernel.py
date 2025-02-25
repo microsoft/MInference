@@ -426,7 +426,7 @@ def _forward(
     Lq, Lk, Lv = q.shape[-1], k.shape[-1], v.shape[-1]
 
     assert Lq == Lk and Lk == Lv
-    assert Lk in {16, 32, 64, 128, 192, 256}
+    assert Lk in {16, 32, 64, 128, 256}
 
     q_round_len = math.ceil(q.shape[2] / 64) * 64
 
