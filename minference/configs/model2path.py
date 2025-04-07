@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import os
@@ -22,6 +22,10 @@ MODEL2PATH = {
     ),
     "Qwen/Qwen2-7B-Instruct": os.path.join(
         BASE_DIR, "Qwen2_7B_Instruct_128k_instruct_kv_out_v32_fit_o_best_pattern.json"
+    ),
+    "Qwen/Qwen2.5-7B-Instruct": os.path.join(
+        BASE_DIR,
+        "Qwen2.5_7B_Instruct_128k_instruct_kv_out_v32_fit_o_best_pattern.json",
     ),
     "Qwen/Qwen2.5-32B-Instruct": os.path.join(
         BASE_DIR,
@@ -57,3 +61,12 @@ MODEL2PATH = {
 
 def get_support_models():
     return list(MODEL2PATH.keys())
+
+
+def check_path():
+    for name, path in MODEL2PATH.items():
+        assert os.path.exists(path), f"{name} Config does not exist! Please check it."
+
+
+if __name__ == "__main__":
+    check_path()
