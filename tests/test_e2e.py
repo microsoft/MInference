@@ -36,7 +36,6 @@ class MInferenceE2ETester(unittest.TestCase):
         cls.tokenizer = AutoTokenizer.from_pretrained(
             cls.model_name, trust_remote_code=trust_remote_code
         )
-        cls.model_name = cls.model_name
 
         cls.prompt_complex = open("./prompt_hardest.txt").read()
 

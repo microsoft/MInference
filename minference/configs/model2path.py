@@ -65,7 +65,7 @@ def get_support_models():
 
 def check_path():
     for name, path in MODEL2PATH.items():
-        assert os.path.exists(path), f"{name} Config is not exisiting! Please check it."
+        assert os.path.exists(path), f"{name} Config does not exist! Please check it."
 
 
 if __name__ == "__main__":
