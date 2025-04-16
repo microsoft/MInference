@@ -55,11 +55,11 @@ jobs:
           exclude:
             # see https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
             # Pytorch < 2.5 does not support Python 3.13
-            - torch-version: '2.2.2'
+            - pytorch-version: '2.2.2'
               python-version: '3.13'
-            - torch-version: '2.3.1'
+            - pytorch-version: '2.3.1'
               python-version: '3.13'
-            - torch-version: '2.4.0'
+            - pytorch-version: '2.4.0'
               python-version: '3.13'
 
     steps:
