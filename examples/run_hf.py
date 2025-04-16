@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -13,10 +13,13 @@ model = AutoModelForCausalLM.from_pretrained(
     model_name,
     torch_dtype="auto",
     device_map="cuda",
+    _attn_implementation="flash_attention_2",
 )
 
 # Patch MInference Module
-minference_patch = MInference("minference", model_name)
+minference_patch = MInference(
+    attn_type="minference", model_name=model_name, kv_type="dense"
+)
 model = minference_patch(model)
 
 batch_inputs = tokenizer(prompt, return_tensors="pt").to("cuda")

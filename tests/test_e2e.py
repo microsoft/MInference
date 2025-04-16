@@ -32,7 +32,14 @@ class MInferenceE2ETester(unittest.TestCase):
         # cls.model_name = "Qwen/Qwen2.5-7B-Instruct"
         trust_remote_code = True
 
-        # init tokenizer
+        # init model and tokenizer
+        cls.model = AutoModelForCausalLM.from_pretrained(
+            cls.model_name,
+            torch_dtype="auto",
+            device_map="auto",
+            trust_remote_code=True,
+            _attn_implementation="flash_attention_2",
+        )
         cls.tokenizer = AutoTokenizer.from_pretrained(
             cls.model_name, trust_remote_code=trust_remote_code
         )
@@ -41,20 +48,13 @@ class MInferenceE2ETester(unittest.TestCase):
 
     def forward(self, attn_type: str, kv_type: str, attn_kwargs: dict):
         def load_type():
-            model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                torch_dtype="auto",
-                device_map="auto",
-                trust_remote_code=True,
-                _attn_implementation="flash_attention_2",
-            )
             minference_patch = MInference(
                 attn_type=attn_type,
                 model_name=self.model_name,
                 kv_type=kv_type,
                 attn_kwargs=attn_kwargs,
             )
-            return minference_patch.patch_model(model)
+            return minference_patch.patch_model(self.model)
 
         def test_different_context_windows(seq_len: int):
             input_ids = self.tokenizer(self.prompt_complex)["input_ids"]
@@ -69,14 +69,20 @@ class MInferenceE2ETester(unittest.TestCase):
 
             with torch.no_grad():
                 if attn_type != "inf_llm":
-                    model(input_ids, attention_mask, use_cache=False)
+                    model(
+                        input_ids,
+                        attention_mask,
+                        use_cache=False,
+                        num_logits_to_keep=1,
+                    )
                 else:
                     model.generate(
                         input_ids, generation_config=GenerationConfig(max_new_tokens=1)
                     )
+            torch.cuda.empty_cache()
 
         model = load_type()
-        test_different_context_windows(100000)
+        test_different_context_windows(100_000)
         # test_different_context_windows(1000000)
         del model
         torch.cuda.empty_cache()
