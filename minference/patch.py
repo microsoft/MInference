@@ -512,7 +512,7 @@ def forward_llama_decoder_layer(
     chunk_size: int = 96_000,
     **kwargs,
 ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
-    residual = hidden_states
+    residual = hidden_states.clone()
     batch, seq_len, embed_dim = hidden_states.shape
     if chunk_size == -1:
         chunk_size = seq_len

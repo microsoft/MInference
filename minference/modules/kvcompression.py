@@ -30,8 +30,16 @@ def prepare_inputs_for_generation_kvcompression(
             cache_obj: Cache = method_to_cache_obj[method]
             config.num_layers = self.config.num_hidden_layers
             outputs["past_key_values"] = cache_obj(config)
-        if self._supports_num_logits_to_keep():
+        if (
+            hasattr(self, "_supports_num_logits_to_keep")
+            and self._supports_num_logits_to_keep()
+        ):
             outputs["num_logits_to_keep"] = 1
+        if (
+            hasattr(self, "_supports_logits_to_keep")
+            and self._supports_logits_to_keep()
+        ):
+            outputs["logits_to_keep"] = 1
         return outputs
 
     return new_prepare_inputs_for_generation
@@ -359,7 +367,7 @@ class StreamingLLMKVCache(SnapKVCache):
 
 
 class DynamicCacheWithRepeat(DynamicCache):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, config, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.temp_key_cache = []
         self.temp_value_cache = []
