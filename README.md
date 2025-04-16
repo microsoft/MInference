@@ -99,7 +99,8 @@ get_support_models()
 ```
 
 Currently, we support the following LLMs:
-- LLaMA-3.1: [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
+- Qwen2.5: [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct), [Qwen/Qwen2.5-32B-Instruct](https://huggingface.co/Qwen/Qwen2.5-32B-Instruct), [Qwen/Qwen2.5-72B-Instruct](https://huggingface.co/Qwen/Qwen2.5-72B-Instruct)
+- LLaMA-3.1: [meta-llama/Meta-Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct), [meta-llama/Meta-Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-70B-Instruct)
 - LLaMA-3: [gradientai/Llama-3-8B-Instruct-262k](https://huggingface.co/gradientai/Llama-3-8B-Instruct-262k), [gradientai/Llama-3-8B-Instruct-Gradient-1048k](https://huggingface.co/gradientai/Llama-3-8B-Instruct-Gradient-1048k), [gradientai/Llama-3-8B-Instruct-Gradient-4194k](https://huggingface.co/gradientai/Llama-3-8B-Instruct-Gradient-4194k), [gradientai/Llama-3-70B-Instruct-Gradient-262k](https://huggingface.co/gradientai/Llama-3-70B-Instruct-Gradient-262k), [gradientai/Llama-3-70B-Instruct-Gradient-1048k](https://huggingface.co/gradientai/Llama-3-70B-Instruct-Gradient-1048k)
 - GLM-4: [THUDM/glm-4-9b-chat-1m](https://huggingface.co/THUDM/glm-4-9b-chat-1m)
 - Yi: [01-ai/Yi-9B-200K](https://huggingface.co/01-ai/Yi-9B-200K)
@@ -118,6 +119,12 @@ pipe = pipeline("text-generation", model=model_name, torch_dtype="auto", device_
 # Patch MInference Module,
 # If you use the local path, please use the model_name from HF when initializing MInference.
 +minference_patch = MInference("minference", model_name)
++pipe.model = minference_patch(pipe.model)
+
+pipe(prompt, max_length=10)
+
+# Using sparse kv methods, e.g. snapkv, quest, retr_attn, kivi
++minference_patch = MInference(attn_type="minference", model_name=model_name, kv_type="quest")
 +pipe.model = minference_patch(pipe.model)
 
 pipe(prompt, max_length=10)
@@ -264,6 +271,14 @@ Similar vertical and slash line sparse patterns have been discovered in BERT[1] 
 **Q4: What is the relationship between MInference, SSM, Linear Attention, and Sparse Attention?**
 
 All four approaches (MInference, SSM, Linear Attention, and Sparse Attention) efficiently optimize attention complexity in Transformers, each introducing inductive bias differently. The latter three require training from scratch. Recent works like Mamba-2 and Unified Implicit Attention Representation unify SSM and Linear Attention as static sparse attention, with Mamba-2 itself being a block-wise sparse method. While these approaches show potential due to sparse redundancy in attention, static sparse attention may struggle with dynamic semantic associations in complex tasks. In contrast, dynamic sparse attention is better suited for managing these relationships.
+
+**Q5**: CUDA Out of Memory in in `_prepare_4d_causal_attention_mask_with_cache_position`
+
+_Solution_: Set the Hugging Face model's attention backend to FlashAttention-2 by adding the following argument during model initialization: `_attn_implementation="flash_attention_2",`.
+
+**Q6**: CUDA Out of Memory in in `logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])`
+
+_Solution_: Set the `num_logits_to_keep=1` in model forward.
 
 ## Citation
 

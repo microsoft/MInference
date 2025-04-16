@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import json
@@ -39,6 +39,7 @@ class HuggingFaceModel:
                 trust_remote_code=True,
                 device_map="auto",
                 torch_dtype=torch.bfloat16,
+                _attn_implementation="flash_attention_2",
             )
 
         self.generation_kwargs = generation_kwargs
@@ -108,6 +109,7 @@ class MInferenceModel:
             device_map="cuda",
             resume_download=None,
             trust_remote_code=trust_remote_code,
+            _attn_implementation="flash_attention_2",
         )
         minference_patch = MInference(
             attn_type,
@@ -238,6 +240,7 @@ class Streaming(MInferenceModel):
             device_map="cuda",
             resume_download=None,
             trust_remote_code=trust_remote_code,
+            _attn_implementation="flash_attention_2",
         )
         minference_patch = MInference(
             "a_shape",

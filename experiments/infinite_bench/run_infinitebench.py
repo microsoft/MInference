@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 from __future__ import annotations
@@ -172,6 +172,7 @@ def load_model(
             device_map="auto",
             resume_download=None,
             trust_remote_code=trust_remote_code,
+            _attn_implementation="flash_attention_2",
         )
 
     if attn_type not in ["vllm", "hf"]:

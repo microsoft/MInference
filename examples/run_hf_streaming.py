@@ -102,6 +102,7 @@ def main(args):
         model_name_or_path,
         torch_dtype="auto",
         device_map="cuda",
+        _attn_implementation="flash_attention_2",
     )
 
     # Patch MInference Module

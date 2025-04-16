@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import argparse
@@ -30,7 +30,12 @@ def run_target_length(m: int, model, attn_type: str):
         start = time.time()
         with torch.no_grad():
             if attn_type != "inf_llm":
-                model(input_ids, attention_mask, use_cache=False)
+                model(
+                    input_ids,
+                    attention_mask,
+                    use_cache=False,
+                    num_logits_to_keep=1,
+                )
             else:
                 model.generate(
                     input_ids, generation_config=GenerationConfig(max_new_tokens=1)
@@ -57,6 +62,7 @@ def run_benchmark(model_name: str):
             model_name,
             torch_dtype="auto",
             device_map="auto",
+            _attn_implementation="flash_attention_2",
         )
         attn_kwargs = {} if args.attn_type != "inf_llm" else {"dense_decoding": False}
         if attn_type != "hf":
@@ -93,6 +99,7 @@ if __name__ == "__main__":
         "--model_name",
         type=str,
         default="gradientai/Llama-3-8B-Instruct-Gradient-1048k",
+        # default="Qwen/Qwen2.5-7B-Instruct",
     )
     args.add_argument(
         "--attn_type",
@@ -105,7 +112,7 @@ if __name__ == "__main__":
             "inf_llm",
         ],
     )
-    args.add_argument("--context_window", type=int, default=100000)
+    args.add_argument("--context_window", type=int, default=100_000)
     args.add_argument("--run_benchmark", action="store_true")
     args.add_argument("--kv_cache_cpu", action="store_true")
     args.add_argument("--trust_remote_code", action="store_true")
@@ -123,6 +130,7 @@ if __name__ == "__main__":
             torch_dtype="auto",
             device_map="auto",
             trust_remote_code=args.trust_remote_code,
+            _attn_implementation="flash_attention_2",
         )
         attn_kwargs = {} if args.attn_type != "inf_llm" else {"dense_decoding": False}
         if args.attn_type != "hf":

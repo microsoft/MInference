@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import json
@@ -229,6 +229,7 @@ class LLMNeedleHaystackTester:
                 torch_dtype="auto",
                 device_map="cuda",
                 trust_remote_code=config.trust_remote_code,
+                _attn_implementation="flash_attention_2",
                 **kwargs,
             )
             self.model = minference_patch(self.model)
