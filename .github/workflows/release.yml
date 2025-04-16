@@ -49,41 +49,18 @@ jobs:
       fail-fast: false
       matrix:
           os: ['ubuntu-20.04']
-          python-version: ['3.8', '3.9', '3.10', '3.11']
-          pytorch-version: ['2.0.1', '2.1.2', '2.2.2', '2.3.0']
-          cuda-version: ['11.8.0', '12.2.2']
+          python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+          pytorch-version: ['2.2.2', '2.3.1', '2.4.0', '2.5.1', '2.6.0']
+          cuda-version: ['12.4.0']
           exclude:
             # see https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
-            # Pytorch < 2.2 does not support Python 3.12
-            - pytorch-version: '1.12.1'
-              python-version: '3.12'
-            - pytorch-version: '1.13.1'
-              python-version: '3.12'
-            - pytorch-version: '2.0.1'
-              python-version: '3.12'
-            - pytorch-version: '2.1.2'
-              python-version: '3.12'
-            # Pytorch <= 1.12 does not support Python 3.11
-            - pytorch-version: '1.12.1'
-              python-version: '3.11'
-            # Pytorch >= 2.0 only supports Python >= 3.8
-            - pytorch-version: '2.0.1'
-              python-version: '3.7'
-            - pytorch-version: '2.1.2'
-              python-version: '3.7'
+            # Pytorch < 2.5 does not support Python 3.13
             - pytorch-version: '2.2.2'
-              python-version: '3.7'
-            - pytorch-version: '2.3.0'
-              python-version: '3.7'
-            - pytorch-version: '2.4.0.dev20240407'
-              python-version: '3.7'
-            # Pytorch <= 2.0 only supports CUDA <= 11.8
-            - pytorch-version: '1.12.1'
-              cuda-version: '12.2.2'
-            - pytorch-version: '1.13.1'
-              cuda-version: '12.2.2'
-            - pytorch-version: '2.0.1'
-              cuda-version: '12.2.2'
+              python-version: '3.13'
+            - pytorch-version: '2.3.1'
+              python-version: '3.13'
+            - pytorch-version: '2.4.0'
+              python-version: '3.13'
 
     steps:
       - name: Checkout
@@ -101,7 +78,7 @@ jobs:
           bash -x .github/workflows/scripts/env.sh
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
             python-version: ${{ matrix.python-version }}
 
@@ -113,7 +90,7 @@ jobs:
 
       - name: Install CUDA ${{ matrix.cuda-version }}
         if: ${{ matrix.cuda-version != 'cpu' }}
-        uses: Jimver/cuda-toolkit@v0.2.14
+        uses: Jimver/cuda-toolkit@v0.2.19
         id: cuda-toolkit
         with:
           cuda: ${{ matrix.cuda-version }}
@@ -121,9 +98,7 @@ jobs:
           # default method is "local", and we're hitting some error with caching for CUDA 11.8 and 12.1
           # method: ${{ (matrix.cuda-version == '11.8.0' || matrix.cuda-version == '12.1.0') && 'network' || 'local' }}
           method: 'network'
-          # We need the cuda libraries (e.g. cuSparse, cuSolver) for compiling PyTorch extensions,
-          # not just nvcc
-          # sub-packages: '["nvcc"]'
+          sub-packages: '["nvcc"]'
 
       - name: Install PyTorch ${{ matrix.pytorch-version }} with CUDA ${{ matrix.cuda-version }}
         run: |
