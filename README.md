@@ -11,6 +11,7 @@
     <a href="https://arxiv.org/abs/2407.02490"><b>Paper</b></a> |
     <a href="https://huggingface.co/spaces/microsoft/MInference"><b>HF Demo</b></a> |
     <a href="https://aka.ms/SCBench"><b>SCBench</b></a> |
+    <a href="https://aka.ms/MMInference"><b>MMInference</b></a> |
 </p>
 
 https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-7123c81d6b19
@@ -19,15 +20,17 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 ## 📰 News
 
+- 👾 [25/04/23] We are excited to announce the release of our multi-modality work, [MMInference](https://aka.ms/2504.16083), which use **modality-aware permutation aparse attention** to accelerate long-context VLMs. We'll present MMInference at **Microsoft Booth** and **FW-Wild at ICLR'25**. See you in Singapore!
 - 🤗 [25/01/27] MInference has been integrated into [Qwen2.5-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
 - 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
 - 🧤 [24/09/26] MInference has been accepted as **spotlight** at **NeurIPS'24**. See you in Vancouver!
-- 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, [RetrievalAttention](https://aka.ms/RetrievalAttention), which accelerates long-context LLM inference via vector retrieval.
 
+- 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, [RetrievalAttention](https://aka.ms/RetrievalAttention), which accelerates long-context LLM inference via vector retrieval.
 <details>
 <summary>More News</summary>
  <ul>
+  <li> 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, <a href="https://aka.ms/RetrievalAttention">RetrievalAttention</a>, which accelerates long-context LLM inference via vector retrieval.</li>
   <li> 🥤 [24/07/24] MInference supports <a href="https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct">meta-llama/Meta-Llama-3.1-8B-Instruct</a> now.</li>
   <li> 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the <a href="https://huggingface.co/spaces/microsoft/MInference">HF Demo</a> with ZeroGPU.</li>
   <li> 📃 [24/07/03] Due to an issue with arXiv, the PDF is currently unavailable there. You can find the paper at this <a href="https://export.arxiv.org/pdf/2407.02490">link</a>.</li>
@@ -47,11 +50,17 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 - [SCBench: A KV Cache-Centric Analysis of Long-Context Methods](https://arxiv.org/abs/2412.10319) (ICLR'25, ENLSP @ NeurIPS'24)<br>
   _Yucheng Li, Huiqiang Jiang, Qianhui Wu, Xufang Luo, Surin Ahn, Chengruidong Zhang, Amir H. Abdi, Dongsheng Li, Jianfeng Gao, Yuqing Yang and Lili Qiu_
 
+**MMInference** use **modality-aware permutation sparse attention** to accelerate long-context VLMs inference in prefilling-stage. Specifically, we implement three distinct permutation-based sparse attention mechanisms, with FlashAttention, FlashDecoding and PIT, to address the grid patterns in vision inputs and the modality boundary issues in mixed-modality scenarios.
+
+- [MMInference: Accelerating Pre-filling for Long-Context VLMs via Modality-Aware Permutation Sparse Attention](https://arxiv.org/abs/2504.16083) (Under Review)<br>
+  _Yucheng Li, Huiqiang Jiang, Chengruidong Zhang, Qianhui Wu, Xufang Luo, Surin Ahn, Amir H. Abdi, Dongsheng Li, Jianfeng Gao, Yuqing Yang and Lili Qiu_
+
 
 ## 🎥 Overview
 
 ![Onepage of MInference](https://raw.githubusercontent.com/microsoft/MInference/main/images/MInference1_onepage.png)
 ![Onepage of SCBench](https://raw.githubusercontent.com/microsoft/MInference/main/images/SCBench_onepage.png)
+![Onepage of MMInference](https://raw.githubusercontent.com/microsoft/MInference/main/images/MMInference_onepage.png)
 
 ## 🎯 Quick Start
 
@@ -299,6 +308,13 @@ If you find MInference useful or relevant to your project and research, please k
   booktitle={The Thirteenth International Conference on Learning Representations},
   year={2025},
   url={https://openreview.net/forum?id=gkUyYcY1W9}
+}
+
+@article{li2025mminference,
+    title={MMInference: Accelerating Pre-filling for Long-Context VLMs via Modality-Aware Permutation Sparse Attention},
+    author={Li, Yucheng and Jiang, Huiqiang and Zhang, Chengruidong and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Abdi, Amir H and Li, Dongsheng and Gao, Jianfeng and Yang, Yuqing and Qiu, Lili},
+    journal={arXiv preprint arXiv:2504.16083},
+    year={2025}
 }
 ```
 
