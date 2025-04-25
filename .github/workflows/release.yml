@@ -6,11 +6,8 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    tags:
+      - v*
 
 # Needed to create release and upload assets
 permissions:
