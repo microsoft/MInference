@@ -20,7 +20,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 ## 📰 News
 
-- 👾 [25/04/23] We are excited to announce the release of our multi-modality work, [MMInference](https://aka.ms/2504.16083), which use **modality-aware permutation aparse attention** to accelerate long-context VLMs. We'll present MMInference at **Microsoft Booth** and **FW-Wild at ICLR'25**. See you in Singapore!
+- 👾 [25/04/23] We are excited to announce the release of our multi-modality work, [MMInference](https://aka.ms/2504.16083), which use **modality-aware permutation sparse attention** to accelerate long-context VLMs. We'll present MMInference at **Microsoft Booth** and **FW-Wild at ICLR'25**. See you in Singapore!
 - 🤗 [25/01/27] MInference has been integrated into [Qwen2.5-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
 - 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
