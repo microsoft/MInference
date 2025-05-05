@@ -19,17 +19,15 @@ https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-
 _Now, you can process **1M context 10x faster in a single A100** using Long-context LLMs like LLaMA-3-8B-1M, GLM-4-1M, with even **better accuracy**, try **MInference 1.0** right now!_
 
 ## 📰 News
-
+- 🐝 [25/05/02] MMInference has been accepted at **ICML'25**.
 - 👾 [25/04/23] We are excited to announce the release of our multi-modality work, [MMInference](https://aka.ms/2504.16083), which use **modality-aware permutation sparse attention** to accelerate long-context VLMs. We'll present MMInference at **Microsoft Booth** and **FW-Wild at ICLR'25**. See you in Singapore!
 - 🤗 [25/01/27] MInference has been integrated into [Qwen2.5-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
 - 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
-- 🧤 [24/09/26] MInference has been accepted as **spotlight** at **NeurIPS'24**. See you in Vancouver!
-
-- 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, [RetrievalAttention](https://aka.ms/RetrievalAttention), which accelerates long-context LLM inference via vector retrieval.
 <details>
 <summary>More News</summary>
  <ul>
+  <li> 🧤 [24/09/26] MInference has been accepted as <b>spotlight</b> at <b>NeurIPS'24</b>. See you in Vancouver!</li>
   <li> 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, <a href="https://aka.ms/RetrievalAttention">RetrievalAttention</a>, which accelerates long-context LLM inference via vector retrieval.</li>
   <li> 🥤 [24/07/24] MInference supports <a href="https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct">meta-llama/Meta-Llama-3.1-8B-Instruct</a> now.</li>
   <li> 🪗 [24/07/07] Thanks @AK for sponsoring. You can now use MInference online in the <a href="https://huggingface.co/spaces/microsoft/MInference">HF Demo</a> with ZeroGPU.</li>
@@ -52,7 +50,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 **MMInference** use **modality-aware permutation sparse attention** to accelerate long-context VLMs inference in prefilling-stage. Specifically, we implement three distinct permutation-based sparse attention mechanisms, with FlashAttention, FlashDecoding and PIT, to address the grid patterns in vision inputs and the modality boundary issues in mixed-modality scenarios.
 
-- [MMInference: Accelerating Pre-filling for Long-Context VLMs via Modality-Aware Permutation Sparse Attention](https://arxiv.org/abs/2504.16083) (Under Review)<br>
+- [MMInference: Accelerating Pre-filling for Long-Context VLMs via Modality-Aware Permutation Sparse Attention](https://arxiv.org/abs/2504.16083) (ICML'25, FM-Wild @ ICLR'25)<br>
   _Yucheng Li, Huiqiang Jiang, Chengruidong Zhang, Qianhui Wu, Xufang Luo, Surin Ahn, Amir H. Abdi, Dongsheng Li, Jianfeng Gao, Yuqing Yang and Lili Qiu_
 
 
@@ -310,11 +308,12 @@ If you find MInference useful or relevant to your project and research, please k
   url={https://openreview.net/forum?id=gkUyYcY1W9}
 }
 
-@article{li2025mminference,
-    title={MMInference: Accelerating Pre-filling for Long-Context VLMs via Modality-Aware Permutation Sparse Attention},
+@inproceedings{li2025mminference,
+    title={{MMI}ference: Accelerating Pre-filling for Long-Context VLMs via Modality-Aware Permutation Sparse Attention},
     author={Li, Yucheng and Jiang, Huiqiang and Zhang, Chengruidong and Wu, Qianhui and Luo, Xufang and Ahn, Surin and Abdi, Amir H and Li, Dongsheng and Gao, Jianfeng and Yang, Yuqing and Qiu, Lili},
-    journal={arXiv preprint arXiv:2504.16083},
-    year={2025}
+    booktitle={Forty-second International Conference on Machine Learning},
+    year={2025},
+    url={https://openreview.net/forum?id=me6PfbATWM}
 }
 ```
 
