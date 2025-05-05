@@ -20,13 +20,14 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 ## 📰 News
 - 🐝 [25/05/02] MMInference has been accepted at **ICML'25**.
+- 👨‍💻‍ [25/04/14] [SGLang](https://github.com/sgl-project/sglang/pull/5327) and [vLLM](https://github.com/vllm-project/flash-attention/pull/33) have merged the MInference sparse attention kernel. Notably, SGLang also adapted it for FlashAttention-3. Special thanks to @zhyncs and @yinfan98 for their contributions!
 - 👾 [25/04/23] We are excited to announce the release of our multi-modality work, [MMInference](https://aka.ms/2504.16083), which use **modality-aware permutation sparse attention** to accelerate long-context VLMs. We'll present MMInference at **Microsoft Booth** and **FW-Wild at ICLR'25**. See you in Singapore!
 - 🤗 [25/01/27] MInference has been integrated into [Qwen2.5-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
-- 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, [SCBench](https://aka.ms/SCBench), which evaluates long-context methods from a KV cache perspective.
 <details>
 <summary>More News</summary>
  <ul>
+  <li> 🍩 [24/12/13] We are excited to announce the release of our KV cache-centric analysis work, <a href="https://aka.ms/SCBench">SCBench</a>, which evaluates long-context methods from a KV cache perspective.</li>
   <li> 🧤 [24/09/26] MInference has been accepted as <b>spotlight</b> at <b>NeurIPS'24</b>. See you in Vancouver!</li>
   <li> 👘 [24/09/16] We are pleased to announce the release of our KV cache offloading work, <a href="https://aka.ms/RetrievalAttention">RetrievalAttention</a>, which accelerates long-context LLM inference via vector retrieval.</li>
   <li> 🥤 [24/07/24] MInference supports <a href="https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct">meta-llama/Meta-Llama-3.1-8B-Instruct</a> now.</li>
