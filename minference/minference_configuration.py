@@ -1,7 +1,5 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
-
-import os
 
 from .configs.model2path import MODEL2PATH
 
@@ -27,6 +25,7 @@ class MInferenceConfig:
         "inf_llm",
         "flexprefill",
         "vllm_flexprefill",
+        "xattention",
     ]
     KV_TYPES = [
         "dense",
@@ -72,7 +71,7 @@ class MInferenceConfig:
         self.kv_type = kv_type
         self.attn_kwargs = attn_kwargs
 
-    def update_config_path(self, config_path: str, model_name: str):
+    def update_config_path(self, config_path: str = None, model_name: str = None):
         if self.attn_type in self.OTHER_ATTENTION_TYPES:
             return ""
         if config_path is not None:
