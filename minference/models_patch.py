@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import json
@@ -97,7 +97,7 @@ class MInference:
             self.config.attn_kwargs.setdefault("n_last", 100)
             model = new_patch(model, self.config)
 
-        elif self.config.attn_type in ["flexprefill", "dense"]:
+        elif self.config.attn_type in ["flexprefill", "dense", "xattention"]:
             model = new_patch(model, self.config)
 
         elif self.config.attn_type == "dilated1":

@@ -13,6 +13,7 @@ from ..modules.kivi import kivi_forward
 from ..modules.minference_forward import minference_prefill_forward
 from ..modules.quest import quest_decode_kernel
 from ..modules.retr_attn import retr_attn
+from ..modules.xattention import xattention_forward
 from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
 
 
@@ -187,6 +188,7 @@ prefill_forwards = {  # None = use flash attention
     "tri_shape": tri_shape_kernel,
     "minference": minference_prefill_forward,
     "flexprefill": flexprefill_forward,
+    "xattention": xattention_forward,
 }
 
 decoding_forwards = {
