@@ -119,12 +119,15 @@ def get_minference_version() -> str:
         return str(version)
 
 
-def get_platform():
+def get_arch():
     """
-    Returns the platform name as used in wheel filenames.
+    Returns the system aarch for the current system.
     """
     if sys.platform.startswith("linux"):
-        return f"linux_{platform.uname().machine}"
+        if platform.machine() == "x86_64":
+            return "x86_64"
+        if platform.machine() == "arm64" or platform.machine() == "aarch64":
+            return "aarch64"
     elif sys.platform == "darwin":
         mac_version = ".".join(platform.mac_ver()[0].split(".")[:2])
         return f"macosx_{mac_version}_x86_64"
@@ -132,6 +135,28 @@ def get_platform():
         return "win_amd64"
     else:
         raise ValueError("Unsupported platform: {}".format(sys.platform))
+
+
+def get_system() -> str:
+    """
+    Returns the system name as used in wheel filenames.
+    """
+    if platform.system() == "Windows":
+        return "win"
+    elif platform.system() == "Darwin":
+        mac_version = ".".join(platform.mac_ver()[0].split(".")[:1])
+        return f"macos_{mac_version}"
+    elif platform.system() == "Linux":
+        return "linux"
+    else:
+        raise ValueError("Unsupported system: {}".format(platform.system()))
+
+
+def get_platform() -> str:
+    """
+    Returns the platform name as used in wheel filenames.
+    """
+    return f"{get_system()}_{get_arch()}"
 
 
 def get_wheel_url():
