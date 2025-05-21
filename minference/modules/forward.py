@@ -70,6 +70,10 @@ def attn_forward(
     else:
         cos, sin = position_embeddings
 
+    if cos.device != query_states.device:
+        cos = cos.to(query_states.device)
+        sin = sin.to(query_states.device)
+
     if customized_rope_func is not None:  # eg, glm-4 rope
         query_states, key_states = customized_rope_func(
             query_states, key_states, cos, sin
