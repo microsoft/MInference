@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 import math
@@ -9,6 +9,13 @@ import triton.language as tl
 
 from ..cuda import convert_vertical_slash_indexes
 
+try:
+    from sgl_kernel.sparse_flash_attn import sparse_attn_func
+except:
+    try:
+        from vllm_flash_attn import sparse_attn_func
+    except:
+        sparse_attn_func = None
 
 # @triton.autotune(
 #    configs=[
@@ -182,7 +189,7 @@ def vertical_slash_sparse_attention(
     block_size_N: int = 64,
 ):
     batch_size, num_heads, context_size, head_dim = query.shape
-    pad = block_size_M - (context_size & (block_size_M - 1))
+    pad = (block_size_M - context_size) & (block_size_M - 1)
     query = torch.nn.functional.pad(query, [0, 0, 0, pad, 0, 0, 0, 0])
     key = torch.nn.functional.pad(key, [0, 0, 0, pad, 0, 0, 0, 0])
     value = torch.nn.functional.pad(value, [0, 0, 0, pad, 0, 0, 0, 0])
@@ -200,9 +207,51 @@ def vertical_slash_sparse_attention(
     block_count, block_offset, column_count, column_index = convert_vertical_slash_indexes(
         seqlens, v_idx, s_idx, context_size, block_size_M, block_size_N,
     )
-    out = _triton_mixed_sparse_attention(
-        query, key, value, seqlens,
-        block_count, block_offset, column_count, column_index,
-        sm_scale, block_size_M, block_size_N,
-    )
+
+    if sparse_attn_func is not None:
+        out = sparse_attn_func(
+            query.transpose(1, 2).contiguous(),
+            key.transpose(1, 2).contiguous(),
+            value.transpose(1, 2).contiguous(),
+            block_count, block_offset, column_count, column_index,
+            return_softmax_lse=False,
+        ).transpose(1, 2).contiguous()
+    else:
+        out = _triton_mixed_sparse_attention(
+            query, key, value, seqlens,
+            block_count, block_offset, column_count, column_index,
+            sm_scale, block_size_M, block_size_N,
+        )
+
     return out[..., :context_size, :head_dim]
+
+def sglang_vs(query, key, value, v_idx, s_idx, block_size_M: int = 64, block_size_N: int = 64):
+    from sgl_kernel.sparse_flash_attn import (
+        convert_vertical_slash_indexes as convert_vertical_slash_indexes_sgl,
+    )
+    from sgl_kernel.sparse_flash_attn import sparse_attn_func
+    batch_size, num_heads, context_size, head_dim = query.shape
+    seqlens = torch.tensor([context_size], dtype=torch.int32, device=query.device)
+    block_count, block_offset, column_count, column_index = (
+        convert_vertical_slash_indexes_sgl(
+            seqlens,
+            seqlens,
+            v_idx.to(torch.int32),
+            s_idx.to(torch.int32),
+            context_size,
+            block_size_M,
+            block_size_N,
+            causal=True,
+        )
+    )
+    out = sparse_attn_func(
+        query.transpose(1, 2).contiguous(),
+        key.transpose(1, 2).contiguous(),
+        value.transpose(1, 2).contiguous(),
+        block_count,
+        block_offset,
+        column_count,
+        column_index,
+        return_softmax_lse=False,
+    )
+    return out.transpose(1, 2).contiguous()

@@ -246,7 +246,7 @@ def softmax_fuse_block_sum(attn_weights_slice, reshaped_block_size, segment_size
     try:
         assert k_len % segment_size == 0
     except:
-        breakpoint()
+        assert False, f"xAttention error, k_len: {k_len}, segment size: {segment_size}"
     assert segment_size % reshaped_block_size == 0
     assert attn_weights_slice.stride(-1) == 1
 
