@@ -42,6 +42,19 @@ Environment parameters:
 
 To demonstrate the efficiency of our method, we conducted end-to-end latency tests using the [LLaMA-3-8B-Instruct-1M](https://huggingface.co/gradientai/Llama-3-8B-Instruct-Gradient-1048k) model. The prompts were trimmed to different target token numbers, and we measured the pre-filling stage latency without using KV cache.
 
+> [!TIP]
+> To benefit from fast kernel implementations, we recommend installing **SGLang** or **vLLM**. 
+> for sglang
+> ```bash
+> uv pip install "sglang[all]>=0.4.6.post4"
+> ```
+>
+> for vllm
+> ```bash
+> uv pip install "vllm>=0.9.0"
+> uv pip install git+https://github.com/vllm-project/flash-attention
+> ```
+
 1. Download the prompt:
 
 ```bash
@@ -67,15 +80,15 @@ python experiments/benchmarks/benchmark_e2e.py --run_benchmark
 4. After that, you should get the end-to-end latency results like this:
 
 ```json
-        FlashAttention-2 A-Shape   InfLLM          MInference
-1K      0.54565         1.07110         2.94495         2.96450
-10K     0.97590         1.18339         2.21052         2.77618
-50K     8.52933         5.47972         14.63624        7.54537
-100K    24.88319        10.86379        27.67215        13.98508
-200K    79.39184        21.61490        55.64703        26.81303
-300K    169.62441       32.44844        80.74326        41.09374
-500K    456.78353       54.15910        167.91472       66.27691
-1000K   1765.56387      107.85639       328.58551       179.12031
+        FlashAttention-2 A-Shape   InfLLM          MInference          MInference w/ SGLang
+1K      0.54565         1.07110         2.94495         2.96450         1.25478
+10K     0.97590         1.18339         2.21052         2.77618         2.43798
+50K     8.52933         5.47972         14.63624        7.54537         6.19598
+100K    24.88319        10.86379        27.67215        13.98508        10.81580
+200K    79.39184        21.61490        55.64703        26.81303        20.62303
+300K    169.62441       32.44844        80.74326        41.09374        31.01629
+500K    456.78353       54.15910        167.91472       66.27691        51.96293
+1000K   1765.56387      107.85639       328.58551       179.12031       112.37610
 ```
 
 > [!TIP]
