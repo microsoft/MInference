@@ -20,7 +20,7 @@ _Now, you can process **1M context 10x faster in a single A100** using Long-cont
 
 ## 📰 News
 - 🐝 [25/05/02] MMInference has been accepted at **ICML'25**.
-- 👨‍💻‍ [25/04/14] [SGLang](https://github.com/sgl-project/sglang/pull/5327) and [vLLM](https://github.com/vllm-project/flash-attention/pull/33) have merged the MInference sparse attention kernel. Notably, SGLang also adapted it for FlashAttention-3. Special thanks to @zhyncs and @yinfan98 for their contributions!
+- 👨‍💻‍ [25/04/14] [SGLang](https://github.com/sgl-project/sglang/pull/5327) and [vLLM](https://github.com/vllm-project/flash-attention/pull/33) have merged the MInference sparse attention kernel. _MInference already supports the optimized kernels._ Just try `pip install sglang`. You can achieve up to **1.64× (64K), 2.4× (96K), 2.9× (128K), 5.2× (256K), 8× (512K), and 15× (1M)** speedup. Notably, SGLang also adapted it for FlashAttention-3. Special thanks to @zhyncs and @yinfan98 for their contributions!
 - 👾 [25/04/23] We are excited to announce the release of our multi-modality work, [MMInference](https://aka.ms/2504.16083), which use **modality-aware permutation sparse attention** to accelerate long-context VLMs. We'll present MMInference at **Microsoft Booth** and **FW-Wild at ICLR'25**. See you in Singapore!
 - 🤗 [25/01/27] MInference has been integrated into [Qwen2.5-1M](https://qwenlm.github.io/blog/qwen2.5-1m/) and online services. For details, refer to the [paper](https://arxiv.org/abs/2501.15383) and the [vLLM implementation](https://github.com/vllm-project/vllm/pull/11844).
 - 🪸 [25/01/23] SCBench has been accepted at **ICLR'25**.
@@ -116,6 +116,19 @@ Currently, we support the following LLMs:
 - Qwen2: [Qwen/Qwen2-7B-Instruct](https://huggingface.co/Qwen/Qwen2-7B-Instruct)
 
 ### How to use MInference
+
+> [!TIP]
+> To benefit from fast kernel implementations, we recommend installing **SGLang** or **vLLM**. 
+> for sglang
+> ```bash
+> uv pip install "sglang[all]>=0.4.6.post4"
+> ```
+>
+> for vllm
+> ```bash
+> uv pip install "vllm>=0.9.0"
+> uv pip install git+https://github.com/vllm-project/flash-attention
+> ```
 
 for HF,
 ```diff
