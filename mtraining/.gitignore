@@ -1,0 +1,12 @@
+**/__pycache__/
+MTraining.egg-info/
+**.ipynb
+**/prof_logs/
+.vscode/
+.pytest_cache/
+*.log
+**/draft/
+output/
+**/ring_attn_comp_data/
+**/ring_attn_comp_data/
+**/ring_attn_pt_logs/
