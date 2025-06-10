@@ -1,0 +1,12 @@
+granularity: 128
+stride: 16
+norm: 1
+softmax: true
+threshold: 0.9
+chunk_size: 16384
+select_mode: inverse
+use_triton: true
+causal: true
+kdb: 1
+keep_sink: false
+keep_recent: false

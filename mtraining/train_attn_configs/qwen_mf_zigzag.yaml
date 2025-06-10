@@ -1,0 +1,2 @@
+pattern_config_name: Qwen2.5_3B_kv_out_v32_fit_o_best_pattern
+implementation: zigzag

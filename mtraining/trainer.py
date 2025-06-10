@@ -24,53 +24,16 @@ from nnscaler.cli.trainer import (
     Trainer, _StepStat, TrainerArgs, TrainStatus, AggregatedTrainHook, TrainHook
 )
 
-from MTraining.utils.custom_parallel import parallelize as custom_parallelize
-from MTraining.utils.val_utils import fix_model_state_dict
-from MTraining.utils.paths import EXPR_DATA_SAVE_PATH
+from .utils.paths import EXPR_DATA_SAVE_PATH
+from .utils.general import fix_model_state_dict
+from .utils.custom_parallel import parallelize as custom_parallelize
 
 logger = logging.getLogger(__name__)
-
-def save_qkv_start_iter_idx():
-    if os.getenv("COLLECT_QKV_DATA", "0") == "1":
-        # check QKV save dir and return the maximum iter idex corresponding to which the complete set of QKV shards are saved
-        qkv_save_dir = os.path.join(os.getenv("QKV_STORE_DIR"), str(torch.distributed.get_world_size()))
-        print(f"Rank {torch.distributed.get_rank()} | {__name__} | qkv_save_dir={qkv_save_dir}")
-        if not os.path.exists(qkv_save_dir):
-            print(f"Rank {torch.distributed.get_rank()} | {__name__} | qkv_save_dir does not exist")
-            return -1
-    
-        # check subdirectories in this save dir (each subdir is named as `sample_{iter_idx}`)
-        num_gpus, num_layers = int(os.getenv("ORIG_GPU_SET").split('_')[-1]), int(os.getenv("NUM_LAYERS"))
-        subdirs = [d for d in os.listdir(qkv_save_dir) if os.path.isdir(os.path.join(qkv_save_dir, d)) and d.startswith("sample_")]
-        print(f"Rank {torch.distributed.get_rank()} | {__name__} | subdirs={subdirs}")
-        for iter_idx in range(len(subdirs) - 1, -1, -1):
-            subdir = os.path.join(qkv_save_dir, f"sample_{iter_idx}")
-            
-            # check if all layers are saved in this subdir
-            layer_dirs = [os.path.join(subdir, d) for d in os.listdir(subdir) if d.startswith('layer_') and os.path.isdir(os.path.join(subdir, d))]
-            if len(layer_dirs) == num_layers:
-                # check if all GPUs are saved in this subdir
-                print(f"Rank {torch.distributed.get_rank()} | {__name__} | layer_dirs={layer_dirs}")
-                for layer_dir in layer_dirs:
-                    shard_paths = [sp for sp in os.listdir(layer_dir) 
-                                   if (sp.startswith('q_') or sp.startswith('k_') or sp.startswith('v_') or sp.startswith('dout_')) \
-                                      and sp.endswith('.pt') \
-                                      and os.path.isfile(os.path.join(layer_dir, sp))]
-                    if len(shard_paths) == 4 * num_gpus:
-                        # all shards are saved
-                        return iter_idx
-    
-    return -1
 
 @dataclass
 class CustomTrainerArgs(TrainerArgs):
     transfer_config: Optional[Dict[str, Any]] = None
     merged_ckpt_path: Optional[str] = None
-
-
-
-EXPR_NAME: str
-PT_LOG_SAVE_DIR: str
 
 ITERATOR_COUNTER = defaultdict(int)
 def get_iter_cnt(rank: int):
@@ -81,82 +44,6 @@ ITER_BATCH_IDX_DICT = {}
 def get_iter_batch_idx(rank: int, iter_cnt: int):
     global ITER_BATCH_IDX_DICT
     return ITER_BATCH_IDX_DICT.get(rank, {}).get(iter_cnt, 0)
-
-SAVE_ITERVAL = -1
-def need_save_data(rank: int):
-    global SAVE_ITERVAL
-    if SAVE_ITERVAL <= 0: return False
-    return get_iter_cnt(rank) % SAVE_ITERVAL == 0
-
-EXECUTOR = ThreadPoolExecutor(max_workers=4)  # Adjust max_workers as needed
-def save_iter_losses(epoch_idx: int, iter_idx: int, losses: List[Any], latencies: Optional[List[Any]]):
-    if torch.distributed.get_rank() != 0: return
-
-    loss_save_dir = os.path.join(EXPR_DATA_SAVE_PATH['base_path'], 'losses', f"epoch_{epoch_idx}")
-    os.makedirs(loss_save_dir, exist_ok=True)
-    loss_save_path = os.path.join(loss_save_dir, f'iter_{iter_idx}.csv')
-    print(f"Rank {torch.distributed.get_rank()} | {__name__} | Saving iter losses to {loss_save_path} ...")
-    
-    loss_dict = {}
-    for sample_idx in range(len(losses)):
-        loss_dict[sample_idx] = {
-            'loss': losses[sample_idx][1].item(),
-            'num_tokens': losses[sample_idx][2],
-        }
-        if latencies is not None:
-            loss_dict[sample_idx]['latency'] = latencies[sample_idx]
-    loss_df = pd.DataFrame.from_dict(loss_dict, orient='index')
-    loss_df.index.name = "Sample"
-
-    loss_df.to_csv(loss_save_path)
-
-def prof_train_step(
-    model: ParallelModule,
-    rank: int, iter_idx: int,
-    samples: List[Any],
-    is_dummy_batch: Optional[List[bool]] = None,
-    scale_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
-) -> List[Any]:
-    global ITER_BATCH_IDX_DICT
-    model._warn_uninitialized_non_persistent_buffers(raise_error=True)
-
-    if not model.compute_config.use_end2end:
-        raise RuntimeError("train_step() is only supported in end2end mode")
-    if is_dummy_batch and len(samples) != len(is_dummy_batch):
-        raise ValueError("The length of samples and is_dummy_batch should be the same")
-
-    model._scale_loss(is_dummy_batch, scale_fn)
-
-    # sync_grad will be done in _train_step
-    # so we never need to call it manually
-    model._sync_grad_required = False
-    sample_count = len(samples)
-    dataloader = microbatches(samples, cycle=False)
-
-    outputs = []
-    trace_path = os.path.join(PT_LOG_SAVE_DIR, f'iter_{iter_idx}', f'trace_{rank}.log')
-    os.makedirs(os.path.dirname(trace_path), exist_ok=True) 
-    with profile(
-        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=2, repeat=1),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(trace_path),
-        record_shapes=True,
-        with_stack=True
-    ) as prof:
-        for idx in range(sample_count):
-            ITER_BATCH_IDX_DICT[rank][iter_idx] = idx
-            
-            sample_start_time = time.perf_counter()
-            with accum_mode(begin=(idx==0), end=(idx==sample_count-1)):
-                output = model._train_step(dataloader)
-            sample_time = time.perf_counter() - sample_start_time
-
-            if rank == 0:
-                print(f"| {__name__} | rank={rank} | iter_idx={iter_idx}, batch_idx={idx}, loss={output[1]}, latency={sample_time:.4f}s")
-            
-            outputs.append(output)
-            prof.step()
-    return outputs
 
 def custom_train_step(
     model: ParallelModule,
@@ -196,7 +83,6 @@ def custom_train_step(
         sample_count = len(samples)
         dataloader = microbatches(samples, cycle=False)
 
-        qkv_start_iter = save_qkv_start_iter_idx()
         if model.use_scheduler:
             if len(samples) != model.nmicros_per_scheduler_step:
                 raise ValueError(f"Expected {model.nmicros_per_scheduler_step} samples, but got {sample_count}")
@@ -208,7 +94,6 @@ def custom_train_step(
             latencies = []
             for idx in range(sample_count):
                 ITER_BATCH_IDX_DICT[rank][iter_idx] = idx
-                if idx <= qkv_start_iter: continue
 
                 sample_start_time = time.perf_counter()
                 with accum_mode(begin=(idx==0), end=(idx==sample_count-1)):
@@ -229,12 +114,10 @@ def custom_train_step(
 
 class CustomTrainer(Trainer):
     def __init__(
-            self,
-            argv: Optional[List[str]] = None,
-            *,
-            train_args: Optional[Union[Dict[str, Any], CustomTrainerArgs]] = None,
-            save_data_steps: int = 1,
-            enable_prof: bool = False,
+        self,
+        argv: Optional[List[str]] = None,
+        *,
+        train_args: Optional[Union[Dict[str, Any], CustomTrainerArgs]] = None,
     ):
         """
         Custom trainer with an additional parameter.
@@ -248,31 +131,11 @@ class CustomTrainer(Trainer):
         super().__init__(argv=argv, train_args=train_args)
         self.train_args: CustomTrainerArgs
         
-        if int(os.getenv('NCCL_DEBUG_MODE', '0')) == 1 and int(os.getenv("CODE_GEN", '0')) != 1:
-            torch.distributed.init_process_group(
-                backend='nccl',
-                timeout=timedelta(seconds=30),
-            )
-            print(f"Rank {self.rank} | {__name__} | nccl timeout is set to 30s for debugging")
-        else:
-            torch.distributed.init_process_group(
-                backend='nccl',
-                timeout=timedelta(hours=2),
-            )
-        
-        global SAVE_ITERVAL, EXPR_NAME, PT_LOG_SAVE_DIR
-        SAVE_ITERVAL = save_data_steps
-        self.save_data_steps = save_data_steps
-
-        EXPR_NAME = train_args.instance_name
-        PT_LOG_SAVE_DIR = os.path.join(train_args.log[0].args['root_dir'].replace('tf_logs', 'pt_logs'), EXPR_NAME)
-        os.makedirs(PT_LOG_SAVE_DIR, exist_ok=True)
-
-        self.enable_prof = enable_prof
-        if self.enable_prof:
-            self.train_step_func = prof_train_step
-        else:
-            self.train_step_func = custom_train_step
+        torch.distributed.init_process_group(
+            backend='nccl',
+            timeout=timedelta(hours=2),
+        )
+        self.train_step_func = custom_train_step
 
     def _train_epoch(self, epoch):
         VAL_STATUS_NO = 0     # not validated or saved
@@ -331,13 +194,7 @@ class CustomTrainer(Trainer):
             global ITERATOR_COUNTER, ITER_BATCH_IDX_DICT
             ITERATOR_COUNTER[self.rank] = idx
             ITER_BATCH_IDX_DICT[self.rank] = {idx: 0}
-            # print(f"|{__name__}| rank={self.rank}, ITERATOR_COUNTER[self.rank]={ITERATOR_COUNTER[self.rank]}")
-
             if self.rank == 0:
-                # looks manually update progress bar is easier
-                # than using tqdm directly
-                # the difference is we update progress bar at the beginning of the loop
-                # instead of the end of the loop
                 progress.update(1)
             step_start_at = time.perf_counter()
             step_stat = _StepStat()
@@ -353,13 +210,7 @@ class CustomTrainer(Trainer):
             self.hook.after_zero_grad(self)
 
             self.hook.on_train_step_start(self, batches[:num_batches], idx)
-            # losses = self.model.train_step(batches, is_dummy_batch)
-            losses, latencies = self.train_step_func(self.model, self.rank, idx, batches, is_dummy_batch)
-            # EXECUTOR.submit(
-            #     save_iter_losses,
-            #     idx, losses, latencies
-            # )
-            # save_iter_losses(idx, losses, latencies)   
+            losses, latencies = self.train_step_func(self.model, self.rank, idx, batches, is_dummy_batch)  
             self.hook.on_train_step_end(self, losses[:num_batches], batches[:num_batches], idx)
 
             aggregate_outputs = self.train_args.resolved_aggregate_outputs_fn or self.aggregate_outputs
@@ -373,9 +224,6 @@ class CustomTrainer(Trainer):
             self.hook.after_aggregate_train_step_outputs(self, aggregated_outputs, loss, idx)
 
             self.hook.before_sync_grad(self)
-            # actually `sync_shard_grad` is no-op here
-            # because trainer only supports end2end model
-            # and syncing grad in end2end model is done in `_train_step`.
             self.optimizer.sync_shard_grad()
             self.hook.after_sync_grad(self)
 
@@ -584,11 +432,7 @@ class CustomTrainer(Trainer):
         self.model = pmodel_class()
         self.model.cuda()
         self.optimizer = self.train_args.create_parallel_optimizer(self.model)
-        # Here we carefully scale down the gradient locally with 1/scale_factor before reduce,
-        # (the reduce op is `sum` by default, follow torch's c10d, grad is divided by scaling_factor before allreduce)
-        # and scale up the gradient after reduce
-        # (see `train_args.optimizer.grad_reduction`` handling in `train_epoch`).
-        # This is useful to avoid overflow when the gradients are large.
+        
         def reducer_pre_hook(reducer, grad):
             grad.div_(self.train_args.scaling_factor)
         self.optimizer.register_reducer_pre_hook(reducer_pre_hook)
@@ -670,9 +514,4 @@ class CustomTrainer(Trainer):
             if self.lr_scheduler:
                 self.lr_scheduler.load_state_dict(state_dict['lr_scheduler'])
         self.train_status = TrainStatus(**state_dict['train_status'])
-
-        # Assume in efficiency measuring mode, no checkpoint is saved and we only need to load the originally trained checkpoint
-        if int(os.getenv("E2E_MEASURE", "0")) == 1 or int(os.getenv("COLLECT_RING_COMP_DATA", "0")) == 1:
-            self.train_status.finished_train_steps = 0
-
         self.rng_states_from_resume = state_dict.get('rng_states')  # resumed in _global_batch_iterator()

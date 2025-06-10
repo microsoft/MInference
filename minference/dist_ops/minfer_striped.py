@@ -25,81 +25,8 @@ if torch.version.hip is None:
         sys.setdlopenflags(original_flags)
     # NOTE: Block-Sparse-Attention/csrc/block_sparse_attn/src/flash_blockmask.h: add head_idx to blockmask_ptr
 
-def compute_sr_flops(
-    block_mask_offset: torch.Tensor,  # [batch_size, num_qo_heads, num_blocks, num_blocks]
-    bar_cnt: torch.Tensor,  # [batch_size, num_qo_heads, num_blocks, world_size + 1]
-    step: int,
-    granularity: int,
-    q_len: int,
-    head_dim: int,
-    shift: bool,
-    fwd: bool=True,
-):
-    num_blocks = triton.cdiv(q_len, granularity)
-    bh = block_mask_offset.shape[0] * block_mask_offset.shape[1]
-    bar_cnt_step = (bar_cnt[..., step + 1] - bar_cnt[..., step]).sum(dtype=torch.float32).item()
 
-    total_num_blocks = bh * num_blocks * (num_blocks - 1) / 2
-    if step == 0:
-        total_num_blocks += bh * num_blocks / 2
-    elif not shift:
-        total_num_blocks += bh * num_blocks
-    
-    if step == 0:
-        num_active_blocks = block_mask_offset.sum(dim=-1).sum(dtype=torch.float32).item() - bh * num_blocks / 2
-    elif not shift:
-        num_active_blocks = block_mask_offset.sum(dtype=torch.float32).item()
-    else:
-        num_active_blocks = block_mask_offset[..., 1:, :-1].sum(dtype=torch.float32).item()
-    block_ratio = num_active_blocks / total_num_blocks
-    bar_ratio = bar_cnt_step / (granularity * total_num_blocks)
-    sparsity_ratio = 1 - block_ratio - bar_ratio
-
-    block_flops = num_active_blocks * (granularity * granularity) * head_dim * 2 * 2
-    bar_flops = bar_cnt_step * granularity * head_dim * 2 * 2
-    flops = block_flops + bar_flops
-
-    if not fwd: 
-        flops, block_flops, bar_flops = 2.5 * flops, 2.5 * block_flops, 2.5 * bar_flops
-    # STEP_DATA_FIELDS = ["block_ratio", "bar_ratio", "sparsity_ratio", "blk_flops", "bar_flops", "flops"]
-    return block_ratio, bar_ratio, sparsity_ratio, block_flops, bar_flops, flops
-    
-
-def compute_sr_by_heads(
-    block_mask_offset: torch.Tensor,  # [batch_size, num_qo_heads, num_blocks, num_blocks]
-    bar_cnt: torch.Tensor,  # [batch_size, num_qo_heads, num_blocks, world_size + 1]
-    step: int,
-    granularity: int,
-    q_len: int,
-    head_dim: int,
-    shift: bool,
-    fwd: bool=True,
-):
-    batch_size, num_heads = block_mask_offset.shape[0], block_mask_offset.shape[1]
-    num_blocks = triton.cdiv(q_len, granularity)
-    bar_cnt_step = (bar_cnt[..., step + 1] - bar_cnt[..., step]).sum(dim=-1).sum(dim=-1).sum(0, dtype=torch.float32) # [num_qo_heads]
-
-    total_num_blocks = num_blocks * (num_blocks - 1) / 2
-    if step == 0:
-        total_num_blocks += num_blocks / 2
-    elif not shift:
-        total_num_blocks += num_blocks
-    total_num_blocks_by_heads = torch.tensor([total_num_blocks for _ in range(num_heads)], dtype=torch.float32).to(block_mask_offset.device)
-
-    if step == 0:
-        num_active_blocks = block_mask_offset.sum(dim=-1).sum(dim=-1).sum(0, dtype=torch.float32) - batch_size * num_blocks / 2
-    elif not shift:
-        num_active_blocks = block_mask_offset.sum(dim=-1).sum(dim=-1).sum(0, dtype=torch.float32)
-    else:
-        num_active_blocks = block_mask_offset[..., 1:, :-1].sum(dim=-1).sum(dim=-1).sum(0, dtype=torch.float32)
-    block_ratio_by_heads = num_active_blocks / total_num_blocks_by_heads
-    bar_ratio_by_heads = bar_cnt_step / total_num_blocks_by_heads / granularity 
-    sparsity_ratio_by_heads = 1 - block_ratio_by_heads - bar_ratio_by_heads
-
-    return sparsity_ratio_by_heads.detach().cpu().numpy().tolist()
-
-
-def sparse_stripe_flash_attn_forward(
+def minfer_stripe_forward(
     process_group: dist.ProcessGroup,
     q: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
     k: torch.Tensor,  # [batch_size, num_tokens, num_kv_heads, head_dim]
@@ -146,7 +73,7 @@ def sparse_stripe_flash_attn_forward(
     # lse = lse.squeeze(dim=-1).transpose(1, 2)
     return out, lse, bar_k, bar_v
 
-def sparse_stripe_flash_attn_backward(
+def minfer_stripe_backward(
     process_group: dist.ProcessGroup,
     dout: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
     q: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
@@ -227,7 +154,7 @@ def sparse_stripe_flash_attn_backward(
     return dq.to(q.dtype), next_dk.to(q.dtype), next_dv.to(q.dtype)
 
 
-class SparseStripeFlashAttnFunc(torch.autograd.Function):
+class MInferStripeFunc(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
@@ -257,7 +184,7 @@ class SparseStripeFlashAttnFunc(torch.autograd.Function):
         v = shuffle_striped_input(to_send=v, dim=1, granularity=granularity, process_group=group)
 
         # Compute
-        out, softmax_lse, bar_k, bar_v = sparse_stripe_flash_attn_forward(
+        out, softmax_lse, bar_k, bar_v = minfer_stripe_forward(
             group, q, k, v, 
             layer_idx, softmax_scale,
             block_mask, bar_idx, bar_cnt, v_idx, v_cnt,
@@ -293,7 +220,7 @@ class SparseStripeFlashAttnFunc(torch.autograd.Function):
         dout = shuffle_striped_input(to_send=dout, dim=1, granularity=granularity, process_group=group)
 
         # Compute
-        dq, dk, dv = sparse_stripe_flash_attn_backward(
+        dq, dk, dv = minfer_stripe_backward(
             group, dout, q, k, v, out, softmax_lse,
             layer_idx, softmax_scale,
             block_mask, bar_pos, bar_cnt, v_idx, v_cnt, bar_k, bar_v,
@@ -306,7 +233,7 @@ class SparseStripeFlashAttnFunc(torch.autograd.Function):
         dv = recover_striped_output(dv, dim=1, granularity=granularity, process_group=group)
         return dq, dk, dv, None, None, None, None, None, None, None
 
-def sparse_stripe_flash_attn_qkvpacked_func(
+def minfer_stripe_qkvpacked_func(
     qkv: torch.Tensor,  # [batch_size, num_tokens, 3, num_heads, head_dim]
     v_size: List[int],  # [num_heads]
     s_size: List[int],  # [num_heads]
@@ -326,7 +253,7 @@ def sparse_stripe_flash_attn_qkvpacked_func(
     assert window_size == (-1, -1)
     assert alibi_slopes is None
     assert not deterministic
-    return SparseStripeFlashAttnFunc.apply(
+    return MInferStripeFunc.apply(
         qkv[:, :, 0],
         qkv[:, :, 1],
         qkv[:, :, 2],
@@ -340,7 +267,7 @@ def sparse_stripe_flash_attn_qkvpacked_func(
     )
 
 
-def sparse_stripe_flash_attn_kvpacked_func(
+def minfer_stripe_kvpacked_func(
     q: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
     kv: torch.Tensor,  # [batch_size, num_tokens, 2, num_heads, head_dim]
     v_size: List[int],  # [num_heads]
@@ -361,7 +288,7 @@ def sparse_stripe_flash_attn_kvpacked_func(
     assert window_size == (-1, -1)
     assert alibi_slopes is None
     assert not deterministic
-    return SparseStripeFlashAttnFunc.apply(
+    return MInferStripeFunc.apply(
         q,
         kv[:, :, 0],
         kv[:, :, 1],
@@ -374,7 +301,7 @@ def sparse_stripe_flash_attn_kvpacked_func(
         group,
     )
 
-def sparse_stripe_flash_attn_func( # the one used for nnscaler training
+def minfer_stripe_func( # the one used for nnscaler training
     q: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
     k: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
     v: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
@@ -397,7 +324,7 @@ def sparse_stripe_flash_attn_func( # the one used for nnscaler training
     assert alibi_slopes is None
     assert not deterministic
 
-    return SparseStripeFlashAttnFunc.apply(
+    return MInferStripeFunc.apply(
         q,
         k,
         v,

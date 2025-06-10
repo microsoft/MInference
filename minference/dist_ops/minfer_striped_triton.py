@@ -11,7 +11,7 @@ from minference.ops.utils import build_index, convert_blockmask
 from minference.ops.minference_attn_triton import block_bar_attn_fwd, block_bar_attn_bwd
 
 
-def sparse_stripe_flash_attn_triton_forward(
+def minfer_stripe_triton_forward(
     process_group: dist.ProcessGroup,
     q: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
     k: torch.Tensor,  # [batch_size, num_tokens, num_kv_heads, head_dim]
@@ -50,7 +50,7 @@ def sparse_stripe_flash_attn_triton_forward(
     return out, lse
 
 
-def sparse_stripe_flash_attn_triton_backward(
+def minfer_stripe_triton_backward(
     process_group: dist.ProcessGroup,
     dout: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
     q: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
@@ -114,7 +114,7 @@ def sparse_stripe_flash_attn_triton_backward(
     return dq.to(q.dtype), next_dk.to(q.dtype), next_dv.to(q.dtype)
 
 
-class SparseStripeFlashAttnTritonFunc(torch.autograd.Function):
+class MInferStripeTritonFunc(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
@@ -142,7 +142,7 @@ class SparseStripeFlashAttnTritonFunc(torch.autograd.Function):
         v = shuffle_striped_input(to_send=v, dim=1, granularity=granularity, process_group=group)
 
         # slash attn
-        out, softmax_lse = sparse_stripe_flash_attn_triton_forward(
+        out, softmax_lse = minfer_stripe_triton_forward(
             group, q, k, v, 
             layer_idx, softmax_scale,
             block_idx, block_cnt, bar_idx, bar_cnt,
@@ -168,7 +168,7 @@ class SparseStripeFlashAttnTritonFunc(torch.autograd.Function):
         dout = shuffle_striped_input(to_send=dout, dim=1, granularity=ctx.granularity, process_group=ctx.group)
         q, k, v, out, softmax_lse, block_idx, block_cnt, bar_idx, bar_cnt = ctx.saved_tensors
 
-        dq, dk, dv = sparse_stripe_flash_attn_triton_backward(
+        dq, dk, dv = minfer_stripe_triton_backward(
             ctx.group, dout, q, k, v, out, softmax_lse,
             layer_idx, ctx.softmax_scale,
             block_idx, block_cnt, bar_idx, bar_cnt,
@@ -182,7 +182,7 @@ class SparseStripeFlashAttnTritonFunc(torch.autograd.Function):
         return dq, dk, dv, None, None, None, None, None, None, None
 
 
-def sparse_stripe_flash_attn_triton_qkvpacked_func(
+def minfer_stripe_triton_qkvpacked_func(
     qkv: torch.Tensor,  # [batch_size, num_tokens, 3, num_heads, head_dim]
     v_size: List[int],  # [num_heads]
     s_size: List[int],  # [num_heads]
@@ -201,7 +201,7 @@ def sparse_stripe_flash_attn_triton_qkvpacked_func(
     assert window_size == (-1, -1)
     assert alibi_slopes is None
     assert not deterministic
-    return SparseStripeFlashAttnTritonFunc.apply(
+    return MInferStripeTritonFunc.apply(
         qkv[:, :, 0],
         qkv[:, :, 1],
         qkv[:, :, 2],
@@ -214,7 +214,7 @@ def sparse_stripe_flash_attn_triton_qkvpacked_func(
     )
 
 
-def sparse_stripe_flash_attn_triton_kvpacked_func(
+def minfer_stripe_triton_kvpacked_func(
     q: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
     kv: torch.Tensor,  # [batch_size, num_tokens, 2, num_heads, head_dim]
     v_size: List[int],  # [num_heads]
@@ -234,7 +234,7 @@ def sparse_stripe_flash_attn_triton_kvpacked_func(
     assert window_size == (-1, -1)
     assert alibi_slopes is None
     assert not deterministic
-    return SparseStripeFlashAttnTritonFunc.apply(
+    return MInferStripeTritonFunc.apply(
         q,
         kv[:, :, 0],
         kv[:, :, 1],
@@ -247,7 +247,7 @@ def sparse_stripe_flash_attn_triton_kvpacked_func(
     )
 
 
-def sparse_stripe_flash_attn_triton_func(
+def minfer_stripe_triton_func(
     q: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
     k: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
     v: torch.Tensor,  # [batch_size, num_tokens, num_heads, head_dim]
@@ -270,7 +270,7 @@ def sparse_stripe_flash_attn_triton_func(
     assert alibi_slopes is None
     assert not deterministic
 
-    return SparseStripeFlashAttnTritonFunc.apply(
+    return MInferStripeTritonFunc.apply(
         q,
         k,
         v,

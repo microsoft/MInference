@@ -1,12 +1,8 @@
 import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
+TRAIN_ATTN_CONFIG_DIR = os.path.join(BASE_DIR, 'train_attn_configs')
 ACTIVE_PARAM_CONFIG_DIR = os.path.join(BASE_DIR, "models", "active_param_configs")
-
-MINFER_CONFIG_DIR = os.path.join(BASE_DIR, 'sparse_configs')
-SPARSE_PATTERN_CONFIG_DIR = os.path.join(BASE_DIR, 'ops', 'minfer', 'configs')
-SPARSE_HEAD_MAP_DIR = os.path.join(BASE_DIR, 'ops', 'minfer', 'sparse_head_maps')
 
 
 EXPR_DATA_SAVE_PATH = {

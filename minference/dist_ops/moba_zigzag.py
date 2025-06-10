@@ -985,8 +985,13 @@ class MoBAZigzagRingFlashAttnFunc(torch.autograd.Function):
         return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 
-def zigzag_ring_flash_attn_qkvpacked_func(
+def moba_zigzag_qkvpacked_func(
     qkv,
+    seq_offset: torch.Tensor,
+    layer_idx: int,
+    cu_seqlens,
+    moba_chunk_size,
+    moba_topk,
     dropout_p=0.0,
     softmax_scale=None,
     causal=False,
@@ -1000,8 +1005,13 @@ def zigzag_ring_flash_attn_qkvpacked_func(
         qkv[:, :, 0],
         qkv[:, :, 1],
         qkv[:, :, 2],
+        seq_offset,
+        layer_idx,
         dropout_p,
         softmax_scale,
+        cu_seqlens,
+        moba_chunk_size,
+        moba_topk,
         causal,
         window_size,
         alibi_slopes,
@@ -1011,9 +1021,14 @@ def zigzag_ring_flash_attn_qkvpacked_func(
     )
 
 
-def zigzag_ring_flash_attn_kvpacked_func(
+def moba_zigzag_kvpacked_func(
     q,
     kv,
+    seq_offset: torch.Tensor,
+    layer_idx: int,
+    cu_seqlens,
+    moba_chunk_size,
+    moba_topk,
     dropout_p=0.0,
     softmax_scale=None,
     causal=False,
@@ -1027,8 +1042,13 @@ def zigzag_ring_flash_attn_kvpacked_func(
         q,
         kv[:, :, 0],
         kv[:, :, 1],
+        seq_offset,
+        layer_idx,
         dropout_p,
         softmax_scale,
+        cu_seqlens,
+        moba_chunk_size,
+        moba_topk,
         causal,
         window_size,
         alibi_slopes,
@@ -1038,10 +1058,13 @@ def zigzag_ring_flash_attn_kvpacked_func(
     )
 
 
-def zigzag_ring_flash_attn_func(
-    q,
-    k,
-    v,
+def moba_zigzag_func(
+    q, k, v,
+    seq_offset: torch.Tensor,
+    layer_idx: int,
+    cu_seqlens,
+    moba_chunk_size,
+    moba_topk,
     dropout_p=0.0,
     softmax_scale=None,
     causal=False,
@@ -1052,11 +1075,14 @@ def zigzag_ring_flash_attn_func(
     group=None,
 ):
     return MoBAZigzagRingFlashAttnFunc.apply(
-        q,
-        k,
-        v,
+        q, k, v,
+        seq_offset,
+        layer_idx,
         dropout_p,
         softmax_scale,
+        cu_seqlens,
+        moba_chunk_size,
+        moba_topk,
         causal,
         window_size,
         alibi_slopes,

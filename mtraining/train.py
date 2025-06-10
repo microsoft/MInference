@@ -3,17 +3,15 @@
 import os
 import yaml
 import torch
-import shutil
+import logging
 import argparse
 import numpy as np
-import torch.distributed as dist
 
-from typing import Dict, List, Optional
 from datasets import load_from_disk
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, DataCollatorForLanguageModeling
+from typing import Dict, List, Optional
 from transformers.modeling_utils import PreTrainedModel
+from transformers import AutoConfig, DataCollatorForLanguageModeling
 
-from nnscaler.utils import set_default_logger_level
 from nnscaler.cli.trainer_args import (
     CheckpointConfig,
     DatasetConfig,
@@ -25,45 +23,40 @@ from nnscaler.cli.trainer_args import (
     DatasetSamplerConfig,
 )
 from nnscaler.parallel import ComputeConfig
+from nnscaler.utils import set_default_logger_level
 from nnscaler.runtime.f16_optimizer import MixedPrecisionAdamW
 from nnscaler.cli.loggers.tensorboard import TensorBoardLogger
 
-from .trainer import CustomTrainer as Trainer, CustomTrainerArgs as TrainerArgs
-from .utils import chunk_linear_cross_entropy, get_tokenizer, aggregate_outputs_fn, get_resume_path
-from MTraining.ops.minfer import ExprMInferConfig as MInferenceConfig, ExprMInference as MInference
-from MTraining.ops import AttnType, overwrite_attn_implementation, load_moba_config, MoBAConfig
-from MTraining.models import MODEL_TO_ATTN_FUNC, MODEL_ID_TO_MODEL_CLS, MODEL_ID_TO_PREFIX
-from .utils.paths import (
-    MINFER_CONFIG_DIR, SPARSE_PATTERN_CONFIG_DIR, SPARSE_HEAD_MAP_DIR, 
-    update_expr_data_save_path
-)
-from MTraining.utils.train_utils import freeze_model_params, load_comm_profile_data
-from MTraining.utils.expr_data import update_expr_data
+from minference.models_patch import MInference
+from minference.minference_configuration import MInferenceConfig
+from minference.configs.model2path import BASE_DIR as SPARSE_PATTERN_CONFIG_DIR
 
-import logging
-logger = logging.getLogger(__name__)
-set_default_logger_level('INFO')
+from .attn_funcs import AttnType, overwrite_attn_implementation
+from .trainer import CustomTrainer as Trainer, CustomTrainerArgs as TrainerArgs
+from .models import MODEL_TO_ATTN_FUNC, MODEL_ID_TO_MODEL_CLS, MODEL_ID_TO_PREFIX
+
+from .utils.expr_data import update_expr_data
+from .utils.general import freeze_model_params, load_comm_profile_data
+from .utils import chunk_linear_cross_entropy, get_tokenizer, aggregate_outputs_fn, get_resume_path
+from .utils.paths import TRAIN_ATTN_CONFIG_DIR,  update_expr_data_save_path
 
 IGNORE_IDX = -100
-
+logger = logging.getLogger(__name__)
+set_default_logger_level('INFO')
 
 def init_by_attn_type(model_id: str, attn_type: AttnType):
     attn_dict = MODEL_TO_ATTN_FUNC[model_id]
 
     if attn_type == AttnType.BASELINE:
         print(f"{__name__} | Using Baseline Model...")
-    elif attn_type == AttnType.FLEX_PREFILL:
-        print(f"{__name__} | Using FlexPrefill-equipped Model ...")
-    elif attn_type == AttnType.RING_ATTN:
-        print(f"{__name__} | Using Ring Attention Zigzag-equipped Model ...")
-    elif attn_type == AttnType.RING_ATTN_STRIPE:
-        print(f"{__name__} | Using Ring Attention Stripe-equipped Model ...")
-    elif attn_type == AttnType.MF_MB:
+    elif attn_type == AttnType.ZIGZAG_RING:
+        print(f"{__name__} | Using Ring Zigzag Attention-equipped Model ...")
+    elif attn_type == AttnType.STRIPE_RING:
+        print(f"{__name__} | Using Ring Stripe Attention-equipped Model ...")
+    elif attn_type == AttnType.MINFER:
         print(f"{__name__} | Using MInference-equipped Model ...")
     elif attn_type == AttnType.MOBA:
         print(f"{__name__} | Using MoBA-equipped Model ...")
-    elif attn_type == AttnType.ZIGZAG_MOBA:
-        print(f"{__name__} | Using ZigZag MoBA-equipped Model ...")
     elif attn_type == AttnType.XATTN:
         print(f"{__name__} | Using XAttention-equipped Model ...")
     else:
@@ -128,33 +121,13 @@ class MInferModel(BaselineModel):
             **kwargs,
         )
 
-        # --------------------------------------------
-        # MInference implementation: "fa", "stripe"
-        minfer_implementation: str = minfer_config.pop('implementation', 'fa')
-
-        # --------------------------------------------
-        # Sparse iteratio, layer and head control
-        start_sparse_iter: int = minfer_config.pop('start_sparse_iter', 0)
-        start_sparse_layer: int = minfer_config.pop('start_sparse_layer', 0)
-        adaptive_sparse: bool = minfer_config.pop('adaptive_sparse', False)
-        sparse_head_map_name: str = minfer_config.pop('sparse_head_map_name', None)
-        if sparse_head_map_name is not None:
-            active_sparse_map_path: str = os.path.join(
-                SPARSE_HEAD_MAP_DIR,
-                f'{sparse_head_map_name}.npy',
-            )
-            print(f"{__name__} | Active Sparse Head Map Path: {active_sparse_map_path}")
-            active_sparse_map: np.ndarray = np.load(active_sparse_map_path)
-            active_sparse_map: List[List[bool]] = active_sparse_map.tolist()
-        else:
-            active_sparse_map: List[List[bool]] = None
-        
         # ----------------------------------------------
         # Ring Attention specific
         granularity: int = minfer_config.pop('granularity', 128)
 
         # --------------------------------------------
-        # Standard MInference Setup
+        # MInference Setup
+        minfer_implementation: str = minfer_config.pop('implementation', 'default')
         minfer_attn_type = minfer_config.pop('attn_type', 'minference')
         minfer_config['config_path'] = os.path.join( 
             SPARSE_PATTERN_CONFIG_DIR,
@@ -172,7 +145,7 @@ class MInferModel(BaselineModel):
         # We still need to attach the function object to the model
         # otherwise the states of the function will be lost as nnscaler will only load the model from file
         # but not call this procedure again
-        from ops.minfer_func import MInferAttnFunc
+        from .attn_funcs.minfer_func import MInferAttnFunc
         Attention = self.model.model.layers[0].self_attn.__class__
         def update_module(m):
             if isinstance(m, Attention):
@@ -180,35 +153,8 @@ class MInferModel(BaselineModel):
                 m.minfer_attn_func.init_minfer_params(
                     config_path=minfer_config.config_path,
                     minfer_implementation=minfer_implementation,
-                    
-                    start_sparse_iter=start_sparse_iter,
-                    start_sparse_layer=start_sparse_layer,
-                    adaptive_sparse=adaptive_sparse,
-                    active_sparse_map=active_sparse_map,
-
                     granularity=granularity,
                 )
-        self.model.apply(update_module)
-
-class FlexPrefillModel(BaselineModel):
-    def __init__(
-            self, 
-            model_id, 
-            config_path: str=None, 
-            attn_config: Dict={},
-            **kwargs,
-    ):
-        super().__init__(
-            model_id=model_id,
-            config_path=config_path,
-            **kwargs,
-        )
-
-        from ops.flex_prefill_func import FlexPrefillFunc
-        Attention = self.model.model.layers[0].self_attn.__class__
-        def update_module(m):
-            if isinstance(m, Attention):
-                m.flex_prefill_attn_func = FlexPrefillFunc(attn_config)
         self.model.apply(update_module)
 
 class XAttnModel(BaselineModel):
@@ -252,6 +198,7 @@ class MoBAModel(BaselineModel):
             config_path=config_path,
             **kwargs,
         )
+        from minference.dist_ops.op_utils.moba_utils import MoBAConfig
 
         # --------------------------------------------
         print(f"MoBAConfig: {moba_config_dict}")
@@ -271,46 +218,44 @@ class MoBAModel(BaselineModel):
 
 ATTN_TO_MODEL = {
     AttnType.BASELINE: BaselineModel,
-    AttnType.FLEX_PREFILL: FlexPrefillModel,
-    AttnType.MF_MB: MInferModel,
-    AttnType.RING_ATTN: BaselineModel,
-    AttnType.RING_ATTN_STRIPE: BaselineModel,
+    AttnType.STRIPE_RING: BaselineModel,
+    AttnType.ZIGZAG_RING: BaselineModel,
+
+    AttnType.MINFER: MInferModel,
     AttnType.MOBA: MoBAModel,
-    AttnType.ZIGZAG_MOBA: MoBAModel,
     AttnType.XATTN: XAttnModel,
 }
 
 
-def load_minfer_config(minfer_config_name: str) -> MInferenceConfig:
-    minfer_config_path = os.path.join(MINFER_CONFIG_DIR, f'{minfer_config_name}.yaml')
-    if not os.path.exists(minfer_config_path):
-        print(f"{__name__} | MInference config {minfer_config_name} not found in {minfer_config_path}. Use empty minfer config")
-        minfer_config = {}
+def load_train_attn_config(train_attn_config_name: str) -> MInferenceConfig:
+    train_attn_config_path = os.path.join(TRAIN_ATTN_CONFIG_DIR, f'{train_attn_config_name}.yaml')
+    if not os.path.exists(train_attn_config_path):
+        print(f"{__name__} | MInference config {train_attn_config_name} not found in {train_attn_config_path}. Use empty minfer config")
+        train_attn_config = {}
     else:
-        print(f"{__name__} | MInference config {minfer_config_name} found in {minfer_config_path}")
-        with open(minfer_config_path, 'r') as f:
-            minfer_config = yaml.safe_load(f)
+        print(f"{__name__} | MInference config {train_attn_config_name} found in {train_attn_config_path}")
+        with open(train_attn_config_path, 'r') as f:
+            train_attn_config = yaml.safe_load(f)
         print('-' * 20)
-        print("MInference Config:")
-        print(minfer_config)
+        print("Training Attention Config:")
+        print(train_attn_config)
         print('-' * 20)
+    return train_attn_config
 
-    return minfer_config
-
-def build_model_args(args, minfer_config: MInferenceConfig) -> Dict:
+def build_model_args(args, train_attn_config: MInferenceConfig) -> Dict:
     model_args = {
         'model_id': args.model_id,
         'config_path': args.model_config_path,
         "active_param_config_name": args.active_param_config_name,
     }
     if args.attn_type == AttnType.MF_MB: 
-        model_args['minfer_config'] = minfer_config
+        model_args['minfer_config'] = train_attn_config
     elif args.attn_type == AttnType.FLEX_PREFILL:
-        model_args['attn_config'] = minfer_config
+        model_args['attn_config'] = train_attn_config
     elif args.attn_type == AttnType.XATTN:
-        model_args['xattn_params'] = minfer_config
+        model_args['xattn_params'] = train_attn_config
     elif args.attn_type == AttnType.MOBA or args.attn_type == AttnType.ZIGZAG_MOBA:
-        model_args['moba_config_dict'] = minfer_config
+        model_args['moba_config_dict'] = train_attn_config
 
     return model_args
 
@@ -324,10 +269,9 @@ def main(args):
         load_comm_profile_data(args)
 
     init_by_attn_type(args.model_id, args.attn_type)
-    minfer_config = load_minfer_config(args.minfer_config_name)
-
-    # broadcast_strategy = 'all' if args.run_mode == 'run' else 'none'
+    train_attn_config = load_train_attn_config(args.train_attn_config_name)
     broadcast_strategy = 'all'
+
     # ---------------------------------
     # Compute config
     if args.run_mode == 'compile':
@@ -361,7 +305,6 @@ def main(args):
         constant_folding=True,
         use_zero=True,
         use_end2end=True,
-        # autodist config:
         pas_config=pas_config,
     )
 
@@ -411,7 +354,7 @@ def main(args):
     
     # ---------------------------------
     # Model Config
-    model_args = build_model_args(args, minfer_config)
+    model_args = build_model_args(args, train_attn_config)
     model_config = ModelConfig(
         type=ATTN_TO_MODEL[args.attn_type],
         args=model_args,
@@ -527,7 +470,7 @@ def print_args(args: argparse.Namespace):
     print('-' * 40)
     print(f"Model Config Path:\t{args.model_config_path}")
     print(f"Dataset path:\t{args.dataset_path}")
-    print(f'MInferenece Config Name:\t{args.minfer_config_name}')
+    print(f'Training Attention Config Name:\t{args.train_attn_config_name}')
     print(f"Compile Save Path:\t{args.compile_save_path}")
     print(f"Attention Save Path:\t{args.attn_save_path}")
     print(f"Tensorboard Log Path:\t{args.tf_log_dir}")
@@ -577,7 +520,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_config_path', type=str, default=None, help='path to the model config')
     parser.add_argument('-s', '--attn_save_step', type=int, default=1, help='Save attention data every n steps')
 
-    parser.add_argument('--minfer_config_name', type=str, default=None, help='Name of Minference config file')
+    parser.add_argument('--train_attn_config_name', type=str, default=None, help='Name of Minference config file')
     parser.add_argument('--compile_save_path', type=str, default='./.nnscaler', help='path to save compiled code')
     parser.add_argument('--attn_save_path', type=str, default=None, help='path to save attention data')
     parser.add_argument('--tf_log_dir', type=str, default=None, help='path to save tensorboard logs')
@@ -610,7 +553,7 @@ if __name__ == '__main__':
     if args.n_iter <= 0: args.n_iter = None
     if args.n_epochs <= 0: args.n_epochs = None
 
-    if args.minfer_config_name is None or args.minfer_config_name.lower() == 'none': args.minfer_config_name = None
+    if args.train_attn_config_name is None or args.train_attn_config_name.lower() == 'none': args.train_attn_config_name = None
     if args.transfer_config_dir.lower() == 'none': args.transfer_config_dir = None
     if args.active_param_config_name.lower() == 'none': args.active_param_config_name = None
 
@@ -619,7 +562,6 @@ if __name__ == '__main__':
     args.resume_from = get_resume_path(
         args.check_resume, args.resume_from, args.ckpt_save_dir, args.runtime_ngpus
     )
-
 
     print_args(args)
     main(args)

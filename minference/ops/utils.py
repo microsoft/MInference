@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from typing import List
+from functools import lru_cache
 
 import torch
 import torch.distributed as dist
@@ -930,3 +931,64 @@ def get_compute_sparsity(
     compute_sparsity = 1 - block_ratio - bar_ratio
 
     return compute_sparsity
+
+
+
+@lru_cache(maxsize=16)
+def calc_chunks(cu_seqlen, moba_chunk_size):
+    """calc chunks that needs moba attention"""
+
+    # batch_sizes[batch_idx] = batch size ( seqlen ) of batch idx
+    batch_sizes = cu_seqlen[1:] - cu_seqlen[:-1]
+
+    # batch_num_chunk[batch_idx] = how many chunk in batch idx
+    batch_num_chunk = (batch_sizes + (moba_chunk_size - 1)) // moba_chunk_size
+
+    # cu_num_chunk[batch_idx] = first chunk id of this batch
+    cu_num_chunk = torch.ones(
+        batch_num_chunk.numel() + 1,
+        device=cu_seqlen.device,
+        dtype=batch_num_chunk.dtype,
+    )
+    cu_num_chunk[1:] = batch_num_chunk.cumsum(dim=0)
+    
+    # total chunk ( for all batch )
+    num_chunk = cu_num_chunk[-1]
+
+    # chunk_sizes[chunk_idx] = chunk_size of chunk idx
+    chunk_sizes = torch.full(
+        (num_chunk + 1,), moba_chunk_size, dtype=torch.int32, device=cu_seqlen.device
+    )
+    chunk_sizes[0] = 0  # for calc cu chunk
+    batch_last_chunk_size = batch_sizes - (batch_num_chunk - 1) * moba_chunk_size
+    chunk_sizes[cu_num_chunk[1:]] = batch_last_chunk_size
+
+    # cu_chunk[chunk_idx] = the start chunk offset of chunk idx
+    cu_chunk = chunk_sizes.cumsum(dim=-1, dtype=torch.int32)
+
+    # chunk_to_batch[chunk_idx] = batch idx of the chunk idx
+    chunk_to_batch = torch.zeros(
+        (num_chunk,), dtype=torch.int32, device=cu_seqlen.device
+    )
+    chunk_to_batch[cu_num_chunk[1:-1]] = 1
+    chunk_to_batch = chunk_to_batch.cumsum(dim=0, dtype=torch.int32)
+
+    """ filter chunks that need moba attn """
+
+    # filter chunks ( remove last chunk of each batch )
+    # filtered_chunk_indices: chunk index list that excludes the last chunk of each batch
+    chunk_to_remove = cu_num_chunk[1:] - 1
+    chunk_to_remain = torch.ones(
+        (num_chunk, ), dtype=torch.bool, device=cu_seqlen.device
+    )
+    chunk_to_remain[chunk_to_remove] = False
+    filtered_chunk_indices = chunk_to_remain.nonzero(as_tuple=True)[0]
+    num_filtered_chunk = len(filtered_chunk_indices)
+
+    return (
+        cu_chunk,
+        filtered_chunk_indices,
+        num_filtered_chunk,
+        filtered_chunk_indices,
+        chunk_to_batch,
+    )

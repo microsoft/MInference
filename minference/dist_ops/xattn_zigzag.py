@@ -161,55 +161,6 @@ def xattn_zigzag_estimate(
     simple_masks = torch.cat(simple_mask_list, dim=-2) # (batch_size, head_num, q_local_block_num, k_global_block_num)
     return attn_sums, simple_masks
 
-
-def compute_sr_flops(
-    block_mask_offset: torch.Tensor,  # [batch_size, num_qo_heads, num_blocks, num_blocks]
-    step: int,
-    granularity: int,
-    q_len: int,
-    head_dim: int,
-    fwd: bool=True,
-):
-    num_blocks = triton.cdiv(q_len, granularity)
-    bh = block_mask_offset.shape[0] * block_mask_offset.shape[1]
-
-    total_num_blocks = bh * num_blocks * num_blocks / 2
-
-    num_active_blocks = block_mask_offset.sum(dtype=torch.float32).item()
-    if step == 0: 
-        num_active_blocks -= bh * num_blocks / 2
-
-    block_ratio = num_active_blocks / total_num_blocks
-    sparsity_ratio = 1 - block_ratio
-
-    block_flops = num_active_blocks * (granularity * granularity) * head_dim * 2 * 2
-
-    if not fwd: block_flops *= 2.5
-    return sparsity_ratio, block_flops
-
-
-def compute_sr_by_heads(
-    block_mask_offset: torch.Tensor,  # [batch_size, num_qo_heads, num_blocks, num_blocks]
-    step: int,
-    granularity: int,
-    q_len: int,
-):
-    batch_size, num_heads = block_mask_offset.shape[0], block_mask_offset.shape[1]
-    num_blocks = triton.cdiv(q_len, granularity)
-
-    total_num_blocks = batch_size * num_blocks * num_blocks / 2
-    total_num_blocks_by_heads = torch.tensor([total_num_blocks for _ in range(num_heads)], dtype=torch.float32).to(block_mask_offset.device)
-
-    
-    num_active_blocks = block_mask_offset.sum(-1).sum(-1).sum(0, dtype=torch.float32) # [num_qo_heads]
-    if step == 0:
-        num_active_blocks -= batch_size * num_blocks / 2
-
-    block_ratio_by_heads = num_active_blocks / total_num_blocks_by_heads
-    sparsity_ratio_by_heads = 1 - block_ratio_by_heads
-
-    return sparsity_ratio_by_heads.detach().cpu().numpy().tolist()
-
 def use_triton():
     return torch.version.hip is not None or os.getenv("FORCE_TRITON", "0") == "1"
 

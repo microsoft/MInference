@@ -1,0 +1,12 @@
+implementation: zigzag
+granularity: 128
+stride: 16
+norm: 1
+softmax: true
+threshold: 0.85
+select_mode: inverse
+use_triton: true
+causal: true
+kdb: 1
+keep_sink: false
+keep_recent: false

@@ -135,3 +135,70 @@ def freeze_model_params(model, active_param_config_name: str, prefix=""):
     print(f"keep active: {keep_active}")
 
     freeze_model_params_(model, keep_active, prefix)
+
+def get_resume_path(
+    check_resume: bool,
+    resume_from: str,
+    ckpt_save_dir: str,
+    num_gpus: int,
+):
+    if not check_resume:
+        return None
+    elif resume_from is not None:
+        return resume_from
+    
+    # Detect the last checkpoint in CKPT_PATH
+    ckpt_dirs = [ckpt_dir for ckpt_dir in os.listdir(ckpt_save_dir) if len(ckpt_dir.split('-')) == 2 and ckpt_dir.split('-')[0].isdigit()]
+
+    # Filter out directories that do not contain number of ckpts (file name ending with .ckpt) equal to num_gpus (check by os.listdir)
+    filtered_ckpt_dirs = []
+    for ckpt_dir in ckpt_dirs:
+        ckpt_dir_path = os.path.join(ckpt_save_dir, ckpt_dir)
+        if os.path.isdir(ckpt_dir_path):
+            ckpt_files = [f for f in os.listdir(ckpt_dir_path) if f.endswith('.ckpt')]
+            if len(ckpt_files) == num_gpus:
+                filtered_ckpt_dirs.append(ckpt_dir)
+    
+    print(f"get_resume_path | filtered_ckpt_dirs = {filtered_ckpt_dirs}")
+    if len(filtered_ckpt_dirs) == 0:
+        return None
+
+    target_ckpt_dir = sorted(filtered_ckpt_dirs, key=lambda x: (int(x.split('-')[0]), int(x.split('-')[1])))[-1]
+    target_ckpt_dir = os.path.join(ckpt_save_dir, target_ckpt_dir)
+    print(f"get_resume_path | target_ckpt_dir = {target_ckpt_dir}")
+    return target_ckpt_dir
+
+
+
+def fix_model_state_dict(model, model_state_dict):
+    if isinstance(model, ParallelModule):
+        required_keys = list(model.dist_param_map.values())
+        required_keys_under = {k[6:]: v for k, v in model.dist_param_map.items()}
+    else:
+        required_keys = model.state_dict().keys()
+        required_keys_under = {k.replace('.', '_'): k for k in required_keys}
+    
+    has_model_prefix = 'model' in model_state_dict
+    model_state_dict = model_state_dict if not has_model_prefix else model_state_dict['model']
+    model_sd_copy = model_state_dict.copy()
+    
+    if dist.is_initialized() and dist.get_rank() % int(os.getenv("GPU_PER_NODE", "8")) == 0:
+        print(f"{__name__} | required_keys[:10]: {required_keys[:10]}")
+        print(f"{__name__} | required_keys_under: {required_keys_under}")
+        print(f"{__name__} | model_state_dict.keys()[:10]: {list(model_state_dict.keys())[:10]}") 
+
+    for k in model_state_dict.keys():
+        model_sd_copy.pop(k)
+
+        under_k_start = 0 if not has_model_prefix else 1
+        under_k = '_'.join(k.split('_')[under_k_start:-1])
+
+        if under_k in required_keys_under:
+            model_sd_copy[required_keys_under[under_k]] = model_state_dict[k]
+
+    if 'lm_head_weight' in required_keys_under:
+        for k in model_state_dict.keys():
+            if 'model_embed_tokens_weight' in k:
+                model_sd_copy[required_keys_under['lm_head_weight']] = model_state_dict[k]
+
+    return model_sd_copy

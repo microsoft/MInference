@@ -5,7 +5,10 @@
 import torch
 import triton
 import triton.language as tl
+from typing import List, Tuple, Dict, Any
 
+from minference.dist_ops.op_utils.xattn_utils import xattn_estimate
+from minference.ops.minference_attn import block_attn_fwd, block_attn_bwd
 
 @triton.jit
 def softmax_fuse_block_sum_kernel_causal(
@@ -366,3 +369,96 @@ def flat_group_gemm_fuse_reshape(query_states, key_states, stride, chunk_start, 
     )
 
     return output
+
+class XAttnFunc(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        head_indices,
+        xattn_params, # Dict[str, Any] 
+        granularity,
+        causal,
+        softmax_scale,
+        return_softmax,
+        deterministic,
+    ):
+        batch_size, num_tokens, num_qo_heads, head_dim = q.shape
+        if softmax_scale is None:
+            softmax_scale = head_dim ** (-0.5)
+
+        q_block_num = (q.shape[1] + granularity - 1) // granularity
+        # (batch_size, head_num, q_block_num, q_block_num)
+        _, block_mask = xattn_estimate(
+            q.transpose(1, 2), k.transpose(1, 2), 
+            granularity, 
+            **xattn_params
+        )
+        block_mask = block_mask[:, :, -q_block_num:, -q_block_num:].contiguous()
+
+        # Block Mask
+        out, softmax_lse = block_attn_fwd(
+            q, k, v, softmax_scale,
+            block_mask,
+            granularity=granularity,
+            causal=causal,
+        )
+
+        ctx.save_for_backward(q, k, v, out, softmax_lse, block_mask)
+        ctx.granularity = granularity
+        ctx.deterministic = deterministic
+        ctx.softmax_scale = softmax_scale
+        ctx.causal = causal
+        ctx.head_indices = head_indices
+
+        # print(f"{__name__} | out shape: {out.shape}")
+        return (out, softmax_lse, None) if return_softmax else out
+
+    @staticmethod
+    def backward(ctx, dout, *args):
+        q, k, v, out, softmax_lse, block_mask = ctx.saved_tensors
+        causal = ctx.causal
+
+        # Block Mask
+        dq, dk, dv = block_attn_bwd(
+            dout, q, k, v, out,
+            softmax_lse, ctx.softmax_scale,
+            block_mask,
+            granularity=ctx.granularity,
+            deterministic=ctx.deterministic,
+            causal=causal,
+        )
+        return dq, dk, dv, None, None, None, None, None, None, None
+
+def xattn_flash_attn_func(
+    q: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
+    k: torch.Tensor,  # [batch_size, num_tokens, num_kv_heads, head_dim]
+    v: torch.Tensor,  # [batch_size, num_tokens, num_kv_heads, head_dim]
+    head_indices: List[int], # [num_qo_heads]
+    xattn_params: Dict[str, Any], 
+    granularity: int = 128,
+    dropout_p: int = 0.0,
+    softmax_scale: float = None,
+    causal: bool = True,
+    window_size: Tuple[int, int] = (-1, -1),  # -1 means infinite context window
+    alibi_slopes: Tuple[float, float] = None,
+    deterministic: bool = False,
+    return_attn_probs: bool = False,
+):
+    assert dropout_p == 0
+    assert causal
+    assert window_size == (-1, -1)
+    assert alibi_slopes is None
+
+    return XAttnFunc.apply(
+        q, k, v,
+        head_indices,
+        xattn_params,
+        granularity,
+        causal,
+        softmax_scale,
+        return_attn_probs,
+        deterministic,
+    )
