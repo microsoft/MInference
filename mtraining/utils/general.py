@@ -7,7 +7,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from nnscaler.cli.trainer_args import AggregatedOutputs
 from nnscaler.runtime.module import ParallelModule
-from .paths import ACTIVE_PARAM_CONFIG_DIR, BASE_DIR
+
+from .paths import BASE_DIR
 
 import logging
 logger = logging.getLogger(__name__)
@@ -103,11 +104,6 @@ def is_active(module_name: str, keep_active: List[str]):
             return True
     return False
 
-def read_active_param_list(active_param_config_name: str):
-    print(f"Reading active param list from {active_param_config_name}...")
-    with open(os.path.join(ACTIVE_PARAM_CONFIG_DIR, f'{active_param_config_name}.txt'), "r") as f:
-        return f.read().splitlines()
-
 def freeze_model_params_(model, keep_active: List[str], prefix=""):
     if dist.get_rank() == 0:
         print("-" * 80)
@@ -129,10 +125,10 @@ def freeze_model_params_(model, keep_active: List[str], prefix=""):
         print("-" * 80)
 
 
-def freeze_model_params(model, active_param_config_name: str, prefix=""):
-    print(f"active param config name: {active_param_config_name}")
-    keep_active = read_active_param_list(active_param_config_name)
-    print(f"keep active: {keep_active}")
+def freeze_model_params(model, active_param_config_path: str, prefix=""):
+    with open(active_param_config_path, "r") as f:
+        keep_active = f.read().splitlines()
+    print(f"freeze_model_params | keep active: {keep_active}")
 
     freeze_model_params_(model, keep_active, prefix)
 

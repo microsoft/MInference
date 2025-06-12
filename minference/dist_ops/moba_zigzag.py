@@ -8,19 +8,17 @@ import torch.distributed as dist
 
 from einops import rearrange
 from typing import List, Tuple, Dict
-from time import perf_counter
 
 from flash_attn.flash_attn_interface import (
     _flash_attn_varlen_forward,
     _flash_attn_varlen_backward,
 )
 
-
 from .utils import (
     RingComm, update_out_and_lse, 
     recover_zigzag_output, get_default_args, 
 )
-from .op_utils.moba_utils import (
+from minference.ops.op_utils.moba_utils import (
     shuffle_input_all, shuffle_input_only, compute_moba_gate
 )
 

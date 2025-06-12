@@ -31,14 +31,14 @@ from minference.models_patch import MInference
 from minference.minference_configuration import MInferenceConfig
 from minference.configs.model2path import BASE_DIR as SPARSE_PATTERN_CONFIG_DIR
 
-from .attn_funcs import AttnType, overwrite_attn_implementation
-from .trainer import CustomTrainer as Trainer, CustomTrainerArgs as TrainerArgs
-from .models import MODEL_TO_ATTN_FUNC, MODEL_ID_TO_MODEL_CLS, MODEL_ID_TO_PREFIX
+from mtraining.attn_funcs import AttnType, overwrite_attn_implementation
+from mtraining.trainer import CustomTrainer as Trainer, CustomTrainerArgs as TrainerArgs
+from mtraining.model_configs import MODEL_TO_ATTN_FUNC, MODEL_ID_TO_MODEL_CLS, MODEL_ID_TO_PREFIX
 
-from .utils.expr_data import update_expr_data
-from .utils.general import freeze_model_params, load_comm_profile_data
-from .utils import chunk_linear_cross_entropy, get_tokenizer, aggregate_outputs_fn, get_resume_path
-from .utils.paths import TRAIN_ATTN_CONFIG_DIR,  update_expr_data_save_path
+from mtraining.utils.expr_data import update_expr_data
+from mtraining.utils.paths import update_expr_data_save_path
+from mtraining.utils.general import freeze_model_params, load_comm_profile_data
+from mtraining.utils import chunk_linear_cross_entropy, get_tokenizer, aggregate_outputs_fn, get_resume_path
 
 IGNORE_IDX = -100
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ class BaselineModel(torch.nn.Module):
             model_id, 
             config_path: str=None, 
             # merged_ckpt_path: str=None,
-            active_param_config_name: str=None
+            active_param_config_path: str=None
     ):
         super().__init__()
         model_cls: PreTrainedModel = MODEL_ID_TO_MODEL_CLS[model_id]
@@ -89,8 +89,8 @@ class BaselineModel(torch.nn.Module):
                 config=model_config,
             )
 
-        if active_param_config_name:
-            freeze_model_params(self.model, active_param_config_name)
+        if active_param_config_path:
+            freeze_model_params(self.model, active_param_config_path)
 
         print(f'{__class__.__name__} Self-Attention Class: {self.model.model.layers[0].self_attn.__class__.__name__}')
 
@@ -145,7 +145,7 @@ class MInferModel(BaselineModel):
         # We still need to attach the function object to the model
         # otherwise the states of the function will be lost as nnscaler will only load the model from file
         # but not call this procedure again
-        from .attn_funcs.minfer_func import MInferAttnFunc
+        from mtraining.attn_funcs.minfer_func import MInferAttnFunc
         Attention = self.model.model.layers[0].self_attn.__class__
         def update_module(m):
             if isinstance(m, Attention):
@@ -198,7 +198,7 @@ class MoBAModel(BaselineModel):
             config_path=config_path,
             **kwargs,
         )
-        from minference.dist_ops.op_utils.moba_utils import MoBAConfig
+        from minference.ops.op_utils.moba_utils import MoBAConfig
 
         # --------------------------------------------
         print(f"MoBAConfig: {moba_config_dict}")
@@ -227,50 +227,50 @@ ATTN_TO_MODEL = {
 }
 
 
-def load_train_attn_config(train_attn_config_name: str) -> MInferenceConfig:
-    train_attn_config_path = os.path.join(TRAIN_ATTN_CONFIG_DIR, f'{train_attn_config_name}.yaml')
-    if not os.path.exists(train_attn_config_path):
-        print(f"{__name__} | MInference config {train_attn_config_name} not found in {train_attn_config_path}. Use empty minfer config")
+def load_train_attn_config(train_attn_config_path: str) -> MInferenceConfig:
+    if train_attn_config_path is None or train_attn_config_path.lower() == 'none': 
+        train_attn_config_path = None
+
+    if train_attn_config_path is None:
+        print(f"{__name__} | Use empty Training Attention config")
         train_attn_config = {}
-    else:
-        print(f"{__name__} | MInference config {train_attn_config_name} found in {train_attn_config_path}")
+    elif os.path.exists(train_attn_config_path):
+        print(f"{__name__} | Training Attention config found in {train_attn_config_path}.")
         with open(train_attn_config_path, 'r') as f:
             train_attn_config = yaml.safe_load(f)
         print('-' * 20)
         print("Training Attention Config:")
         print(train_attn_config)
         print('-' * 20)
+    else:
+        raise FileNotFoundError(f"Training Attention config {train_attn_config_path} not found. Exit.")
     return train_attn_config
 
 def build_model_args(args, train_attn_config: MInferenceConfig) -> Dict:
     model_args = {
         'model_id': args.model_id,
         'config_path': args.model_config_path,
-        "active_param_config_name": args.active_param_config_name,
+        "active_param_config_path": args.active_param_config_path,
     }
-    if args.attn_type == AttnType.MF_MB: 
+    if args.attn_type == AttnType.MINFER: 
         model_args['minfer_config'] = train_attn_config
-    elif args.attn_type == AttnType.FLEX_PREFILL:
-        model_args['attn_config'] = train_attn_config
     elif args.attn_type == AttnType.XATTN:
         model_args['xattn_params'] = train_attn_config
-    elif args.attn_type == AttnType.MOBA or args.attn_type == AttnType.ZIGZAG_MOBA:
+    elif args.attn_type == AttnType.MOBA:
         model_args['moba_config_dict'] = train_attn_config
 
     return model_args
 
 
 def main(args):
-    update_expr_data_save_path(args.attn_save_path, args.ckpt_save_dir, args.compile_save_path)
+    update_expr_data_save_path(args.ckpt_save_dir, args.compile_save_path)
     update_expr_data(args)
 
     local_rank = int(os.environ["LOCAL_RANK"])
-    if local_rank == 0:
-        load_comm_profile_data(args)
+    if local_rank == 0: load_comm_profile_data(args)
 
     init_by_attn_type(args.model_id, args.attn_type)
-    train_attn_config = load_train_attn_config(args.train_attn_config_name)
-    broadcast_strategy = 'all'
+    train_attn_config = load_train_attn_config(args.train_attn_config_path)
 
     # ---------------------------------
     # Compute config
@@ -345,7 +345,6 @@ def main(args):
         },
     )
     sampler_config = DatasetSamplerConfig(
-        # default class: torch.utils.data.distributed.DistributedSampler
         train_args={
             'shuffle': True,
             'seed': args.seed,
@@ -384,7 +383,6 @@ def main(args):
         every_n_epochs=args.ckpt_n_epoch,
         every_n_train_steps=args.ckpt_n_step,
         save_type='deduped',
-        # resume_from=(args.resume_from or 'last') if args.check_resume else None,
         resume_from=args.resume_from,
     )
 
@@ -423,8 +421,7 @@ def main(args):
         dataloader=dataloader_config,
         checkpoint=checkpoint_config,
         log=[log_config],
-        
-        broadcast_strategy=broadcast_strategy,
+        broadcast_strategy='all',
         dataset_sampler=sampler_config,   
 
         transfer_config={
@@ -434,11 +431,7 @@ def main(args):
         merged_ckpt_path=args.resume_merged_ckpt,
     )
 
-    trainer = Trainer(
-        train_args=trainer_args,
-        save_data_steps=args.attn_save_step,
-        enable_prof=args.enable_prof,
-    )
+    trainer = Trainer(train_args=trainer_args)
     trainer.run()
 
 def print_args(args: argparse.Namespace):
@@ -465,28 +458,25 @@ def print_args(args: argparse.Namespace):
     grad_accu_step = args.global_batch_size // (args.micro_batch_size * scaling_factor)
     print(f"Scaling Factor (INFERRED):\t{scaling_factor}")
     print(f"Gradient Accumulation Steps (INFERRED):\t{grad_accu_step}")
-    print(f"Save Attention Data Every {args.attn_save_step} Steps")
 
     print('-' * 40)
     print(f"Model Config Path:\t{args.model_config_path}")
     print(f"Dataset path:\t{args.dataset_path}")
-    print(f'Training Attention Config Name:\t{args.train_attn_config_name}')
+    print(f'Training Attention Config Path:\t{args.train_attn_config_path}')
     print(f"Compile Save Path:\t{args.compile_save_path}")
-    print(f"Attention Save Path:\t{args.attn_save_path}")
     print(f"Tensorboard Log Path:\t{args.tf_log_dir}")
     print(f"Checkpoint Save Path:\t{args.ckpt_save_dir}")
     print(f"Resume from Checkpoint:\t{args.check_resume}")
     print(f"Path to the checkpoint to resume from:\t{args.resume_from}")
     print(f"Path to the merged checkpoint to resume from:\t{args.resume_merged_ckpt}")  
 
-    print(f"Enable profiling: {args.enable_prof}")
     print(f"Trace Strategy:\t{args.trace_strategy}")
     if args.transfer_config_dir:
         print(f"Transfer Configs from another experiment:\t{args.transfer_config_dir}")
         print(f"Force Transfer Configs:\t{args.transfer_force}")
     
-    if args.active_param_config_name:
-        print(f"Active Param Config Name:\t{args.active_param_config_name}")
+    if args.active_param_config_path:
+        print(f"Active Param Config Path:\t{args.active_param_config_path}")
 
     if args.ckpt_n_step:
         print(f"Checkpoint Save Every {args.ckpt_n_step} Steps")
@@ -518,25 +508,22 @@ if __name__ == '__main__':
 
     parser.add_argument('--model_id', type=str, default='microsoft/Phi-3-mini-4k-instruct', help='transformers model id')
     parser.add_argument('--model_config_path', type=str, default=None, help='path to the model config')
-    parser.add_argument('-s', '--attn_save_step', type=int, default=1, help='Save attention data every n steps')
 
-    parser.add_argument('--train_attn_config_name', type=str, default=None, help='Name of Minference config file')
+    parser.add_argument('--train_attn_config_path', type=str, default=None, help='Name of Minference config file')
     parser.add_argument('--compile_save_path', type=str, default='./.nnscaler', help='path to save compiled code')
-    parser.add_argument('--attn_save_path', type=str, default=None, help='path to save attention data')
+    
     parser.add_argument('--tf_log_dir', type=str, default=None, help='path to save tensorboard logs')
     parser.add_argument('--dataset_path', type=str, default=None, help='path to the dataset')
     parser.add_argument('--check_resume', action='store_true', help='whether to resume from checkpoint')
     parser.add_argument('--resume_from', type=str, default=None, help='path to the checkpoint to resume from')
     parser.add_argument('--resume_merged_ckpt', type=str, default=None, help='path (dir) to the merged checkpoint to resume from')
 
-    parser.add_argument('--enable_prof', action='store_true', help='enable profiling')
-
     parser.add_argument('--ckpt_save_dir', type=str, default=None, help='path to save checkpoints')
     parser.add_argument('--ckpt_n_epoch', type=int, default=1, help='save checkpoint every n epochs')
     parser.add_argument('--ckpt_n_step', type=int, default=0, help='save checkpoint every n steps')
     parser.add_argument('--transfer_config_dir', type=str, default="none", help='path to transfer configs from another experiment')
     parser.add_argument('--transfer_force', action='store_true', help='force transfer configs')
-    parser.add_argument('--active_param_config_name', type=str, default=None, help='path to the active param list')
+    parser.add_argument('--active_param_config_path', type=str, default=None, help='path to the active param list')
 
     parser.add_argument('-p', '--disable_progressbar', action='store_true', help='transformers model id',)
 
@@ -553,9 +540,7 @@ if __name__ == '__main__':
     if args.n_iter <= 0: args.n_iter = None
     if args.n_epochs <= 0: args.n_epochs = None
 
-    if args.train_attn_config_name is None or args.train_attn_config_name.lower() == 'none': args.train_attn_config_name = None
     if args.transfer_config_dir.lower() == 'none': args.transfer_config_dir = None
-    if args.active_param_config_name.lower() == 'none': args.active_param_config_name = None
 
     # set a new field of args 'args.orig_resume_from' to store the original resume_from value
     args.orig_resume_from = args.resume_from

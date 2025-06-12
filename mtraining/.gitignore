@@ -10,3 +10,4 @@ output/
 **/ring_attn_comp_data/
 **/ring_attn_comp_data/
 **/ring_attn_pt_logs/
+expr_data_store/

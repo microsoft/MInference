@@ -10,9 +10,9 @@ from nnscaler.ir.operator import IRFwOperation
 from nnscaler.runtime.device import DeviceGroup
 from nnscaler.graph.parser.register import register_op
 
+from minference.ops.op_utils.moba_utils import MoBAConfig
 from minference.ops.moba import moba_attn_varlen, moba_layer
 from minference.dist_ops.moba_zigzag import moba_zigzag_func
-from minference.dist_ops.op_utils.moba_utils import MoBAConfig
 
 def load_moba_config(moba_config_dict: Dict[str, Any]):
     moba_config = MoBAConfig(**moba_config_dict) 

@@ -1,8 +1,6 @@
 import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TRAIN_ATTN_CONFIG_DIR = os.path.join(BASE_DIR, 'train_attn_configs')
-ACTIVE_PARAM_CONFIG_DIR = os.path.join(BASE_DIR, "models", "active_param_configs")
 
 
 EXPR_DATA_SAVE_PATH = {

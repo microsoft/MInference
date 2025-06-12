@@ -10,9 +10,9 @@ from .utils import (
     shuffle_zigzag_input, recover_zigzag_output,
     shuffle_block_mask_zigzag,
 )
-from .op_utils.xattn_utils import LN2, find_blocks_chunked
 
 from minference.ops.utils import convert_blockmask
+from minference.ops.op_utils.xattn_utils import LN2, find_blocks_chunked
 from minference.ops.minference_attn import block_attn_fwd, block_attn_bwd
 from minference.ops.minference_attn_triton import triton_block_attn_fwd, triton_block_attn_bwd
 from minference.ops.xattention_fa import flat_group_gemm_fuse_reshape, softmax_fuse_block_sum

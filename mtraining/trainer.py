@@ -24,9 +24,9 @@ from nnscaler.cli.trainer import (
     Trainer, _StepStat, TrainerArgs, TrainStatus, AggregatedTrainHook, TrainHook
 )
 
-from .utils.paths import EXPR_DATA_SAVE_PATH
-from .utils.general import fix_model_state_dict
-from .utils.custom_parallel import parallelize as custom_parallelize
+from mtraining.utils.paths import EXPR_DATA_SAVE_PATH
+from mtraining.utils.general import fix_model_state_dict
+from mtraining.utils.custom_parallel import parallelize as custom_parallelize
 
 logger = logging.getLogger(__name__)
 
