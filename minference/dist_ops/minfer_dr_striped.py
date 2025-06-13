@@ -9,9 +9,9 @@ from .utils import (
     get_inner_ring, get_outer_ring
 )
 
-from minference.ops.minference_attn_triton import block_bar_attn_fwd
-from minference.ops.minference_attn import block_attn_bwd, bar_attn_bwd
-from minference.ops.utils import build_index, extract_kv, merge_kv, convert_blockmask
+from minference.ops.pit_sparse_flash_attention_v3_triton import block_bar_attn_fwd
+from minference.ops.pit_sparse_flash_attention_v3 import block_attn_bwd, bar_attn_bwd
+from minference.ops.op_utils.vertical_slash_utils import build_index, extract_kv, merge_kv, convert_blockmask
 
 
 def minfer_dr_stripe_forward_inner(

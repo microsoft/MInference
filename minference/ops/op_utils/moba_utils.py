@@ -1,7 +1,5 @@
 #  Copyright (c) Microsoft Corporation.
 #  Licensed under the MIT License.
-
-# Credits: This logger implementation is inspired by project https://github.com/zhuzilin/ring-flash-attention
 import torch
 import torch.distributed as dist
 

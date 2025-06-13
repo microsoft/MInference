@@ -9,9 +9,9 @@ from .utils import (
     RingComm, 
     shuffle_striped_input, recover_striped_output,
 )
-from minference.ops.minference_attn_triton import block_bar_attn_fwd
-from minference.ops.minference_attn import block_attn_bwd, bar_attn_bwd
-from minference.ops.utils import build_index, convert_blockmask, extract_kv, merge_kv
+from minference.ops.pit_sparse_flash_attention_v3_triton import block_bar_attn_fwd
+from minference.ops.pit_sparse_flash_attention_v3 import block_attn_bwd, bar_attn_bwd
+from minference.ops.op_utils.vertical_slash_utils import build_index, convert_blockmask, extract_kv, merge_kv
 
 if torch.version.hip is None:
     original_flags = sys.getdlopenflags()

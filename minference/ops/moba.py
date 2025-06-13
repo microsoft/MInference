@@ -10,7 +10,7 @@ from flash_attn.flash_attn_interface import (
     _flash_attn_varlen_backward,
 )
 
-from .utils import calc_chunks
+from .op_utils.moba_utils import calc_chunks
 
 def hf_to_fa(x: torch.Tensor):
     """

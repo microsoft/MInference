@@ -11,11 +11,11 @@ from .utils import (
     shuffle_block_mask_zigzag,
 )
 
-from minference.ops.utils import convert_blockmask
 from minference.ops.op_utils.xattn_utils import LN2, find_blocks_chunked
-from minference.ops.minference_attn import block_attn_fwd, block_attn_bwd
-from minference.ops.minference_attn_triton import triton_block_attn_fwd, triton_block_attn_bwd
+from minference.ops.op_utils.vertical_slash_utils import convert_blockmask
+from minference.ops.pit_sparse_flash_attention_v3 import block_attn_fwd, block_attn_bwd
 from minference.ops.xattention_fa import flat_group_gemm_fuse_reshape, softmax_fuse_block_sum
+from minference.ops.pit_sparse_flash_attention_v3_triton import triton_block_attn_fwd, triton_block_attn_bwd
 
 
 def xattn_zigzag_estimate(

@@ -5,7 +5,7 @@ import math
 import torch
 from typing import List, Tuple, Dict, Any
 
-from minference.ops.minference_attn import block_attn_fwd, block_attn_bwd
+from minference.ops.pit_sparse_flash_attention_v3 import block_attn_fwd, block_attn_bwd
 from .op_utils.xattn_utils import (
     LN2, find_blocks_chunked, flat_group_gemm_fuse_reshape, softmax_fuse_block_sum
 )

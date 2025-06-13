@@ -1,8 +1,6 @@
-import math
 import torch
 import triton
 import triton.language as tl
-import torch.nn.functional as F
 import torch.distributed as dist
 
 LN2 = 1 / 1.4426950408889634

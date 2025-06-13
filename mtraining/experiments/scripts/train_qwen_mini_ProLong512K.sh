@@ -58,7 +58,7 @@ export NUM_EPOCH=0
 export CKPT_SAVE_STEP=5
 export CKPT_SAVE_EPOCH=0
 
-export CHECK_RESUME=1
+export CHECK_RESUME=0
 if [ "$CHECK_RESUME" -eq 1 ]; then
     CHECK_RESUME="--check_resume"
 else

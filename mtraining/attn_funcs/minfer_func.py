@@ -18,8 +18,8 @@ from nnscaler.graph.parser.register import register_op
 from nnscaler.ir import IRTensor
 from nnscaler.ir.operator import IRFwOperation
 
-from minference.ops.minference_attn import minference_flash_attn_func
-from minference.ops.minference_attn_triton import minference_flash_attn_triton_func
+from minference.ops.pit_sparse_flash_attention_v3 import minference_flash_attn_func
+from minference.ops.pit_sparse_flash_attention_v3_triton import minference_flash_attn_triton_func
 from minference.dist_ops import (
     minfer_stripe_func, minfer_stripe_triton_func,
     minfer_zigzag_func, minfer_dr_stripe_func, minfer_dr_stripe_triton_func,

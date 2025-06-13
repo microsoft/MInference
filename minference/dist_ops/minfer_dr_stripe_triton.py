@@ -9,8 +9,8 @@ from .utils import (
     shuffle_striped_input, recover_striped_output,
     get_inner_ring, get_outer_ring
 )
-from minference.ops.utils import build_index, convert_blockmask
-from minference.ops.minference_attn_triton import block_bar_attn_fwd, block_bar_attn_bwd
+from minference.ops.op_utils.vertical_slash_utils import build_index, convert_blockmask
+from minference.ops.pit_sparse_flash_attention_v3_triton import block_bar_attn_fwd, block_bar_attn_bwd
 
 def minfer_dr_stripe_triton_forward_inner(
     process_group: dist.ProcessGroup,

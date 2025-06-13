@@ -1,19 +1,10 @@
-import os
-import sys
-import math
-import ctypes
-
 import torch
-import torch.nn.functional as F
-import torch.distributed as dist
-
 import triton
 import triton.language as tl
-
 from typing import List, Tuple
-from .utils import (
+
+from .op_utils.vertical_slash_utils import (
     build_index_local, _build_mask_local, convert_blockmask,
-    calc_index_local, convert_indices
 )
 
 
@@ -839,28 +830,6 @@ def block_bar_attn_bwd(
     return dq, dk.to(dq.dtype), dv.to(dq.dtype)
 
 
-def build_index_local(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v_size: List[int],
-    s_size: List[int],
-    num_tokens: int,
-    granularity: int,
-    world_size: int = 1,
-    rank: int = 0,
-):
-    if type(v_size) is list:
-        assert len(v_size) == q.shape[2]
-        assert len(s_size) == q.shape[2]
-        v_idx, s_idx = calc_index_local(q, k, v_size, s_size, last_q_size=64)
-    else:
-        v_idx, s_idx = v_size, s_size
-    num_blocks = triton.cdiv(num_tokens, granularity)
-    block_mask, bar_idx, bar_cnt = convert_indices(v_idx, s_idx, world_size, rank, num_blocks, granularity)
-    block_mask = block_mask[rank]
-    return block_mask, bar_idx, bar_cnt
-
-
 class MInferenceAttnTritonFunc(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -1105,126 +1074,3 @@ def _torch_sparse_attn_kvpacked_func(
         return_attn_probs,
     )
 
-
-def profile(func, inputs, num_warmups=10, num_iters=10):
-    torch.cuda.synchronize()
-    for _ in range(num_warmups):
-        func(*inputs)
-    torch.cuda.synchronize()
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    for _ in range(num_iters):
-        func(*inputs)
-    end.record()
-    torch.cuda.synchronize()
-    latency = start.elapsed_time(end) / num_iters
-    return latency
-
-
-def print_compute_sparsity(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    batch_size: int,
-    num_tokens: int,
-    num_qo_heads: int,
-    v_size: List[int],
-    s_size: List[int],
-    sparsity: float,
-    granularity: int = 128,
-):
-    block_mask, bar_idx, bar_cnt = build_index_local(q, k, v_size, s_size, num_tokens, granularity)
-    num_blocks = block_mask.shape[-1]
-    causal_blocks = batch_size * num_qo_heads * num_blocks * (num_blocks + 1) / 2
-    avg_blocks = block_mask.sum(dim=-1, dtype=torch.float32).mean().item()
-    block_ratio = block_mask.sum(dtype=torch.float32).item() / causal_blocks
-    avg_bars = bar_cnt[..., -1].mean(dtype=torch.float32).item()
-    bar_ratio = avg_bars / (causal_blocks / (num_qo_heads * num_blocks * num_blocks) * num_tokens)
-    compute_sparsity = 1 - block_ratio - bar_ratio
-    print(f"Max {max(v_size)} V Lines => {avg_bars:.2f} / {num_tokens} = {100 * bar_ratio:.1f}% Bar Ratio")
-    print(f"Max {max(s_size)} S Lines => {avg_blocks:.2f} / {num_blocks} = {100 * block_ratio:.1f}% Block Ratio")
-    print(f"Mask Sparsity = {100 * sparsity:.1f}%, Compute Sparsity = {100 * compute_sparsity:.1f}% ({(1 - compute_sparsity):.3f})")
-
-
-def test_minference_attn(
-    batch_size: int,
-    num_tokens: int,
-    num_qo_heads: int,
-    num_kv_heads: int,
-    head_dim: int,
-    sparsity: float = 0.0,
-    granularity: int = 128,
-    check_results: bool = False,
-    profile_latency: bool = False,
-    dtype: torch.dtype = torch.bfloat16,
-    device: torch.device = 'cuda',
-    seed: int = 2025,
-):
-    assert not (num_tokens > 8192 and check_results)
-    torch.manual_seed(seed)
-    q = torch.randn((batch_size, num_tokens, num_qo_heads, head_dim), requires_grad=True, dtype=dtype, device=device)
-    kv = torch.randn((batch_size, num_tokens, 2, num_kv_heads, head_dim), requires_grad=True, dtype=dtype, device=device)
-    grad = torch.randn((batch_size, num_tokens, num_qo_heads, head_dim), requires_grad=False, dtype=dtype, device=device)
-    v_size = [int((1 - sparsity) * 0.5 * num_tokens)] * num_qo_heads
-    s_size = [int((1 - sparsity) * 0.5 * num_tokens)] * num_qo_heads
-    print(f"[B, Hq, Hk, N, D] = [{batch_size}, {num_qo_heads}, {num_kv_heads}, {num_tokens}, {head_dim}]")
-    print_compute_sparsity(q, kv[:, :, 0], batch_size, num_tokens, num_qo_heads, v_size, s_size, sparsity, granularity)
-
-    def call_attn(attn, inputs, grad=None, backward=False):
-        o, lse, _ = attn(**inputs)
-        if backward:
-            q.grad = None
-            kv.grad = None
-            o.backward(grad)
-            dq = q.grad.clone()
-            dkv = kv.grad.clone()
-            return o, lse, dq, dkv
-        return o, lse
-
-    sparse_inputs = {
-        'q': q, 'kv': kv, 'v_size': v_size, 's_size': s_size,
-        'granularity': granularity, 'return_attn_probs': True,
-    }
-    dense_inputs = {
-        'q': q, 'kv': kv,
-        'return_attn_probs': True, 'causal': True,
-    }
-
-    if check_results:
-        o, lse, dq, dkv = call_attn(minference_flash_attn_triton_kvpacked_func, sparse_inputs, grad=grad, backward=True)
-        o_ref, lse_ref, dq_ref, dkv_ref = call_attn(_torch_sparse_attn_kvpacked_func, sparse_inputs, grad=grad, backward=True)
-        # import ipdb; ipdb.set_trace()
-        htol, stol = { torch.float16: (1e-2, 1e-3), torch.bfloat16: (5e-2, 1e-2) }[dtype]
-        torch.testing.assert_close(o, o_ref, atol=htol, rtol=htol)
-        torch.testing.assert_close(lse, lse_ref, atol=stol, rtol=stol)
-        torch.testing.assert_close(dq, dq_ref, atol=htol, rtol=htol)
-        torch.testing.assert_close(dkv, dkv_ref, atol=htol, rtol=htol)
-
-    if profile_latency:
-        from flash_attn import flash_attn_kvpacked_func
-        flash_latency = profile(call_attn, [flash_attn_kvpacked_func, dense_inputs, grad, True])
-        flash_fwd_latency = profile(call_attn, [flash_attn_kvpacked_func, dense_inputs, None, False])
-        flash_bwd_latency = flash_latency - flash_fwd_latency
-        minfer_latency = profile(call_attn, [minference_flash_attn_triton_kvpacked_func, sparse_inputs, grad, True])
-        minfer_fwd_latency = profile(call_attn, [minference_flash_attn_triton_kvpacked_func, sparse_inputs, None, False])
-        minfer_idx_latency = profile(build_index_local, [q, kv[:, :, 0], v_size, s_size, num_tokens, granularity])
-        minfer_bwd_latency = minfer_latency - minfer_fwd_latency
-        minfer_fwd_latency = minfer_fwd_latency - minfer_idx_latency
-        import pandas as pd
-        df = pd.DataFrame(
-            data=[
-                [minfer_idx_latency, minfer_fwd_latency, minfer_bwd_latency],
-                [0, flash_fwd_latency, flash_bwd_latency],
-                [None, minfer_fwd_latency / flash_fwd_latency, minfer_bwd_latency / flash_bwd_latency]
-            ],
-            index=['MInfer', 'Flash', 'Ratio'],
-            columns=['Index', 'Forward', 'Backward'],
-        ).round(2)
-        print("-" * 64)
-        print(df)
-
-
-if __name__ == '__main__':
-    print("=" * 64)
-    test_minference_attn(1, 131072, 4, 2, 128, sparsity=0.998, check_results=False, profile_latency=True)
-    
