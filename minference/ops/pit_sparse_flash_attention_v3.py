@@ -19,6 +19,8 @@ if torch.version.hip is None:
         import block_sparse_attn_cuda
         from block_sparse_attn.block_sparse_attn_interface import convert_blockmask_row_reverse, convert_blockmask_col_reverse
         # NOTE: Block-Sparse-Attention/csrc/block_sparse_attn/src/flash_blockmask.h: add head_idx to blockmask_ptr
+    except ModuleNotFoundError as e:
+        print(f"[Warning] Failed to import block_sparse_attn_cuda: {e}")
     finally:
         # Restore original flags for future imports
         sys.setdlopenflags(original_flags)

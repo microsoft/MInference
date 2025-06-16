@@ -11,6 +11,7 @@ from .utils import (
     shuffle_block_mask_zigzag,
 )
 
+from minference.ops.utils import use_triton
 from minference.ops.op_utils.xattn_utils import LN2, find_blocks_chunked
 from minference.ops.op_utils.vertical_slash_utils import convert_blockmask
 from minference.ops.pit_sparse_flash_attention_v3 import block_attn_fwd, block_attn_bwd
@@ -160,9 +161,6 @@ def xattn_zigzag_estimate(
     attn_sums = torch.cat(attn_sum_list, dim=-2)
     simple_masks = torch.cat(simple_mask_list, dim=-2) # (batch_size, head_num, q_local_block_num, k_global_block_num)
     return attn_sums, simple_masks
-
-def use_triton():
-    return torch.version.hip is not None or os.getenv("FORCE_TRITON", "0") == "1"
 
 def xattn_zigzag_forward(
     process_group: dist.ProcessGroup,

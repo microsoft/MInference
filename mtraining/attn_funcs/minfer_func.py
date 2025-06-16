@@ -18,6 +18,7 @@ from nnscaler.graph.parser.register import register_op
 from nnscaler.ir import IRTensor
 from nnscaler.ir.operator import IRFwOperation
 
+from minference.ops.utils import use_triton
 from minference.ops.pit_sparse_flash_attention_v3 import minference_flash_attn_func
 from minference.ops.pit_sparse_flash_attention_v3_triton import minference_flash_attn_triton_func
 from minference.dist_ops import (
@@ -45,7 +46,7 @@ def minfer_op(
 ):
     v_sizes = [pattern_dict[head_indices[idx].item()][1] for idx in range(query_states.size(1))]
     s_sizes = [pattern_dict[head_indices[idx].item()][2] for idx in range(query_states.size(1))]
-    if torch.version.hip is None:
+    if not use_triton():
         attn_output = minference_flash_attn_func(
             query_states.transpose(1, 2).contiguous(),
             key_states.transpose(1, 2).contiguous(),
@@ -107,7 +108,7 @@ def minfer_stripe_op(
 
     v_sizes = [pattern_dict[head_indices[idx].item()][1] for idx in range(query_states.size(1))]
     s_sizes = [pattern_dict[head_indices[idx].item()][2] for idx in range(query_states.size(1))]
-    if torch.version.hip is None:
+    if not use_triton():
         attn_output = minfer_stripe_func(
             query_states.transpose(1, 2).contiguous(),
             key_states.transpose(1, 2).contiguous(),
@@ -172,7 +173,7 @@ def minfer_zigzag_op(
 
     v_sizes = [pattern_dict[head_indices[idx].item()][1] for idx in range(query_states.size(1))]
     s_sizes = [pattern_dict[head_indices[idx].item()][2] for idx in range(query_states.size(1))]
-    if torch.version.hip is None:
+    if not use_triton():
         attn_output = minfer_zigzag_func(
             query_states.transpose(1, 2).contiguous(),
             key_states.transpose(1, 2).contiguous(),
@@ -223,7 +224,7 @@ def minfer_dr_stripe_op(
     v_sizes = [pattern_dict[head_indices[idx].item()][1] for idx in range(query_states.size(1))]
     s_sizes = [pattern_dict[head_indices[idx].item()][2] for idx in range(query_states.size(1))]
 
-    if torch.version.hip is None:
+    if not use_triton():
         attn_output = minfer_dr_stripe_func(
             query_states.transpose(1, 2).contiguous(),
             key_states.transpose(1, 2).contiguous(),
