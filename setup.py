@@ -35,7 +35,6 @@ with open("minference/version.py", "r") as version_file:
 
 INSTALL_REQUIRES = [
     "transformers>=4.37.0",
-    "accelerate",
     "torch",
     "triton",
     "einops",

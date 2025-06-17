@@ -69,7 +69,12 @@ class MInferenceConfig:
         self.kv_cache_cpu = kv_cache_cpu
         self.kv_cache_cpu_device = kv_cache_cpu_device
         self.kv_type = kv_type
-        self.attn_kwargs = attn_kwargs
+        self.attn_kwargs = {
+            "is_search": is_search,
+            "starting_layer": starting_layer,
+            "config_path": config_path,
+            **attn_kwargs,
+        }
 
     def update_config_path(self, config_path: str = None, model_name: str = None):
         if self.attn_type in self.OTHER_ATTENTION_TYPES:
