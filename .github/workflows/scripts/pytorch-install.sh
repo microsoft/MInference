@@ -20,8 +20,8 @@ pip install typing-extensions==4.12.2
 echo $MATRIX_CUDA_VERSION
 echo $MATRIX_TORCH_VERSION
 export TORCH_CUDA_VERSION=$(python -c "from os import environ as env; \
-minv = {'2.4': 118, '2.5': 118, '2.6': 118, '2.7': 118}[env['MATRIX_TORCH_VERSION']]; \
-maxv = {'2.4': 124, '2.5': 124, '2.6': 126, '2.7': 128}[env['MATRIX_TORCH_VERSION']]; \
+minv = {'2.2': 118, '2.3': 118, '2.4': 118, '2.5': 118, '2.6': 118, '2.7': 118}[env['MATRIX_TORCH_VERSION']]; \
+maxv = {'2.2': 121, '2.3': 121, '2.4': 124, '2.5': 124, '2.6': 126, '2.7': 128}[env['MATRIX_TORCH_VERSION']]; \
 print(max(min(int(env['MATRIX_CUDA_VERSION']), maxv), minv))" \
 )
 if [[ ${pytorch_version} == *"dev"* ]]; then
