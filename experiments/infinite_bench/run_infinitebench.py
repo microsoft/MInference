@@ -150,7 +150,10 @@ def load_model(
         )
     else:
         config = AutoConfig.from_pretrained(
-            model_name, resume_download=None, trust_remote_code=trust_remote_code
+            model_name,
+            resume_download=None,
+            trust_remote_code=trust_remote_code,
+            _attn_implementation="flash_attention_2",
         )
         if "LWM" in model_name:
             c = {
@@ -172,7 +175,6 @@ def load_model(
             device_map="auto",
             resume_download=None,
             trust_remote_code=trust_remote_code,
-            _attn_implementation="flash_attention_2",
         )
 
     if attn_type not in ["vllm", "hf"]:

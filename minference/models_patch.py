@@ -82,8 +82,9 @@ class MInference:
             model.config.config_path = self.config.config_path
 
         if self.config.attn_type == "minference":
-            with open(self.config.config_path, "r") as f:
-                self.config.attn_kwargs.setdefault("best_pattern", json.load(f))
+            if not self.config.is_search:
+                with open(self.config.config_path, "r") as f:
+                    self.config.attn_kwargs.setdefault("best_pattern", json.load(f))
             model = new_patch(model, self.config)
 
         elif self.config.attn_type == "a_shape":

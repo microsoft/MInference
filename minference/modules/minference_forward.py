@@ -633,19 +633,42 @@ def minference_prefill_forward(
     prefill_kwargs,
 ):
     starting_layer = prefill_kwargs["attn_forward_config"].get("starting_layer", 0)
+    is_search = prefill_kwargs["attn_forward_config"].get("is_search", False)
+    config_path = prefill_kwargs["attn_forward_config"].get("config_path", None)
     layer_idx = prefill_kwargs["layer_idx"]
+    num_hidden_layers = prefill_kwargs["num_hidden_layers"]
 
-    output = torch.empty_like(query_states)
+    # Load or initialize search configs
+    config_list = []
+    if is_search:
+        if config_path and os.path.isfile(config_path):
+            with open(config_path, "r") as f:
+                config_list = json.load(f)
+            if len(config_list) == num_hidden_layers:
+                raise RuntimeError(f"Search already completed; see {config_path}.")
+        print(f"--- Searching layer {layer_idx} ---")
+
     bsz, _, q_len, head_dim = query_states.shape
+    output = torch.empty_like(query_states)
+    new_config: dict[int, dict] = {}
+
     for head in range(query_states.size(1)):
         q = query_states[:, head, :, :].unsqueeze(1)
         k = key_states[:, head, :, :].unsqueeze(1)
         v = value_states[:, head, :, :].unsqueeze(1)
-        if layer_idx >= starting_layer:
+        if is_search and layer_idx >= len(config_list):
+            new_config[head] = search_pattern(q, k, head)
+        if layer_idx >= starting_layer and not is_search:
             attn_output = minference_prefill_kernel(q, k, v, head, layer_idx, prefill_kwargs["attn_forward_config"])
         else:
             attn_output = flash_attn_func(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1,2), 0.0, softmax_scale=None, causal=q_len != 1).view(bsz, 1, q_len, head_dim)
         output[:, head:head + 1] = attn_output
+
+    # Save updated search configs
+    if is_search and new_config and config_path:
+        config_list.append(new_config)
+        with open(config_path, "w") as f:
+            json.dump(config_list, f, indent=2)
     return output
 
 def minference_kv_cache_cpu_forward():

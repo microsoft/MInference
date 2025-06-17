@@ -120,6 +120,7 @@ def attn_forward(
             prefill_kwargs = {
                 "attention_mask": attention_mask,
                 "layer_idx": self.layer_idx,
+                "num_hidden_layers": self.config.num_hidden_layers,
                 "attn_forward_config": attn_forward_config,
             }
             attn_output = prefill_forward(  # [bsz, num_heads, q_len, head_dim]
