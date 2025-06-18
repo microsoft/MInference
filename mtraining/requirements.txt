@@ -1,11 +1,6 @@
 transformers==4.48.0
 datasets==2.20.0
 tensorboard
-jieba 
-rouge 
-nltk 
-rouge_score 
-evaluate
 
 # For Data Preparation 
 mosaicml-streaming==0.8.1
