@@ -560,8 +560,8 @@ def flat_group_gemm_fuse_reshape(query_states, key_states, stride, chunk_start, 
     output = torch.empty((batch_size, num_heads, q_len // stride, kv_len // stride), dtype=query_states.dtype, device=query_states.device)
     BLOCK_M = 128
     BLOCK_N = 128
-    assert (q_len % (stride * BLOCK_M) == 0)
-    assert (kv_len % (stride * BLOCK_N) == 0)
+    assert (q_len % (stride * BLOCK_M) == 0), f"q_len={q_len}, stride={stride}, BLOCK_M={BLOCK_M}"
+    assert (kv_len % (stride * BLOCK_N) == 0), f"kv_len={kv_len}, stride={stride}, BLOCK_N={BLOCK_N}"
 
     grid = (q_len // stride // BLOCK_M, kv_len // stride // BLOCK_N, batch_size * num_heads)
     flat_group_gemm_fuse_reshape_kernel[grid](

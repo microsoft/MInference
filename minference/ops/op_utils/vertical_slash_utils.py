@@ -496,10 +496,6 @@ def calc_index(
     else:
         last_q = torch.zeros((batch_size, last_q_size, num_kv_heads, num_qo_heads // num_kv_heads, head_dim), device=q.device, dtype=q.dtype)
 
-    if os.getenv("COMM_DEBUG", False):
-        # For debugging purposes, print the rank and tensor shapes
-        rank = dist.get_rank(group)
-        print(f"Rank {rank} | calc_index | before invoking broadcast last_q from rank={last_rank}", flush=True)
     dist.broadcast(last_q, src=last_rank, group=group, async_op=False)
 
     qk = torch.einsum('bmghd, bngd -> bghmn', last_q, k) * (k.shape[-1] ** -0.5)
@@ -530,10 +526,6 @@ def calc_index(
         gathered_vertical = [torch.empty_like(vertical) for _ in range(world_size)]
     else:
         gathered_vertical = None
-    if os.getenv("COMM_DEBUG", False):
-        # For debugging purposes, print the rank and tensor shapes
-        rank = dist.get_rank(group)
-        print(f"Rank {rank} | calc_index | before invoking gather vertical to {v_gather_rank}", flush=True)
     dist.gather(vertical, gathered_vertical, dst=v_gather_rank, group=group, async_op=False)
 
     if rank == v_gather_rank:
@@ -562,10 +554,6 @@ def calc_index(
         v_indices = v_indices.sort(dim=-1, descending=False).values
     else:
         v_indices = torch.empty((batch_size, num_qo_heads, max_v_size), dtype=torch.int32, device=k.device)
-    if os.getenv("COMM_DEBUG", False):
-        # For debugging purposes, print the rank and tensor shapes
-        rank = dist.get_rank(group)
-        print(f"Rank {rank} | calc_index | before invoking broadcast v_indices from rank={v_gather_rank}", flush=True)
     dist.broadcast(v_indices, src=v_gather_rank, group=group, async_op=False)  # async
 
     s_gather_rank = 0
@@ -580,11 +568,6 @@ def calc_index(
         gathered_slash = [torch.empty_like(slash) for _ in range(world_size)]
     else:
         gathered_slash = None
-
-    if os.getenv("COMM_DEBUG", False):
-        # For debugging purposes, print the rank and tensor shapes
-        rank = dist.get_rank(group)
-        print(f"Rank {rank} | calc_index | before invoking gather slash to rank=0", flush=True)
     dist.gather(slash, gathered_slash, dst=s_gather_rank, group=group, async_op=False)
 
     if rank == s_gather_rank:

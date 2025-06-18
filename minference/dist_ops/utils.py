@@ -19,6 +19,7 @@ from torch.distributed.distributed_c10d import P2POp
 
 PROCESS_GROUPS: Dict[str, dist.ProcessGroup] = {}
 
+
 @cache
 def _get_default_args(func):
     spec = inspect.getfullargspec(func)
@@ -188,17 +189,16 @@ class RingComm:
         zigzag: bool = False,
         ring_list: Optional[list] = None,
     ):
+        self._process_group = process_group
         self._ops: List[P2POp] = []
-        self.rank = dist.get_rank(process_group)
-        self.world_size = dist.get_world_size(process_group)
+        self.rank = dist.get_rank(self._process_group)
+        self.world_size = dist.get_world_size(self._process_group)
         self._reqs = None
-        self.process_group = process_group
 
         if ring_list is not None:
             curr_idx = ring_list.index(self.rank)
             self.send_rank = ring_list[(curr_idx + 1) % len(ring_list)]
             self.recv_rank = ring_list[(curr_idx - 1 + len(ring_list)) % len(ring_list)]
-            self.send_first = curr_idx % 2 == 0
         elif zigzag:
             parts = self.world_size // 2
             self.ring_list = []
@@ -208,45 +208,9 @@ class RingComm:
             offset = ((dist.get_rank() // self.world_size) * self.world_size)
             self.send_rank = self.ring_list[(self.revert_rank + 1) % self.world_size] + offset
             self.recv_rank = self.ring_list[(self.revert_rank - 1) % self.world_size] + offset
-            self.send_first = self.revert_rank % 2 == 0
         else:
             self.send_rank = (self.rank + 1) % self.world_size
             self.recv_rank = (self.rank - 1) % self.world_size
-            self.send_first = self.rank % 2 == 0
-
-        if len(PROCESS_GROUPS) == 0:
-            self.init_process_groups()
-
-
-        if self.send_rank in get_inner_ring(process_group):
-            outer_rank = get_outer_ring(process_group).index(self.rank)
-            self._send_group = PROCESS_GROUPS[f'inner-{outer_rank}-{int(self.send_first)}']
-        else:
-            self._send_group = PROCESS_GROUPS[f'outer-{int(self.send_first)}']
-            
-        if self.recv_rank in get_inner_ring(process_group):
-            outer_rank = get_outer_ring(process_group).index(self.rank)
-            self._recv_group = PROCESS_GROUPS[f'inner-{outer_rank}-{int(1 - self.send_first)}']
-        else:
-            self._recv_group = PROCESS_GROUPS[f'outer-{int(1 - self.send_first)}']
-
-        self._send_group = PROCESS_GROUPS[f'inner-0-0']
-        self._recv_group = PROCESS_GROUPS[f'inner-0-0']
-    
-    def init_process_groups(self):
-        global PROCESS_GROUPS
-        num_nodes = int(os.environ.get("NUM_NODES", 1))
-        fast_nccl_options = dist.ProcessGroupNCCL.Options(is_high_priority_stream=True)
-        # fast_nccl_options.config.max_ctas = 2147483647
-        # fast_nccl_options.config.min_ctas = 128
-        for node_idx in range(num_nodes):
-            PROCESS_GROUPS[f'inner-{node_idx}-0'] = dist.new_group(pg_options=fast_nccl_options, use_local_synchronization=True)
-            PROCESS_GROUPS[f'inner-{node_idx}-1'] = dist.new_group(pg_options=fast_nccl_options, use_local_synchronization=True)
-        slow_nccl_options = dist.ProcessGroupNCCL.Options(is_high_priority_stream=True)
-        slow_nccl_options.config.max_ctas = 1
-        slow_nccl_options.config.min_ctas = 1
-        PROCESS_GROUPS['outer-0'] = dist.new_group(pg_options=slow_nccl_options, use_local_synchronization=True)
-        PROCESS_GROUPS['outer-1'] = dist.new_group(pg_options=slow_nccl_options, use_local_synchronization=True)
 
     def send_recv(
         self, 
@@ -260,14 +224,23 @@ class RingComm:
         else:
             res = recv_tensor
 
-        if self.send_first:
-            self._reqs.append(dist.isend(to_send, self.send_rank, group=self.process_group))
-            self._reqs.append(dist.irecv(res, self.recv_rank, group=self.process_group))
-        else:
-            self._reqs.append(dist.irecv(res, self.recv_rank, group=self.process_group))
-            self._reqs.append(dist.isend(to_send, self.send_rank, group=self.process_group))
+        send_op = dist.P2POp(
+            dist.isend, to_send, self.send_rank, group=self._process_group,
+            tag=2 * (step_idx * (self.rank + 1)) + fwd,
+        )
+        recv_op = dist.P2POp(
+            dist.irecv, res, self.recv_rank, group=self._process_group,
+            tag=2 * (step_idx * (self.rank + 1)) + fwd,
+        )
 
+        self._ops.append(send_op)
+        self._ops.append(recv_op)
         return res
+
+    def commit(self):
+        if self._reqs is not None:
+            raise RuntimeError("commit called twice")        
+        self._reqs = dist.batch_isend_irecv(self._ops)
 
     def wait(self):
         if self._reqs is None:
@@ -277,6 +250,7 @@ class RingComm:
         self._reqs = None
         self._ops = []
 
+            
     def send_recv_kv(
         self,
         k: torch.Tensor,
@@ -284,8 +258,8 @@ class RingComm:
         k_buffer: Optional[torch.Tensor] = None,
         v_buffer: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        self._reqs = []
         next_k, next_v = self.send_recv(k, k_buffer), self.send_recv(v, v_buffer)
+        self.commit()
         return next_k, next_v
 
     def send_recv_kv_offsets(
@@ -297,11 +271,11 @@ class RingComm:
         v_buffer: Optional[torch.Tensor] = None,
         kv_seq_offsets_buffer: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        self._reqs = []
         next_k, next_v = self.send_recv(k, k_buffer), self.send_recv(v, v_buffer)
         next_kv_seq_offsets = self.send_recv(kv_seq_offsets, kv_seq_offsets_buffer)
+        
+        self.commit()
         return next_k, next_v, next_kv_seq_offsets
-
 
 def shuffle_zigzag_input(to_send: torch.Tensor,
                   dim: int = 1,
