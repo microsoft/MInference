@@ -1,19 +1,7 @@
-# tests/test_minference_sparse_attention.py
-"""
-Distributed correctness tests for Minference sparse-attention kernels.
-
-Run with:
-    pytest -q -s tests/test_minference_sparse_attention.py
-or manually choose GPUs, e.g.
-    CUDA_VISIBLE_DEVICES=0,1 pytest -q -s …
-
-The test spawns one process per GPU with torch.multiprocessing, so it does
-**not** require `pytest-xdist`.  It will be skipped automatically if you have
-fewer than two visible CUDA devices.
-"""
 from __future__ import annotations
 
 import os
+import pytest
 import random
 from types import SimpleNamespace
 from typing import Callable
@@ -22,22 +10,14 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from minference.ops.utils import set_seed, check_correctness_by_row, check_by_correct_rate
-from minference.dist_ops.minfer_zigzag import minfer_zigzag_func
-from minference.dist_ops.minfer_striped import minfer_stripe_func
-from minference.dist_ops.minfer_dr_striped import minfer_dr_stripe_func
-from minference.ops.pit_sparse_flash_attention_v3 import minference_flash_attn_func
+from minference.ops.utils import set_seed, check_correctness_by_row
+from minference.dist_ops.xattn_zigzag import xattn_zigzag_func
+from minference.ops.xattention_fa import xattn_flash_attn_func
 
 # ------------- constants ------------------------------------------------------
-_ATOL = 1e-2
-_RTOL = 1e-2
-_WORLD_SIZE = 4
-
-_ATTENTION_IMPLS: dict[str, Callable] = {
-    "minfer_zigzag": minfer_zigzag_func,
-    "minfer_stripe": minfer_stripe_func,
-    "minfer_dr_stripe": minfer_dr_stripe_func,
-}
+_ATOL = 1e-1
+_RTOL = 1e-1
+_WORLD_SIZE = 4 
 
 # ------------- helpers --------------------------------------------------------
 def _init_process_group(rank: int, world_size: int, port: str) -> None:
@@ -61,7 +41,6 @@ def _run_worker(
     world_size: int,
     port: str,
     cfg: SimpleNamespace,
-    attn_op_name: str,
 ) -> None:
     """Worker function executed in every spawned GPU process."""
     _init_process_group(rank, world_size, port)
@@ -72,29 +51,24 @@ def _run_worker(
     dtype = torch.bfloat16
     set_seed(2025 + rank)
 
-    attn_op: Callable = _ATTENTION_IMPLS[attn_op_name]
-
     # ----------------- generate identical tensors on every rank --------------
     if rank == 0:
-        rand_or_one = (
-            torch.randn if not cfg.ones else lambda s, **k: torch.ones(*s, **k)
-        )
-        q = rand_or_one(
+        q = torch.randn(
             (cfg.batch_size, cfg.seq_len, cfg.num_qo_heads, cfg.head_dim),
             dtype=dtype,
             device=device,
         )
-        k = rand_or_one(
+        k = torch.randn(
             (cfg.batch_size, cfg.seq_len, cfg.num_kv_heads, cfg.head_dim),
             dtype=dtype,
             device=device,
         )
-        v = rand_or_one(
+        v = torch.randn(
             (cfg.batch_size, cfg.seq_len, cfg.num_kv_heads, cfg.head_dim),
             dtype=dtype,
             device=device,
         )
-        dout = rand_or_one(
+        dout = torch.randn(
             (cfg.batch_size, cfg.seq_len, cfg.num_qo_heads, cfg.head_dim),
             dtype=dtype,
             device=device,
@@ -124,13 +98,11 @@ def _run_worker(
     dout_local = dout[:, sl].clone()
 
     # ----------------- forward / backward on the candidate kernel ------------
-    out_local = attn_op(
-        q_local,
-        k_local,
-        v_local,
-        cfg.v_size,
-        cfg.s_size,
+    out_local = xattn_zigzag_func(
+        q_local, k_local, v_local,
         layer_idx=0,
+        xattn_params=cfg.xattn_params,
+        granularity=128,
     )
     torch.autograd.backward(out_local, dout_local)
 
@@ -145,108 +117,84 @@ def _run_worker(
         dist.all_gather(tmp, g)
         grads.append(torch.cat(tmp, dim=1))
 
-    # ----------------- reference: dense Flash-Attention ----------------------
+    # ---------------------------------------
     if rank == 0:
         q_ref = q.detach().clone().requires_grad_()
         k_ref = k.detach().clone().requires_grad_()
         v_ref = v.detach().clone().requires_grad_()
 
-        out_ref = minference_flash_attn_func(
-            q_ref,
-            k_ref,
-            v_ref,
-            cfg.v_size,
-            cfg.s_size,
-            causal=True,
+        single_machine_params = cfg.xattn_params.copy()
+        single_machine_params["chunk_size"] = cfg.seq_len // _WORLD_SIZE
+        out_ref = xattn_flash_attn_func(
+            q_ref, k_ref, v_ref,
+            head_indices=list(range(cfg.num_qo_heads)),
+            xattn_params=single_machine_params,
+            granularity=128,
         )
         torch.autograd.backward(out_ref, dout)
         ref_grads = (q_ref.grad, k_ref.grad, v_ref.grad)
 
-        # ----------------- assertions ----------------------------------------
-        # if check_correctness_by_row(
-        #     cfg.seq_len, final_out, out_ref, "forward output", ATOL=_ATOL, RTOL=_RTOL
-        # ):
-        #     check_correctness_by_row(
-        #         cfg.seq_len, grads[0], ref_grads[0], "Q-grad", ATOL=_ATOL, RTOL=_RTOL
-        #     )
-        #     check_correctness_by_row(
-        #         cfg.seq_len, grads[1], ref_grads[1], "K-grad",
-        #         ATOL=_ATOL, RTOL=_RTOL
-        #     )
-        #     check_correctness_by_row(
-        #         cfg.seq_len, grads[2], ref_grads[2], "V-grad",  
-        #         ATOL=_ATOL, RTOL=_RTOL
-        #     )
-        if check_by_correct_rate(final_out, out_ref, ATOL=_ATOL, RTOL=_RTOL):
-            for got, ref, name in zip(
-                grads,
-                ref_grads,
-                ("Q-grad", "K-grad", "V-grad"),
-            ):
-                check_by_correct_rate(got, ref, ATOL=_ATOL, RTOL=_RTOL)
-
-            torch.testing.assert_close(
-                final_out, out_ref, atol=_ATOL, rtol=_RTOL, msg="forward mismatch"
-            )
-            for got, ref, name in zip(
-                grads,
-                ref_grads,
-                ("Q-grad", "K-grad", "V-grad"),
-            ):
-                torch.testing.assert_close(got, ref, ATOL=_ATOL, RTOL=_RTOL, msg=name)
+        torch.testing.assert_close(
+            final_out, out_ref, atol=_ATOL, rtol=_RTOL, msg="forward output mismatch"
+        )
+        for got, ref, name in zip(
+            grads,
+            ref_grads,
+            ("Q-grad", "K-grad", "V-grad"),
+        ):
+            torch.testing.assert_close(got, ref, atol=_ATOL, rtol=_RTOL, msg=f"{name} mismatch")
 
     dist.destroy_process_group()
 
 
 # ------------- pytest entry-point --------------------------------------------
-def test_sparse_attention_kernels(
+@pytest.mark.skipif(torch.cuda.device_count() < _WORLD_SIZE, reason="Not enough GPUs")
+@pytest.mark.parametrize("seq_len",   [131072, 262144, 524288])
+@pytest.mark.parametrize("head_dim",  [64, 128])
+@pytest.mark.parametrize("num_qkv_head_pair", [(4, 1), (4, 4)])
+@pytest.mark.parametrize("stride", [16, 32])
+@pytest.mark.parametrize("threshold", [0.9, 1.])
+def test_xattention_kernels(
     seq_len: int,
-    batch_sz: int,
     head_dim: int,
-    sparsity: float,
-    ones: bool,
-    num_qo_heads: int,
-    num_kv_heads: int,
-    attn_op_name: str,
+    num_qkv_head_pair: tuple[int, int],
+    stride: int,
+    threshold: float,
 ):
     """
     Compare every sparse kernel against the dense Flash-Attention reference on
     both forward pass and input-gradient w.r.t Q/K/V.
     """
-    port = str(random.randint(12000, 20000))
 
+    port = str(random.randint(12000, 20000))
+    xattn_params = {
+        "stride": stride,
+        "norm": 1,
+        "softmax": True,
+        "threshold": threshold,
+        "select_mode": "inverse",
+        "use_triton": True,
+        "causal": True,
+        "kdb": 1,
+        "keep_sink": False,
+        "keep_recent": False
+    }
     cfg = SimpleNamespace(
-        batch_size=batch_sz,
+        batch_size=1,
         seq_len=seq_len,
         head_dim=head_dim,
-        sparsity=sparsity,
-        ones=ones,
-        num_qo_heads=num_qo_heads,
-        num_kv_heads=num_kv_heads,
+        num_qo_heads=num_qkv_head_pair[0],
+        num_kv_heads=num_qkv_head_pair[1],
+        xattn_params=xattn_params,
     )
-    # derived sizes used by both candidate and reference kernels
-    cfg.v_size = [int((1 - cfg.sparsity) * 0.1 * cfg.seq_len)] * cfg.num_qo_heads
-    cfg.s_size = [int((1 - cfg.sparsity) * 0.2 * cfg.seq_len)] * cfg.num_qo_heads
-
+  
     print(f"=" * 80)
-    print(f"Testing {attn_op_name} with configuration:\n{cfg}")
+    print(f"Testing XAttention (w. Zigzag) with configuration:\n{cfg}")
     print(f"=" * 80)
     mp.spawn(
         _run_worker,
-        args=(_WORLD_SIZE, port, cfg, attn_op_name),
+        args=(_WORLD_SIZE, port, cfg),
         nprocs=_WORLD_SIZE,
         join=True,
     )
 
-if __name__ == "__main__":
-    # Run the test with default parameters
-    test_sparse_attention_kernels(
-        seq_len=512 * 1024,
-        batch_sz=1,
-        head_dim=128,
-        sparsity=0.9,
-        ones=False,
-        num_qo_heads=4,
-        num_kv_heads=2,
-        attn_op_name="minfer_zigzag",
-    )

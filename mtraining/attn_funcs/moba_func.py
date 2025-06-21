@@ -10,8 +10,8 @@ from nnscaler.ir.operator import IRFwOperation
 from nnscaler.runtime.device import DeviceGroup
 from nnscaler.graph.parser.register import register_op
 
+from minference.ops.moba import moba_attn_func
 from minference.ops.op_utils.moba_utils import MoBAConfig
-from minference.ops.moba import moba_attn_varlen, moba_layer
 from minference.dist_ops.moba_zigzag import moba_zigzag_func
 
 def load_moba_config(moba_config_dict: Dict[str, Any]):
@@ -30,16 +30,18 @@ def moba_attention_forward(
     softcap: Optional[float] = None,
     **kwargs,
 ) -> Tuple[torch.Tensor, None]: 
+    seq_len = query.shape[2]
     moba_topk, moba_chunk_size = module.moba_topk, module.moba_chunk_size
     implementation = module.implementation
     if implementation == "default":
         return wrapped_moba_func(
             query.transpose(1, 2), key.transpose(1, 2), value.transpose(1, 2),
+            seq_len,
             moba_topk, moba_chunk_size,
             attention_mask, dropout, scaling, sliding_window, softcap, **kwargs
         ), None
     else:
-        seq_len = query.shape[2]
+        
         layer_idx = module.layer_idx
         return wrapped_moba_zigzag_func(
             query.transpose(1, 2), key.transpose(1, 2), value.transpose(1, 2),
@@ -52,19 +54,14 @@ def moba_attention_forward(
 # ------------------------------------------
 def wrapped_moba_func(
     q: Tensor, k: Tensor, v: Tensor, 
+    seq_len: int,
     moba_topk: int, moba_chunk_size: int,
-    attention_mask: Optional[torch.Tensor],
-    dropout: float = 0.0,
-    scaling: Optional[float] = None,
-    sliding_window: Optional[int] = None,
-    softcap: Optional[float] = None,
     **kwargs,
 ):
-    return moba_layer(
-        moba_attn_varlen, 
-        moba_chunk_size, moba_topk, 
-        q, k, v, 
-        attention_mask, dropout, scaling, sliding_window, softcap,
+    return moba_attn_func(
+        q, k, v,
+        seq_len,
+        moba_chunk_size, moba_topk,
         **kwargs
     )
 
@@ -91,33 +88,14 @@ def wrapped_moba_zigzag_func(
         output = flash_attn_func(query, key, value, 0.0, softmax_scale, True)
         return output
 
-    batch, block_seq_len, q_heads, head_dim = query.shape
-    assert batch == 1, "Current implementation only supports batch size = 1"
-
-    # [0, BLK_SZ, 2 * BLK_SZ, 3 * BLK_SZ, ..., seq_len - 1]
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
-    seq_offsets = torch.arange(0, seq_len, seq_len // world_size)[rank:rank+1]
-
-    _, _, kv_heads, _ = key.shape
-    
-    query = query.reshape(-1, q_heads, head_dim) # [B * N, H, D]
-    key = key.reshape(-1, kv_heads, head_dim)
-    value = value.reshape(-1, kv_heads, head_dim)
-
-    # Assume only one batch or all batches have the same length
-    cu_seqlens = torch.cumsum(
-        torch.tensor([0] + [seq_len] * batch, device=query.device),
-        dim=0,
-        dtype=torch.int32,
-    )
+    batch_size, block_seq_len, q_heads, head_dim = query.shape
+    assert batch_size == 1, "Current implementation only supports batch size = 1"
 
     local_process_group = DeviceGroup().get_group(process_group)
     output = moba_zigzag_func(
         query, key, value,
-        seq_offsets,
         layer_idx, 
-        cu_seqlens,
+        seq_len,
         moba_chunk_size,
         moba_topk,
         dropout, softmax_scale,
@@ -128,8 +106,7 @@ def wrapped_moba_zigzag_func(
         False, # return_softmax,
         local_process_group, # group
     ).contiguous()
-    return output.view(batch, block_seq_len, q_heads, head_dim)
-
+    return output.view(batch_size, block_seq_len, q_heads, head_dim)
 
 # --------------------------------------------------
 def moba_attn_anno(query_states, key_states, value_states, *args, **kwargs) -> str:

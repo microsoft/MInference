@@ -6,6 +6,13 @@ import torch.distributed as dist
 from functools import lru_cache
 from dataclasses import dataclass
 
+def tensor_4d_to_3d(tensor: torch.Tensor) -> torch.Tensor:
+    """Convert a 4D tensor to a 3D tensor by collapsing the first two dimensions."""
+    if tensor.ndim != 4:
+        raise ValueError("Input tensor must be 4D.")
+    return tensor.reshape(tensor.shape[0] * tensor.shape[1], tensor.shape[2], tensor.shape[3])
+
+
 @dataclass
 class MoBAConfig:
     moba_chunk_size: int
@@ -254,6 +261,11 @@ def compute_moba_gate(
     moba_chunk_size: int,
     moba_topk: int,
 ):
+    if len(q.shape) == 4:
+        q, k, v = \
+            tensor_4d_to_3d(q), \
+            tensor_4d_to_3d(k), \
+            tensor_4d_to_3d(v)
     seq_offset: int = seq_offset.detach().cpu().item()
     seqlen_block, num_head, head_dim = q.shape
     _, k_num_head, _ = k.shape

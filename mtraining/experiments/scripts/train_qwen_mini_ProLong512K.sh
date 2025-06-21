@@ -1,8 +1,10 @@
 #!/usr/bin/bash
+echo $(which pip)
 i=$(hostname | awk -F'-' '{print $2}')
 NODE_RANK=$i
 export NUM_NODES=1
 export REUSE_TYPE="match"
+export FORCE_TRITON=1
 
 export HF_TRUST_REMOTE_CODE=true
 export HF_DATASETS_TRUST_REMOTE_CODE=true
@@ -72,6 +74,7 @@ mkdir -p $LOG_PATH
 echo "Logging directed to $LOG_PATH/train.log"
 
 export TRACE_STRATEGY="reuse_cache"
+echo $(which torchrun)
 torchrun --nproc_per_node=$GPU_PER_NODE \
         --nnodes=$NUM_NODES \
         --node_rank=$NODE_RANK \

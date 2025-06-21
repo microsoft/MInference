@@ -19,7 +19,8 @@ from .utils import (
     recover_zigzag_output, get_default_args, 
 )
 from minference.ops.op_utils.moba_utils import (
-    shuffle_input_all, shuffle_input_only, compute_moba_gate
+    shuffle_input_all, shuffle_input_only, compute_moba_gate,
+    tensor_4d_to_3d
 )
 
 
@@ -212,7 +213,7 @@ def moba_zigzag_attn_fwd_step(
     # -----------------------------------------------------------------------------------
     # If no queries need to be computed with the current KV chunk and no causal attention is needed, return None to skip the output update
     if not causal and moba_q.shape[0] == 0:
-        return None, None, 0, torch.zeros((num_head,), device=q.device, dtype=torch.float32)
+        return None, None
 
     # -----------------------------------------------------------------------------------
     # Processing output and lse
@@ -304,7 +305,7 @@ def moba_zigzag_attn_fwd(
     deterministic=False,
 ):
     assert causal == True, "zigzag ring is meaningless for causal=False"
-    comm = RingComm(process_group)
+    comm = RingComm(process_group, zigzag=True)
 
     block_seq_len = q.shape[0] // 2
     seq_len, num_q_heads, head_dim = q.shape
@@ -357,7 +358,10 @@ def moba_zigzag_attn_fwd(
                 k_seq_offsets=kv_seq_offsets,
             )
 
-            out, lse = update_out_and_lse(out, lse, block_out, block_lse)
+            out, lse = update_out_and_lse(
+                out, lse, block_out, block_lse,
+                use_triton_kernel=False,
+            )
         elif step <= comm.revert_rank:
             k0 = k[:block_seq_len]
             v0 = v[:block_seq_len]
@@ -368,7 +372,10 @@ def moba_zigzag_attn_fwd(
             )
 
             if block_out is not None:
-                out, lse = update_out_and_lse(out, lse, block_out, block_lse)
+                out, lse = update_out_and_lse(
+                    out, lse, block_out, block_lse,
+                    use_triton_kernel=False,
+                )
         else:
             q1 = q[block_seq_len:]
             block_out, block_lse = fwd_step(
@@ -383,6 +390,7 @@ def moba_zigzag_attn_fwd(
                     block_out,
                     block_lse,
                     slice_=(slice(block_seq_len, None)), 
+                    use_triton_kernel=False,
                 )
 
         if step + 1 != comm.world_size:
@@ -711,8 +719,8 @@ def moba_zigzag_attn_bwd(
 ):
     assert causal == True, "zigzag ring is meaningless for causal=False"
 
-    kv_comm = RingComm(process_group)
-    d_kv_comm = RingComm(process_group)
+    kv_comm = RingComm(process_group, zigzag=True)
+    d_kv_comm = RingComm(process_group, zigzag=True)
 
     kv_seq_offsets = torch.clone(seq_offsets)
     seq_len, num_q_heads, head_dim = q.shape
@@ -864,17 +872,20 @@ class MoBAZigzagRingFlashAttnFunc(torch.autograd.Function):
         return_softmax,
         group,
     ):
-        # print(f"Rank {dist.get_rank()} | forward | q shape: {q.shape}, k shape: {k.shape}, v shape: {v.shape}")
+        # Note seq_len here refers to the total sequence length
+        seq_lens = cu_seqlens[1:] - cu_seqlens[:-1]
+        assert seq_lens.min() == seq_lens.max(), "Current implementation of MoBA Zigzag Ring Attention does not support variable sequence lengths within a batch"
+        seq_len = seq_lens.detach().cpu()[0].item() # all sequences in the batch have the same length
 
         if softmax_scale is None:
             softmax_scale = q.shape[-1] ** (-0.5)
         assert alibi_slopes is None
 
+        # ---------------------------
+        # Compute gate values before shuffling
         (
-            gate_mask, cu_chunk,
-            filtered_chunk_indices,
-            num_filtered_chunk,
-            chunk_to_batch
+            gate_mask, cu_chunk, filtered_chunk_indices,
+            num_filtered_chunk, chunk_to_batch
         ) = compute_moba_gate(
             q, k, v,
             seq_offset,
@@ -883,38 +894,40 @@ class MoBAZigzagRingFlashAttnFunc(torch.autograd.Function):
             moba_topk,
         )
 
-        # gate_mask needs to be shuffled as it is coupled with q
         q, seq_offsets, gate_mask = shuffle_input_all(
             to_send=q, gate_mask=gate_mask, seq_offset=seq_offset, 
             process_group=group
         )
         k = shuffle_input_only(to_send=k, process_group=group)
         v = shuffle_input_only(to_send=v, process_group=group)
-
         k = k.contiguous()
         v = v.contiguous()
-        out, softmax_lse = moba_zigzag_attn_fwd(
-                group,
-                q, k, v,
-                seq_offsets, # sequence offsets for Q
-                layer_idx,
-
-                gate_mask, cu_chunk,
-                filtered_chunk_indices,
-                num_filtered_chunk,
-                chunk_to_batch,
-                moba_chunk_size,
-                moba_topk,
-                
-                softmax_scale=softmax_scale,
-                dropout_p=dropout_p,
-                causal=causal,
-                window_size=window_size,
-                alibi_slopes=alibi_slopes,
-                deterministic=False,
-            )
         
-        # this should be out_padded
+        q_3d, k_3d, v_3d = \
+            tensor_4d_to_3d(q), tensor_4d_to_3d(k), tensor_4d_to_3d(v)
+
+        out_3d, softmax_lse = moba_zigzag_attn_fwd(
+            group,
+            q_3d, k_3d, v_3d,
+            seq_offsets, # sequence offsets for Q
+            layer_idx,
+
+            gate_mask, cu_chunk,
+            filtered_chunk_indices,
+            num_filtered_chunk,
+            chunk_to_batch,
+            moba_chunk_size,
+            moba_topk,
+            
+            softmax_scale=softmax_scale,
+            dropout_p=dropout_p,
+            causal=causal,
+            window_size=window_size,
+            alibi_slopes=alibi_slopes,
+            deterministic=False,
+        )
+
+        out = out_3d.reshape(*q.shape)
         ctx.save_for_backward(
             q, k, v, out, softmax_lse, seq_offsets, 
             gate_mask, cu_chunk, filtered_chunk_indices,
@@ -932,14 +945,13 @@ class MoBAZigzagRingFlashAttnFunc(torch.autograd.Function):
         ctx.deterministic = deterministic
         ctx.group = group
         ctx.layer_idx = layer_idx
+        ctx.seq_len = seq_len
 
-
-        out = recover_zigzag_output(out, process_group=group)
+        out = recover_zigzag_output(out, dim=1, process_group=group)
         return out if not return_softmax else (out, softmax_lse, None)
 
     @staticmethod
     def backward(ctx, dout, *args):
-        dout = shuffle_input_only(to_send=dout, process_group=ctx.group)
         (
             q, k, v, out, 
             softmax_lse, # [n_heads, seq_block_len]
@@ -948,16 +960,22 @@ class MoBAZigzagRingFlashAttnFunc(torch.autograd.Function):
             chunk_to_batch
         ) = ctx.saved_tensors
 
+        q_3d, k_3d, v_3d, out_3d = \
+            tensor_4d_to_3d(q), tensor_4d_to_3d(k), tensor_4d_to_3d(v), \
+            tensor_4d_to_3d(out)
+        
+        dout = shuffle_input_only(to_send=dout, process_group=ctx.group)
+        dout_3d = tensor_4d_to_3d(dout)
+
         num_filtered_chunk = ctx.num_filtered_chunk
         moba_chunk_size = ctx.moba_chunk_size
         moba_topk = ctx.moba_topk
-        
-        dq, dk, dv = moba_zigzag_attn_bwd(
+
+        dq_3d, dk_3d, dv_3d = moba_zigzag_attn_bwd(
             ctx.group,
-            dout,
-            q, k, v,
-            out,
-            softmax_lse,
+            dout_3d,
+            q_3d, k_3d, v_3d,
+            out_3d, softmax_lse,
             
             seq_offsets, 
             ctx.layer_idx,
@@ -977,11 +995,13 @@ class MoBAZigzagRingFlashAttnFunc(torch.autograd.Function):
             deterministic=ctx.deterministic,
         )
         
-        dq = recover_zigzag_output(dq, ctx.group)
-        dk = recover_zigzag_output(dk, ctx.group)
-        dv = recover_zigzag_output(dv, ctx.group)
-        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None
+        dq, dk, dv = \
+            dq_3d.reshape(*q.shape), dk_3d.reshape(*k.shape), dv_3d.reshape(*v.shape)
 
+        dq = recover_zigzag_output(dq, dim=1, process_group=ctx.group)
+        dk = recover_zigzag_output(dk, dim=1, process_group=ctx.group)
+        dv = recover_zigzag_output(dv, dim=1, process_group=ctx.group)
+        return dq, dk, dv, None, None, None, None, None, None, None, None, None, None, None, None, None
 
 def moba_zigzag_qkvpacked_func(
     qkv,
@@ -992,7 +1012,7 @@ def moba_zigzag_qkvpacked_func(
     moba_topk,
     dropout_p=0.0,
     softmax_scale=None,
-    causal=False,
+    causal=True,
     window_size=(-1, -1),
     alibi_slopes=None,
     deterministic=False,
@@ -1029,7 +1049,7 @@ def moba_zigzag_kvpacked_func(
     moba_topk,
     dropout_p=0.0,
     softmax_scale=None,
-    causal=False,
+    causal=True,
     window_size=(-1, -1),
     alibi_slopes=None,
     deterministic=False,
@@ -1057,21 +1077,32 @@ def moba_zigzag_kvpacked_func(
 
 
 def moba_zigzag_func(
-    q, k, v,
-    seq_offset: torch.Tensor,
+    q, k, v, # [batch_size, seq_block_len, n_heads, head_dim]
     layer_idx: int,
-    cu_seqlens,
+    global_seq_len: int,
     moba_chunk_size,
     moba_topk,
+
     dropout_p=0.0,
     softmax_scale=None,
-    causal=False,
+    causal=True,
     window_size=(-1, -1),
     alibi_slopes=None,
     deterministic=False,
     return_attn_probs=False,
     group=None,
 ):
+    batch_size = q.shape[0]
+    cu_seqlens = torch.cumsum(
+        torch.tensor([0] + [global_seq_len] * batch_size, device=q.device),
+        dim=0,
+        dtype=torch.int32,
+    )
+
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    seq_offset = torch.arange(0, global_seq_len, global_seq_len // world_size)[rank:rank+1]
+
     return MoBAZigzagRingFlashAttnFunc.apply(
         q, k, v,
         seq_offset,

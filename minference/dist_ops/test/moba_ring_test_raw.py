@@ -1,35 +1,24 @@
-# tests/test_minference_sparse_attention.py
-"""
-Distributed correctness tests for Minference sparse-attention kernels.
-
-Run with:
-    pytest -q -s tests/test_minference_sparse_attention.py
-or manually choose GPUs, e.g.
-    CUDA_VISIBLE_DEVICES=0,1 pytest -q -s …
-
-The test spawns one process per GPU with torch.multiprocessing, so it does
-**not** require `pytest-xdist`.  It will be skipped automatically if you have
-fewer than two visible CUDA devices.
-"""
 from __future__ import annotations
 
 import os
 import random
+from typing import Callable, Optional
 from types import SimpleNamespace
-from typing import Callable
+
 
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch import Tensor
 
 from minference.ops.utils import set_seed, check_correctness_by_row
-from minference.dist_ops.xattn_zigzag import xattn_zigzag_func
-from minference.ops.xattention_fa import xattn_flash_attn_func
+from minference.ops.moba import moba_attn_varlen, moba_layer, moba_attn_func, moba_attn_varlen_naive
+from minference.dist_ops.moba_zigzag import moba_zigzag_func
 
 # ------------- constants ------------------------------------------------------
-_ATOL = 1e-1
-_RTOL = 1e-1
-_WORLD_SIZE = 2 
+_ATOL = 1e-2
+_RTOL = 1e-2
+_WORLD_SIZE = 4 
 
 # ------------- helpers --------------------------------------------------------
 def _init_process_group(rank: int, world_size: int, port: str) -> None:
@@ -47,7 +36,6 @@ def _init_process_group(rank: int, world_size: int, port: str) -> None:
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
 
 
-
 def _run_worker(
     rank: int,
     world_size: int,
@@ -62,6 +50,10 @@ def _run_worker(
     torch.cuda.set_device(device)
     dtype = torch.bfloat16
     set_seed(2025 + rank)
+
+    # [0, BLK_SZ, 2 * BLK_SZ, 3 * BLK_SZ, ..., seq_len - 1]
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
 
     # ----------------- generate identical tensors on every rank --------------
     if rank == 0:
@@ -113,13 +105,13 @@ def _run_worker(
     dout_local = dout[:, sl].clone()
 
     # ----------------- forward / backward on the candidate kernel ------------
-    out_local = xattn_zigzag_func(
-        q_local, k_local, v_local,
+    out_local = moba_zigzag_func(
+        q_local, k_local, v_local, 
         layer_idx=0,
-        xattn_params=cfg.xattn_params,
-        granularity=128,
+        global_seq_len=cfg.seq_len,
+        moba_chunk_size=cfg.moba_chunk_size,
+        moba_topk=cfg.moba_topk,
     )
-    print(f"Rank {rank} | out_local shape: {out_local.shape}")
     torch.autograd.backward(out_local, dout_local)
 
     # ----------------- gather outputs & grads for reference comparison -------
@@ -139,85 +131,62 @@ def _run_worker(
         k_ref = k.detach().clone().requires_grad_()
         v_ref = v.detach().clone().requires_grad_()
 
-        single_machine_params = cfg.xattn_params.copy()
-        single_machine_params["chunk_size"] = cfg.seq_len // _WORLD_SIZE
-        out_ref = xattn_flash_attn_func(
+        out_ref = moba_attn_func(
             q_ref, k_ref, v_ref,
-            head_indices=list(range(cfg.num_qo_heads)),
-            xattn_params=single_machine_params,
-            granularity=128,
+            global_seq_len=cfg.seq_len,
+            moba_chunk_size=cfg.moba_chunk_size,
+            moba_topk=cfg.moba_topk,
         )
         torch.autograd.backward(out_ref, dout)
         ref_grads = (q_ref.grad, k_ref.grad, v_ref.grad)
 
         # ----------------- assertions ----------------------------------------
-        check_correctness_by_row(
+        if check_correctness_by_row(
             cfg.seq_len, final_out, out_ref, "forward output", ATOL=_ATOL, RTOL=_RTOL
-        )
-        check_correctness_by_row(
-            cfg.seq_len, grads[0], ref_grads[0], "Q-grad", ATOL=_ATOL, RTOL=_RTOL
-        )
-        check_correctness_by_row(
-            cfg.seq_len, grads[1], ref_grads[1], "K-grad",
-            ATOL=_ATOL, RTOL=_RTOL
-        )
-        check_correctness_by_row(
-            cfg.seq_len, grads[2], ref_grads[2], "V-grad",  
-            ATOL=_ATOL, RTOL=_RTOL
-        )
-        
-        # torch.testing.assert_close(
-        #     final_out, out_ref, atol=_ATOL, rtol=_RTOL, msg="forward mismatch"
-        # )
-        # for got, ref, name in zip(
-        #     grads,
-        #     ref_grads,
-        #     ("Q-grad", "K-grad", "V-grad"),
-        # ):
-        #     torch.testing.assert_close(got, ref, ATOL=_ATOL, RTOL=_RTOL, msg=name)
-
+        ):
+            check_correctness_by_row(
+                cfg.seq_len, grads[0], ref_grads[0], "Q-grad", ATOL=_ATOL, RTOL=_RTOL
+            )
+            check_correctness_by_row(
+                cfg.seq_len, grads[1], ref_grads[1], "K-grad",
+                ATOL=_ATOL, RTOL=_RTOL
+            )
+            check_correctness_by_row(
+                cfg.seq_len, grads[2], ref_grads[2], "V-grad",  
+                ATOL=_ATOL, RTOL=_RTOL
+            )
     dist.destroy_process_group()
 
 
 # ------------- pytest entry-point --------------------------------------------
-def test_xattention_kernels(
+def test_moba_kernels(
     seq_len: int = 4096,
-    batch_sz: int = 1,
+    batch_size: int = 1,
     head_dim: int = 64,
     ones: bool = True,
-    num_qo_heads: int = 2,
-    num_kv_heads: int = 2,
-    
-    stride: int = 16,
-    threshold: float = 0.9,
+    num_qkv_head_pair: tuple[int, int]=(2, 2),
+    moba_chunk_size: int = 512,
+    moba_topk: int = 8,
 ):
     """
     Compare every sparse kernel against the dense Flash-Attention reference on
     both forward pass and input-gradient w.r.t Q/K/V.
     """
     port = str(random.randint(12000, 20000))
-    xattn_params = {
-        "stride": stride,
-        "norm": 1,
-        "softmax": True,
-        "threshold": threshold,
-        "select_mode": "inverse",
-        "use_triton": True,
-        "causal": True,
-        "kdb": 1,
-        "keep_sink": False,
-        "keep_recent": False
-    }
     cfg = SimpleNamespace(
-        batch_size=batch_sz,
+        batch_size=batch_size,
         seq_len=seq_len,
         head_dim=head_dim,
         ones=ones,
-        num_qo_heads=num_qo_heads,
-        num_kv_heads=num_kv_heads,
-        xattn_params=xattn_params,
+        num_qo_heads=num_qkv_head_pair[0],
+        num_kv_heads=num_qkv_head_pair[1],
+        moba_chunk_size=moba_chunk_size,
+        moba_topk=moba_topk,
     )
   
+    print(f"=" * 80)
+    print(f"Testing MoBA (w. Zigzag) with configuration:\n{cfg}")
+    print(f"=" * 80)
     mp.spawn(
         _run_worker,
         args=(_WORLD_SIZE, port, cfg),
@@ -226,16 +195,13 @@ def test_xattention_kernels(
     )
 
 if __name__ == "__main__":
-    # Run the test with default parameters
-
-    test_xattention_kernels(
+    test_moba_kernels(
         seq_len=16384,
-        batch_sz=1,
+        batch_size=1,
         head_dim=64,
         ones=False,
-        num_qo_heads=2,
-        num_kv_heads=2,
-        
-        stride=16,
-        threshold=0.9,
+        num_qkv_head_pair=(1, 1),
+
+        moba_chunk_size=512,
+        moba_topk=4,
     )

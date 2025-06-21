@@ -141,7 +141,7 @@ class MixedAttention(torch.autograd.Function):
         ctx.softmax_scale = softmax_scale = q.shape[-1] ** (-0.5)
 
         # self attn
-        _, _, _, _, self_attn_out_sh, self_attn_lse_hs, _, _ = (
+        self_attn_out_sh, self_attn_lse_hs, _, _ = (
             _flash_attn_varlen_forward(
                 q=q,
                 k=k,
@@ -156,7 +156,7 @@ class MixedAttention(torch.autograd.Function):
             )
         )
 
-        _, _, _, _, moba_attn_out, moba_attn_lse_hs, _, _ = _flash_attn_varlen_forward(
+        moba_attn_out, moba_attn_lse_hs, _, _ = _flash_attn_varlen_forward(
             q=moba_q,
             k=moba_kv[:, 0],
             v=moba_kv[:, 1],
@@ -267,16 +267,19 @@ class MixedAttention(torch.autograd.Function):
 
         d_output = d_output.contiguous()
 
-        dq, dk, dv, _ = _flash_attn_varlen_backward(
+        dq = torch.zeros_like(q, dtype=q.dtype, device=q.device)
+        dk = torch.zeros_like(k, dtype=k.dtype, device=k.device)
+        dv = torch.zeros_like(v, dtype=v.dtype, device=v.device)
+        _flash_attn_varlen_backward(
             dout=d_output,
             q=q,
             k=k,
             v=v,
             out=output,
             softmax_lse=mixed_attn_vlse_sh.t().contiguous(),
-            dq=None,
-            dk=None,
-            dv=None,
+            dq=dq,
+            dk=dk,
+            dv=dv,
             cu_seqlens_q=self_attn_cu_seqlen,
             cu_seqlens_k=self_attn_cu_seqlen,
             max_seqlen_q=max_seqlen,
@@ -284,7 +287,8 @@ class MixedAttention(torch.autograd.Function):
             softmax_scale=softmax_scale,
             causal=True,
             dropout_p=0.0,
-            window_size=(-1, -1),
+            window_size_left=-1,
+            window_size_right=-1,
             softcap=0.0,
             alibi_slopes=None,
             deterministic=True,
@@ -302,16 +306,19 @@ class MixedAttention(torch.autograd.Function):
             mixed_attn_vlse_sh.view(-1).index_select(0, moba_q_sh_indices).view(1, -1)
         )
 
-        dmq, dmk, dmv, _ = _flash_attn_varlen_backward(
+        dmq = torch.zeros_like(moba_q, dtype=moba_q.dtype, device=moba_q.device)
+        dmk = torch.zeros_like(moba_kv[:, 0], dtype=moba_kv.dtype, device=moba_kv.device)
+        dmv = torch.zeros_like(moba_kv[:, 1], dtype=moba_kv.dtype, device=moba_kv.device)
+        _flash_attn_varlen_backward(
             dout=d_moba_output,
             q=moba_q,
             k=moba_kv[:, 0],
             v=moba_kv[:, 1],
             out=moba_output,
             softmax_lse=mixed_attn_vlse,
-            dq=None,
-            dk=None,
-            dv=None,
+            dq=dmq,
+            dk=dmk,
+            dv=dmv,
             cu_seqlens_q=moba_cu_seqlen_q,
             cu_seqlens_k=moba_cu_seqlen_kv,
             max_seqlen_q=max_seqlen,
@@ -319,7 +326,8 @@ class MixedAttention(torch.autograd.Function):
             softmax_scale=softmax_scale,
             causal=False,
             dropout_p=0.0,
-            window_size=(-1, -1),
+            window_size_left=-1,
+            window_size_right=-1,
             softcap=0.0,
             alibi_slopes=None,
             deterministic=True,
@@ -358,7 +366,7 @@ def moba_attn_varlen(
     Returns:
         attn_output (torch.Tensor): [seqlen, head, head_dim]
     """
-    print(f"moba_attn_varlen | cu_seqlens: {cu_seqlens}, max_seqlen: {max_seqlen}, moba_chunk_size: {moba_chunk_size}, moba_topk: {moba_topk}, return_lse: {return_lse}")
+    
     # ---------------------------------------------------------------------------------------------
     kv = torch.stack((k, v), dim=1) # stack along a new dimension -> [S, 2, H, D]
 
@@ -371,7 +379,6 @@ def moba_attn_varlen(
         cu_chunk,
         filtered_chunk_indices,
         num_filtered_chunk,
-        filtered_chunk_indices,
         chunk_to_batch,
     ) = calc_chunks(cu_seqlens, moba_chunk_size)
 
@@ -489,7 +496,6 @@ def moba_attn_varlen(
     ).to(torch.int32)
 
     # -----------------------------------------------
-    print(f"filtered_kv shape: {filtered_kv.shape}")
     moba_kv = rearrange(filtered_kv, "s x h d -> h s x d") # here `x` only stands for a dimension (stack dimension for KV)
 
     moba_kv = moba_kv.split(moba_chunk_size, dim=1) 
@@ -533,7 +539,36 @@ def moba_attn_varlen(
     )
 
 
+def moba_attn_func(
+    q: torch.Tensor, # [batch, q_len, q_heads, head_dim]
+    k: torch.Tensor,
+    v: torch.Tensor,
+    global_seq_len: int,
+    moba_chunk_size: int,
+    moba_topk: int,
+    **kwargs,
+):
+    batch_size = q.shape[0]
+    cu_seqlens = torch.cumsum(
+        torch.tensor([0] + [global_seq_len] * batch_size, device=q.device),
+        dim=0,
+        dtype=torch.int32,
+    )
 
+    q_3d, k_3d, v_3d = \
+        q.reshape(-1, q.shape[2], q.shape[3]), \
+        k.reshape(-1, k.shape[2], k.shape[3]), \
+        v.reshape(-1, v.shape[2], v.shape[3])
+
+    # output: [batch_size, global_seq_len, q_heads, head_dim]
+    return moba_attn_varlen(
+        q_3d, k_3d, v_3d,
+        cu_seqlens,
+        global_seq_len,
+        moba_chunk_size,
+        moba_topk,
+    ).view(q.shape)
+    
 
 def moba_layer(
     moba_impl: Callable,

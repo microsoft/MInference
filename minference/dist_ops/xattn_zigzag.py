@@ -206,7 +206,7 @@ def xattn_zigzag_forward(
                 step_idx=step,
             )
 
-        out, lse = update_out_and_lse(out, lse, block_out, block_lse)
+        out, lse = update_out_and_lse(out, lse, block_out, block_lse, use_triton_kernel=False)
         if step + 1 != comm.world_size:
             comm.wait()
             k, v = next_k, next_v

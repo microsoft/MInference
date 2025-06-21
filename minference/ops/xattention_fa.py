@@ -6,7 +6,7 @@ import torch
 from typing import List, Tuple, Dict, Any
 
 from minference.ops.pit_sparse_flash_attention_v3 import block_attn_fwd, block_attn_bwd
-from .op_utils.xattn_utils import (
+from minference.ops.op_utils.xattn_utils import (
     LN2, find_blocks_chunked, flat_group_gemm_fuse_reshape, softmax_fuse_block_sum
 )
 
@@ -234,3 +234,136 @@ def xattn_flash_attn_func(
         return_attn_probs,
         deterministic,
     )
+
+
+
+if __name__ == "__main__":
+    import argparse
+    from flash_attn import flash_attn_func
+    from minference.ops.utils import set_seed
+
+
+    parser = argparse.ArgumentParser(description="XAttn Test")
+    parser.add_argument("--use_ones", action="store_true", help="Use ones for q, k, v")
+    parser.add_argument("--enable_sparse", action="store_true", help="Enable Sparse XAttenion")
+    parser.add_argument("--test_backward", action="store_true", help="Test backward pass")
+    parser.add_argument("--seq_len", type=int, default=16384, help="Sequence length")
+    args = parser.parse_args()
+
+    ATOL, RTOL = 1e-2, 1e-2
+    # dtype = torch.bfloat16
+    dtype = torch.float16
+    device = torch.device(f"cuda:0")
+    torch.cuda.set_device(device)    
+    set_seed(2025)
+    
+    batch_size, seq_len, num_q_heads, head_dim = 1, args.seq_len, 8, 128
+    num_kv_heads = 4
+    head_indices = list(range(num_q_heads))
+
+    granularity = 128
+    xattn_params = {
+        "stride": 16,
+        "norm": 1,
+        "softmax": True,
+        "threshold": 0.9 if args.enable_sparse else 1,
+        "chunk_size": 16384,
+        "select_mode": "inverse",
+        "use_triton": True,
+        "causal": True,
+        "kdb": 1,
+        "keep_sink": False,
+        "keep_recent": False
+    }
+
+    if args.use_ones:
+        q = torch.ones((batch_size, seq_len, num_q_heads, head_dim), device=device, dtype=dtype, requires_grad=args.test_backward)
+        k = torch.ones((batch_size, seq_len, num_kv_heads, head_dim), device=device, dtype=dtype, requires_grad=args.test_backward)
+        v = torch.ones((batch_size, seq_len, num_kv_heads, head_dim), device=device, dtype=dtype, requires_grad=args.test_backward)
+    else:
+        q = torch.randn((batch_size, seq_len, num_q_heads, head_dim), device=device, dtype=dtype, requires_grad=args.test_backward)
+        k = torch.randn((batch_size, seq_len, num_kv_heads, head_dim), device=device, dtype=dtype, requires_grad=args.test_backward)
+        v = torch.randn((batch_size, seq_len, num_kv_heads, head_dim), device=device, dtype=dtype, requires_grad=args.test_backward)
+
+    # Clone inputs for reference implementation to ensure separate gradient computation
+    if args.test_backward:
+        q_ref = q.clone().detach().requires_grad_(True)
+        k_ref = k.clone().detach().requires_grad_(True)
+        v_ref = v.clone().detach().requires_grad_(True)
+    else:
+        q_ref, k_ref, v_ref = q, k, v
+
+    out = xattn_flash_attn_func(
+        q, k, v,
+        head_indices,
+        xattn_params,
+        granularity=granularity,
+    )
+    print(f"out shape: {out.shape}")
+
+    ref_out = flash_attn_func(
+        q_ref, k_ref, v_ref,
+        causal=True,
+        softmax_scale=head_dim ** (-0.5) 
+    )
+
+
+    # Compare out and ref_out
+    if not torch.allclose(out, ref_out, atol=ATOL, rtol=RTOL):
+        num_blocks = seq_len // granularity
+        for i in range(num_blocks):
+            start = i * granularity 
+            end = (i + 1) * granularity
+            out_chunk = out[:, start:end, :, :]
+            ref_out_chunk = ref_out[:, start:end, :, :]
+
+            print('-' * 60)
+            if not torch.allclose(out_chunk, ref_out_chunk, atol=ATOL, rtol=RTOL):
+                print(f"Forward Output mismatch at chunk {i}:")
+                print(f"Forward out_chunk: {out_chunk}")
+                print(f"Forward ref_out_chunk: {ref_out_chunk}")
+            else:
+                print(f"Forward Output match at chunk {i}")
+    else:
+        print("Forward Output match")
+    
+
+    # Backward pass testing
+    if args.test_backward:
+        print("\nTesting backward pass...")
+        
+        # Create gradient for backward pass
+        grad_output = torch.randn_like(out)
+        grad_output_ref = grad_output.clone()
+        
+        # Backward pass for custom implementation
+        out.backward(grad_output)
+        
+        # Backward pass for reference implementation
+        ref_out.backward(grad_output_ref)
+        
+        # Compare gradients
+        print("\nGradient comparison:")
+        
+        # Compare q gradients
+        q_grad_match = torch.allclose(q.grad, q_ref.grad, atol=ATOL, rtol=RTOL)
+        print(f"q grad match: {q_grad_match}")
+        if not q_grad_match:
+            q_diff = (q.grad - q_ref.grad).abs()
+            print(f"q grad max diff: {q_diff.max().item()}, mean diff: {q_diff.mean().item()}")
+        
+        # Compare k gradients
+        k_grad_match = torch.allclose(k.grad, k_ref.grad, atol=ATOL, rtol=RTOL)
+        print(f"k grad match: {k_grad_match}")
+        if not k_grad_match:
+            k_diff = (k.grad - k_ref.grad).abs()
+            print(f"k grad max diff: {k_diff.max().item()}, mean diff: {k_diff.mean().item()}")
+        
+        # Compare v gradients
+        v_grad_match = torch.allclose(v.grad, v_ref.grad, atol=ATOL, rtol=RTOL)
+        print(f"v grad match: {v_grad_match}")
+        if not v_grad_match:
+            v_diff = (v.grad - v_ref.grad).abs()
+            print(f"v grad max diff: {v_diff.max().item()}, mean diff: {v_diff.mean().item()}")
+        
+        print(f"\nOverall gradient match: {q_grad_match and k_grad_match and v_grad_match}")
