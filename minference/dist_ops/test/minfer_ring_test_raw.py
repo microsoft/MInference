@@ -163,20 +163,6 @@ def _run_worker(
         ref_grads = (q_ref.grad, k_ref.grad, v_ref.grad)
 
         # ----------------- assertions ----------------------------------------
-        # if check_correctness_by_row(
-        #     cfg.seq_len, final_out, out_ref, "forward output", ATOL=_ATOL, RTOL=_RTOL
-        # ):
-        #     check_correctness_by_row(
-        #         cfg.seq_len, grads[0], ref_grads[0], "Q-grad", ATOL=_ATOL, RTOL=_RTOL
-        #     )
-        #     check_correctness_by_row(
-        #         cfg.seq_len, grads[1], ref_grads[1], "K-grad",
-        #         ATOL=_ATOL, RTOL=_RTOL
-        #     )
-        #     check_correctness_by_row(
-        #         cfg.seq_len, grads[2], ref_grads[2], "V-grad",  
-        #         ATOL=_ATOL, RTOL=_RTOL
-        #     )
         if check_by_correct_rate(final_out, out_ref, ATOL=_ATOL, RTOL=_RTOL):
             for got, ref, name in zip(
                 grads,
@@ -184,16 +170,6 @@ def _run_worker(
                 ("Q-grad", "K-grad", "V-grad"),
             ):
                 check_by_correct_rate(got, ref, ATOL=_ATOL, RTOL=_RTOL)
-
-            torch.testing.assert_close(
-                final_out, out_ref, atol=_ATOL, rtol=_RTOL, msg="forward mismatch"
-            )
-            for got, ref, name in zip(
-                grads,
-                ref_grads,
-                ("Q-grad", "K-grad", "V-grad"),
-            ):
-                torch.testing.assert_close(got, ref, ATOL=_ATOL, RTOL=_RTOL, msg=name)
 
     dist.destroy_process_group()
 

@@ -411,9 +411,6 @@ def moba_zigzag_attn_bwd_step(
     q: torch.Tensor, # [blk_S, H, D]
     k: torch.Tensor, # [blk_S, H, D]
     v: torch.Tensor, # [blk_S, H, D]
-    # dq: torch.Tensor, 
-    # dk: torch.Tensor, 
-    # dv: torch.Tensor, # [blk_S, H, D]
     
     softmax_lse: torch.Tensor, # [H, blk_S]
     num_q_blocks: int,
@@ -513,14 +510,10 @@ def moba_zigzag_attn_bwd_step(
     # -----------------------------------------------------------
     # select all q that needs moba attn based on the moba_q_indices
     moba_q = rearrange(q, "s h d -> ( h s ) d")
-    moba_dq = rearrange(dq, "s h d -> ( h s ) d")
-
     moba_q = moba_q.index_select(0, moba_q_indices)  # [ selected_HS, D ]
-    moba_dq = moba_dq.index_select(0, moba_q_indices)  # [ selected_HS, D ]
     
     # [ selected_S, 1, D ] (pseudo head dim for flash attn)
     moba_q = moba_q.unsqueeze(1)
-    moba_dq = moba_dq.unsqueeze(1)
 
     # moba_q_sh_indices represents the position in the origin q tensor of each q token inside moba_q
     # note that original q has shape (S, H, D) while moba_q_indices is based on (H S)
@@ -658,7 +651,8 @@ def moba_zigzag_attn_bwd_step(
         )
 
         dq.view(-1, q.shape[-1]).index_add_(
-            0, moba_q_sh_indices, moba_dq.view(-1, head_dim).to(dq.dtype)
+            0, moba_q_sh_indices, 
+            moba_dq_.view(-1, head_dim).to(dq.dtype)
         )
         moba_dkv[:, 0] = moba_dkv[:, 0] + moba_dk_
         moba_dkv[:, 1] = moba_dkv[:, 1] + moba_dv_
@@ -1037,7 +1031,6 @@ def moba_zigzag_qkvpacked_func(
         return_attn_probs,
         group,
     )
-
 
 def moba_zigzag_kvpacked_func(
     q,

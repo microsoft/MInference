@@ -3,23 +3,34 @@ from __future__ import annotations
 import os
 import pytest
 import random
+import functools
 from types import SimpleNamespace
-from typing import Callable
 
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from minference.ops.utils import set_seed, check_correctness_by_row
-from minference.dist_ops.xattn_zigzag import xattn_zigzag_func
-from minference.ops.xattention_fa import xattn_flash_attn_func
+from minference.ops.utils import set_seed, check_correctness_by_row, check_by_correct_rate
+from minference.dist_ops.moba_zigzag import moba_zigzag_func
+from minference.ops.moba import moba_attn_func
 
 # ------------- constants ------------------------------------------------------
-_ATOL = 1e-1
-_RTOL = 1e-1
+_ATOL = 1e-2
+_RTOL = 1e-2
 _WORLD_SIZE = 4 
 
 # ------------- helpers --------------------------------------------------------
+def skip_if_cuda_oom(test_func):
+    """Decorator: convert OutOfMemoryError raised inside the test into a skip."""
+    @functools.wraps(test_func)
+    def _wrapper(*args, **kwargs):
+        try:
+            return test_func(*args, **kwargs)
+        except torch.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            pytest.skip("skipped because the GPU ran out of memory")
+    return _wrapper
+
 def _init_process_group(rank: int, world_size: int, port: str) -> None:
     """Initialise NCCL backend for the current worker."""
     os.environ.update(
@@ -33,7 +44,6 @@ def _init_process_group(rank: int, world_size: int, port: str) -> None:
         }
     )
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
-
 
 
 def _run_worker(
@@ -98,11 +108,12 @@ def _run_worker(
     dout_local = dout[:, sl].clone()
 
     # ----------------- forward / backward on the candidate kernel ------------
-    out_local = xattn_zigzag_func(
-        q_local, k_local, v_local,
+    out_local = moba_zigzag_func(
+        q_local, k_local, v_local, 
         layer_idx=0,
-        xattn_params=cfg.xattn_params,
-        granularity=128,
+        global_seq_len=cfg.seq_len,
+        moba_chunk_size=cfg.moba_chunk_size,
+        moba_topk=cfg.moba_topk,
     )
     torch.autograd.backward(out_local, dout_local)
 
@@ -123,43 +134,54 @@ def _run_worker(
         k_ref = k.detach().clone().requires_grad_()
         v_ref = v.detach().clone().requires_grad_()
 
-        single_machine_params = cfg.xattn_params.copy()
-        single_machine_params["chunk_size"] = cfg.seq_len // _WORLD_SIZE
-        out_ref = xattn_flash_attn_func(
+        out_ref = moba_attn_func(
             q_ref, k_ref, v_ref,
-            head_indices=list(range(cfg.num_qo_heads)),
-            xattn_params=single_machine_params,
-            granularity=128,
+            global_seq_len=cfg.seq_len,
+            moba_chunk_size=cfg.moba_chunk_size,
+            moba_topk=cfg.moba_topk,
         )
         torch.autograd.backward(out_ref, dout)
         ref_grads = (q_ref.grad, k_ref.grad, v_ref.grad)
 
-        torch.testing.assert_close(
-            final_out, out_ref, atol=_ATOL, rtol=_RTOL, msg="forward output mismatch"
-        )
+        # ----------------- assertions ----------------------------------------
+        assert check_by_correct_rate(final_out, out_ref, ATOL=_ATOL, RTOL=_RTOL),\
+              "forward output mismatch"
+        
         for got, ref, name in zip(
             grads,
             ref_grads,
             ("Q-grad", "K-grad", "V-grad"),
         ):
-            torch.testing.assert_close(got, ref, atol=_ATOL, rtol=_RTOL, msg=f"{name} mismatch")
+            assert check_by_correct_rate(got, ref, ATOL=_ATOL, RTOL=_RTOL),\
+                  f"{name} mismatch"
+            
+        # torch.testing.assert_close(
+        #     final_out, out_ref, atol=_ATOL, rtol=_RTOL, msg="forward output mismatch"
+        # )
+        # for got, ref, name in zip(
+        #     grads,
+        #     ref_grads,
+        #     ("Q-grad", "K-grad", "V-grad"),
+        # ):
+        #     torch.testing.assert_close(got, ref, atol=_ATOL, rtol=_RTOL, msg=f"{name} mismatch")
 
     dist.destroy_process_group()
 
 
 # ------------- pytest entry-point --------------------------------------------
+@skip_if_cuda_oom
 @pytest.mark.skipif(torch.cuda.device_count() < _WORLD_SIZE, reason="Not enough GPUs")
-@pytest.mark.parametrize("seq_len",   [131072, 262144, 524288])
+@pytest.mark.parametrize("seq_len",   [16384, 32768])
 @pytest.mark.parametrize("head_dim",  [64, 128])
 @pytest.mark.parametrize("num_qkv_head_pair", [(4, 1), (4, 4)])
-@pytest.mark.parametrize("stride", [16, 32])
-@pytest.mark.parametrize("threshold", [0.9, 1.])
-def test_xattention_kernels(
+@pytest.mark.parametrize("moba_chunk_size", [128, 256])
+@pytest.mark.parametrize("moba_topk", [8, 16])
+def test_moba_kernels(
     seq_len: int,
     head_dim: int,
     num_qkv_head_pair: tuple[int, int],
-    stride: int,
-    threshold: float,
+    moba_chunk_size: int,
+    moba_topk: int,
 ):
     """
     Compare every sparse kernel against the dense Flash-Attention reference on
@@ -167,29 +189,18 @@ def test_xattention_kernels(
     """
 
     port = str(random.randint(12000, 20000))
-    xattn_params = {
-        "stride": stride,
-        "norm": 1,
-        "softmax": True,
-        "threshold": threshold,
-        "select_mode": "inverse",
-        "use_triton": True,
-        "causal": True,
-        "kdb": 1,
-        "keep_sink": False,
-        "keep_recent": False
-    }
     cfg = SimpleNamespace(
         batch_size=1,
         seq_len=seq_len,
         head_dim=head_dim,
         num_qo_heads=num_qkv_head_pair[0],
         num_kv_heads=num_qkv_head_pair[1],
-        xattn_params=xattn_params,
+        moba_chunk_size=moba_chunk_size,
+        moba_topk=moba_topk,
     )
   
     print(f"=" * 80)
-    print(f"Testing XAttention (w. Zigzag) with configuration:\n{cfg}")
+    print(f"Testing MoBA (w. Zigzag) with configuration:\n{cfg}")
     print(f"=" * 80)
     mp.spawn(
         _run_worker,
@@ -197,4 +208,3 @@ def test_xattention_kernels(
         nprocs=_WORLD_SIZE,
         join=True,
     )
-

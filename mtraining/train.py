@@ -198,12 +198,9 @@ class MoBAModel(BaselineModel):
             config_path=config_path,
             **kwargs,
         )
-        from minference.ops.op_utils.moba_utils import MoBAConfig
-
         # --------------------------------------------
-        print(f"MoBAConfig: {moba_config_dict}")
-        moba_config = MoBAConfig(**moba_config_dict) 
-        moba_topk, moba_chunk_size = moba_config.moba_topk, moba_config.moba_chunk_size   
+        moba_topk, moba_chunk_size = moba_config_dict["moba_topk"], moba_config_dict["moba_chunk_size"]
+        moba_implementation = moba_config_dict.get("implementation", 'default')
 
         # --------------------------------------------
         # We still need to attach the function object to the model
@@ -214,6 +211,7 @@ class MoBAModel(BaselineModel):
             if isinstance(m, Attention):
                 m.moba_topk = moba_topk
                 m.moba_chunk_size = moba_chunk_size
+                m.implementation = moba_implementation
         self.model.apply(update_module)
 
 ATTN_TO_MODEL = {

@@ -267,9 +267,7 @@ class MixedAttention(torch.autograd.Function):
 
         d_output = d_output.contiguous()
 
-        dq = torch.zeros_like(q, dtype=q.dtype, device=q.device)
-        dk = torch.zeros_like(k, dtype=k.dtype, device=k.device)
-        dv = torch.zeros_like(v, dtype=v.dtype, device=v.device)
+        dq, dk, dv = torch.zeros_like(q), torch.zeros_like(k), torch.zeros_like(v)
         _flash_attn_varlen_backward(
             dout=d_output,
             q=q,
@@ -366,7 +364,11 @@ def moba_attn_varlen(
     Returns:
         attn_output (torch.Tensor): [seqlen, head, head_dim]
     """
-    
+    head_group_size = q.shape[1] // k.shape[1]
+    if head_group_size > 1:
+        k = torch.repeat_interleave(k, head_group_size, dim=1)
+        v = torch.repeat_interleave(v, head_group_size, dim=1)
+
     # ---------------------------------------------------------------------------------------------
     kv = torch.stack((k, v), dim=1) # stack along a new dimension -> [S, 2, H, D]
 

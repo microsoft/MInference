@@ -33,15 +33,14 @@ def moba_attention_forward(
     seq_len = query.shape[2]
     moba_topk, moba_chunk_size = module.moba_topk, module.moba_chunk_size
     implementation = module.implementation
+    
     if implementation == "default":
         return wrapped_moba_func(
             query.transpose(1, 2), key.transpose(1, 2), value.transpose(1, 2),
             seq_len,
             moba_topk, moba_chunk_size,
-            attention_mask, dropout, scaling, sliding_window, softcap, **kwargs
         ), None
-    else:
-        
+    elif implementation == "zigzag":
         layer_idx = module.layer_idx
         return wrapped_moba_zigzag_func(
             query.transpose(1, 2), key.transpose(1, 2), value.transpose(1, 2),
@@ -50,19 +49,21 @@ def moba_attention_forward(
             layer_idx,
             attention_mask, dropout, scaling, sliding_window, softcap,
         ), None
+    else:
+        raise ValueError(f"Unsupported MoBA implementation: {implementation}. "
+                         f"Supported implementations are 'default' and 'zigzag'.")
+
 
 # ------------------------------------------
 def wrapped_moba_func(
     q: Tensor, k: Tensor, v: Tensor, 
     seq_len: int,
     moba_topk: int, moba_chunk_size: int,
-    **kwargs,
 ):
     return moba_attn_func(
         q, k, v,
         seq_len,
         moba_chunk_size, moba_topk,
-        **kwargs
     )
 
 def wrapped_moba_zigzag_func(
@@ -110,16 +111,16 @@ def wrapped_moba_zigzag_func(
 
 # --------------------------------------------------
 def moba_attn_anno(query_states, key_states, value_states, *args, **kwargs) -> str:
-    if query_states.shape[1] != key_states.shape[1]:
-        assert query_states.shape[1] % key_states.shape[1] == 0
-        group_size = query_states.shape[1] // key_states.shape[1]
-        assert query_states.shape[1] == value_states.shape[1] * group_size
+    if query_states.shape[2] != key_states.shape[2]:
+        assert query_states.shape[2] % key_states.shape[2] == 0
+        group_size = query_states.shape[2] // key_states.shape[2]
+        assert query_states.shape[2] == value_states.shape[2] * group_size
         q_anno = f'(group_num {group_size})'
         kv_anno = 'group_num'
     else:
         q_anno = kv_anno = 'num_heads'
 
-    return f'b {q_anno} l^ hd^, b {kv_anno} s^ hd^, b {kv_anno} s^ vd^, {q_anno} -> b l^ {q_anno} vd^'
+    return f'b l^ {q_anno} hd^, b s^ {kv_anno} hd^, b s^ {kv_anno} vd^ -> b l^ {q_anno} vd^'
 
 def moba_zigzag_attn_anno(query_states, key_states, value_states, *args, **kwargs) -> str:
     num_q_heads, num_kv_heads = query_states.shape[2], key_states.shape[2]
@@ -134,6 +135,7 @@ def moba_zigzag_attn_anno(query_states, key_states, value_states, *args, **kwarg
 
     attn_anno = f'b l {q_anno} hd^, b l {kv_anno} hd^, b l {kv_anno} vd^ -> b l {q_anno} vd^'
     return attn_anno
+
 
 def emit_moba_zigzag(node: IRFwOperation, args: List[str], kwargs: Dict[str, str], runtime_devid: int, plan_ndevs: int, runtime_ndevs: int) -> str:
     """Special rule to generate zigzag_attn node"""
@@ -170,7 +172,6 @@ def emit_moba_zigzag(node: IRFwOperation, args: List[str], kwargs: Dict[str, str
                 
     args = ", ".join(list(args) + kw_pairs)
     return f"{signature}({args})"
-    
 
 if __name__ != "__main__":
     register_op(moba_attn_anno)(wrapped_moba_func)

@@ -10,7 +10,7 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from minference.ops.utils import set_seed, check_correct_rate
+from minference.ops.utils import set_seed, check_by_correct_rate
 from minference.dist_ops.minfer_zigzag import minfer_zigzag_func
 from minference.dist_ops.minfer_striped import minfer_stripe_func
 from minference.dist_ops.minfer_dr_striped import minfer_dr_stripe_func
@@ -146,7 +146,7 @@ def _run_worker(
         ref_grads = (q_ref.grad, k_ref.grad, v_ref.grad)
         
         # ----------------- assertions ----------------------------------------
-        assert check_correct_rate(final_out, out_ref, ATOL=_ATOL, RTOL=_RTOL),\
+        assert check_by_correct_rate(final_out, out_ref, ATOL=_ATOL, RTOL=_RTOL),\
               "forward output mismatch"
         
         for got, ref, name in zip(
@@ -154,7 +154,7 @@ def _run_worker(
             ref_grads,
             ("Q-grad", "K-grad", "V-grad"),
         ):
-            assert check_correct_rate(got, ref, ATOL=_ATOL, RTOL=_RTOL),\
+            assert check_by_correct_rate(got, ref, ATOL=_ATOL, RTOL=_RTOL),\
                   f"{name} mismatch"
     dist.destroy_process_group()
 

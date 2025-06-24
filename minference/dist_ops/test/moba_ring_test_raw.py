@@ -198,10 +198,10 @@ if __name__ == "__main__":
     test_moba_kernels(
         seq_len=16384,
         batch_size=1,
-        head_dim=64,
+        head_dim=128,
         ones=False,
-        num_qkv_head_pair=(1, 1),
+        num_qkv_head_pair=(4, 1),
 
-        moba_chunk_size=512,
-        moba_topk=4,
+        moba_chunk_size=128,
+        moba_topk=8,
     )
