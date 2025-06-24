@@ -244,6 +244,10 @@ def vertical_slash_sparse_attention(
 def vertical_slash_sparse_attention_wo_pad(query, key, value, v_idx, s_idx, block_size_M: int = 64, block_size_N: int = 64):
     batch_size, num_heads, context_size, head_dim = query.shape
     seqlens = torch.tensor([context_size], dtype=torch.int32, device=query.device)
+    
+    v_idx = v_idx.to(torch.int32).reshape((batch_size, num_heads, -1)).sort(dim=-1, descending=False)[0]
+    s_idx = s_idx.to(torch.int32).reshape((batch_size, num_heads, -1)).sort(dim=-1, descending=True)[0]
+    
     block_count, block_offset, column_count, column_index = (
         convert_vertical_slash_indexes_opt(
             seqlens,
