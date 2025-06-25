@@ -184,6 +184,7 @@ def test_sparse_attention_kernels(
     num_qo_heads: int,
     num_kv_heads: int,
     attn_op_name: str,
+    use_triton: bool,
 ):
     """
     Compare every sparse kernel against the dense Flash-Attention reference on
@@ -225,4 +226,5 @@ if __name__ == "__main__":
         num_qo_heads=4,
         num_kv_heads=2,
         attn_op_name="minfer_zigzag",
+        use_triton=True
     )

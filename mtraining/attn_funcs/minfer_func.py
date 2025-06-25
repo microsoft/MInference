@@ -19,11 +19,11 @@ from nnscaler.ir import IRTensor
 from nnscaler.ir.operator import IRFwOperation
 
 from minference.ops.utils import use_triton
-from minference.ops.pit_sparse_flash_attention_v3 import minference_flash_attn_func
-from minference.ops.pit_sparse_flash_attention_v3_triton import minference_flash_attn_triton_func
+from minference.ops.pit_sparse_flash_attention_v3 import (
+    minference_flash_attn_func, minference_flash_attn_triton_func
+)
 from minference.dist_ops import (
-    minfer_stripe_func, minfer_stripe_triton_func,
-    minfer_zigzag_func, minfer_dr_stripe_func, minfer_dr_stripe_triton_func,
+    minfer_stripe_func, minfer_zigzag_func, minfer_dr_stripe_func,
 )
 
 
@@ -88,8 +88,6 @@ def minfer_stripe_op(
     q_len: int,
     head_dim: int,
     layer_idx: int,
-    
-  
     pattern_dict: Dict[int, Tuple[str, int, int, int]],
     attn_dropout: float=0.,
     granularity: int = 128,
@@ -108,38 +106,22 @@ def minfer_stripe_op(
 
     v_sizes = [pattern_dict[head_indices[idx].item()][1] for idx in range(query_states.size(1))]
     s_sizes = [pattern_dict[head_indices[idx].item()][2] for idx in range(query_states.size(1))]
-    if not use_triton():
-        attn_output = minfer_stripe_func(
-            query_states.transpose(1, 2).contiguous(),
-            key_states.transpose(1, 2).contiguous(),
-            value_states.transpose(1, 2).contiguous(),
-            v_sizes, s_sizes,
-            layer_idx,
-            attn_dropout,
-            softmax_scale=None,
-            granularity=granularity,
-            causal=True,
-            window_size=(-1, -1),
-            deterministic=False,
-            return_attn_probs=False,
-            group=group,
-        ) # expect:  b {q_anno} l^ vd^'
-    else:
-        attn_output = minfer_stripe_triton_func(
-            query_states.transpose(1, 2).contiguous(),
-            key_states.transpose(1, 2).contiguous(),
-            value_states.transpose(1, 2).contiguous(),
-            v_sizes, s_sizes,
-            layer_idx,
-            attn_dropout,
-            softmax_scale=None,
-            granularity=granularity,
-            causal=True,
-            window_size=(-1, -1),
-            deterministic=False,
-            return_attn_probs=False,
-            group=group,
-        )
+    attn_output = minfer_stripe_func(
+        query_states.transpose(1, 2).contiguous(),
+        key_states.transpose(1, 2).contiguous(),
+        value_states.transpose(1, 2).contiguous(),
+        v_sizes, s_sizes,
+        layer_idx,
+        attn_dropout,
+        softmax_scale=None,
+        granularity=granularity,
+        causal=True,
+        window_size=(-1, -1),
+        deterministic=False,
+        return_attn_probs=False,
+        group=group,
+    ) # expect:  b {q_anno} l^ vd^'
+   
     return attn_output.contiguous()
 
 
@@ -224,39 +206,21 @@ def minfer_dr_stripe_op(
     v_sizes = [pattern_dict[head_indices[idx].item()][1] for idx in range(query_states.size(1))]
     s_sizes = [pattern_dict[head_indices[idx].item()][2] for idx in range(query_states.size(1))]
 
-    if not use_triton():
-        attn_output = minfer_dr_stripe_func(
-            query_states.transpose(1, 2).contiguous(),
-            key_states.transpose(1, 2).contiguous(),
-            value_states.transpose(1, 2).contiguous(),
-            v_sizes, s_sizes,
-            layer_idx,
-            attn_dropout,
-            softmax_scale=None,
-            granularity=granularity,
-            causal=True,
-            window_size=(-1, -1),
-            deterministic=False,
-            return_attn_probs=False,
-            group=group,
-        ) # expect:  b {q_anno} l^ vd^'
-    else:
-        attn_output = minfer_dr_stripe_triton_func(
-            query_states.transpose(1, 2).contiguous(),
-            key_states.transpose(1, 2).contiguous(),
-            value_states.transpose(1, 2).contiguous(),
-            v_sizes, s_sizes,
-            layer_idx,
-            attn_dropout,
-            softmax_scale=None,
-            granularity=granularity,
-            causal=True,
-            window_size=(-1, -1),
-            deterministic=False,
-            return_attn_probs=False,
-            group=group,
-        )
-    
+    attn_output = minfer_dr_stripe_func(
+        query_states.transpose(1, 2).contiguous(),
+        key_states.transpose(1, 2).contiguous(),
+        value_states.transpose(1, 2).contiguous(),
+        v_sizes, s_sizes,
+        layer_idx,
+        attn_dropout,
+        softmax_scale=None,
+        granularity=granularity,
+        causal=True,
+        window_size=(-1, -1),
+        deterministic=False,
+        return_attn_probs=False,
+        group=group,
+    ) # expect:  b {q_anno} l^ vd^'
     return attn_output.contiguous()
 
 

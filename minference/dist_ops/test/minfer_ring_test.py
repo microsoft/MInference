@@ -165,6 +165,7 @@ def _run_worker(
 @pytest.mark.parametrize("head_dim",  [64, 128])
 @pytest.mark.parametrize("sparsity", [0.9, 0.95])
 @pytest.mark.parametrize("num_qkv_head_pair", [(4, 1), (4, 4)])
+@pytest.mark.parametrize("use_triton", [True, False])
 @pytest.mark.parametrize("attn_op_name",
     ["minfer_zigzag", "minfer_stripe", "minfer_dr_stripe"]
 )
@@ -174,6 +175,7 @@ def test_sparse_attention_kernels(
     head_dim: int,
     sparsity: float,
     num_qkv_head_pair: tuple[int, int],
+    use_triton: bool,
     attn_op_name: str,
 ):
     """
@@ -181,6 +183,12 @@ def test_sparse_attention_kernels(
     both forward pass and input-gradient w.r.t Q/K/V.
     """
     port = str(random.randint(12000, 20000))
+    if attn_op_name == "minfer_zigzag" and use_triton:
+        pytest.skip("minfer_zigzag is not implemented with the Triton path")
+
+    if use_triton:
+        os.environ['FORCE_TRITON'] = "1"
+
     cfg = SimpleNamespace(
         batch_size=batch_sz,
         seq_len=seq_len,
@@ -202,3 +210,5 @@ def test_sparse_attention_kernels(
         nprocs=_WORLD_SIZE,
         join=True,
     )
+
+    os.environ['FORCE_TRITON'] = "0"

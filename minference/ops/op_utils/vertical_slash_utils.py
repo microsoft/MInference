@@ -752,41 +752,6 @@ def build_index(
     )
     return block_mask, bar_idx, bar_cnt, bar_pos, v_idx, v_cnt
 
-
-def _build_mask_local(
-    q: torch.Tensor,  # [batch_size, num_tokens, num_qo_heads, head_dim]
-    k: torch.Tensor,  # [batch_size, num_tokens, num_kv_heads, head_dim]
-    v_size: List[int],
-    s_size: List[int],
-    num_tokens: int,
-    granularity: int,
-    world_size: int = 1,
-    rank: int = 0,
-):
-    with torch.no_grad():
-        block_mask, bar_idx, bar_cnt = build_index_local(q, k, v_size, s_size, num_tokens, granularity, world_size, rank)
-        batch_size, num_tokens, num_heads, head_dim = q.shape
-        num_blocks = block_mask.shape[-1]
-        num_tokens_pad = num_blocks * granularity
-        # Block Mask
-        mask = block_mask.unsqueeze(3).unsqueeze(5).repeat((1, 1, 1, granularity, 1, granularity))
-        mask = mask.reshape((batch_size, num_heads, num_tokens_pad, num_tokens_pad))
-        # Bar Mask
-        for batch_idx in range(batch_size):
-            for head_idx in range(num_heads):
-                for row_idx in range(num_blocks):
-                    row_u = row_idx * granularity
-                    row_d = row_u + granularity
-                    bar_l = bar_cnt[batch_idx, head_idx, row_idx, rank]
-                    bar_r = bar_cnt[batch_idx, head_idx, row_idx, rank + 1]
-                    for col_idx in bar_idx[batch_idx, head_idx, row_idx, bar_l:bar_r]:
-                        mask[batch_idx, head_idx, row_u:row_d, col_idx] = True
-        # Causal Mask
-        arange = torch.arange(0, num_tokens_pad, dtype=torch.int32, device=q.device)
-        mask.masked_fill_(arange[None, None, :, None] < arange[None, None, None, :], False)
-    return mask[:, :, :num_tokens, :num_tokens]
-
-
 def convert_blockmask(
     blockmask: torch.Tensor,  # [world_size, batch_size, num_heads, num_blocks, num_blocks]
     block_size_M: int,

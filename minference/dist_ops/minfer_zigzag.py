@@ -5,12 +5,10 @@ import torch.distributed as dist
 from typing import List, Tuple, Dict
 
 from .utils import (
-    RingComm,
-    shuffle_zigzag_input, recover_zigzag_output,
+    RingComm, shuffle_zigzag_input, recover_zigzag_output,
 )
 from minference.ops.op_utils.vertical_slash_utils import build_index, convert_blockmask
-from minference.ops.pit_sparse_flash_attention_v3_triton import block_bar_attn_fwd
-from minference.ops.pit_sparse_flash_attention_v3 import block_attn_bwd, bar_attn_bwd
+from minference.ops.pit_sparse_flash_attention_v3 import block_bar_attn_fwd, block_attn_bwd, bar_attn_bwd
 
 def minfer_zigzag_forward(
     process_group: dist.ProcessGroup,
