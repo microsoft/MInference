@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 pushd $(dirname "$0") > /dev/null
 
   pip install transformers

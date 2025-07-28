@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 import fire
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
