@@ -1,0 +1,11 @@
+flask
+flask_restful
+sshtunnel_requests
+tritonclient[all]
+wonderwords
+tenacity
+huggingface_hub
+causal-conv1d>=1.2.0
+mamba-ssm
+html2text
+google-generativeai
