@@ -99,12 +99,12 @@ torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/llama3.1-8b.yam
 torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/llama3.1-8b.yaml --stage2 
 
 # run double-stage training on Qwen2.5-7B-Instruct w/o Yarn
-torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml
-torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml --stage2 
-
-# run double-stage training on Qwen2.5-7B-Instruct w/ Yarn
 torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b.yaml
 torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b.yaml --stage2 
+
+# run double-stage training on Qwen2.5-7B-Instruct w/ Yarn
+torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml
+torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml --stage2 
 ```
 
 For Qwen w/ Yarn extrapolation, add the following to config.json for training and testing: 
