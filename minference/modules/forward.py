@@ -172,7 +172,7 @@ def attn_forward(
                 "position_ids": position_ids,
                 "num_key_value_groups": self.num_key_value_groups,
             }
-            if isinstance(past_key_value, LeanKCache):
+            if decoding_forward == leank_forward:
                 decoding_kwargs.update({
                     "last_length": self.last_length, 
                     "kernel": self.kernel, 

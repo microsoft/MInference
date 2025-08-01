@@ -157,5 +157,5 @@ python test_memory.py
 
 ### Acknowledgements
 
-This project incorporates code from [DuoAttention](https://github.com/mit-han-lab/duo-attention), [RULER](https://github.com/NVIDIA/RULER), [LongBench](https://github.com/THUDM/LongBench) and [Tile-Lang](https://github.com/tile-ai/tilelang). We deeply appreciate the contributions of the original authors.
+This project incorporates code from [Tile-Lang](https://github.com/tile-ai/tilelang), [DuoAttention](https://github.com/mit-han-lab/duo-attention), [RULER](https://github.com/NVIDIA/RULER) and [LongBench](https://github.com/THUDM/LongBench). We deeply appreciate the contributions of the original authors.
 
