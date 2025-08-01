@@ -28,6 +28,7 @@ from .modules.kvcompression import (
     method_to_cache_obj,
     prepare_inputs_for_generation_kvcompression,
 )
+from .modules.leank import patch_leank
 from .modules.minference_forward import (
     gather_last_q_vertical_slash_topk_v4,
     init_minference_parameters,

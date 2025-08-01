@@ -64,6 +64,10 @@ MODEL2PATH = {
     ),
 }
 
+LEANKPATNS = {
+    "Meta-Llama-3.1-8B-Instruct": os.path.join(BASE_DIR, "leank/llama3.1-8b-instruct.pth"),
+    "Qwen2.5-7B-Instruct": os.path.join(BASE_DIR, "leank/qwen2.5-7b-insturct.pth")
+}
 
 def get_support_models():
     return list(MODEL2PATH.keys())

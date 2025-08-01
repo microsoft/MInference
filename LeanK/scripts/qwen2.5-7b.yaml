@@ -1,0 +1,29 @@
+training:
+  stage1:
+    model_name: Qwen/Qwen2.5-7B-Instruct
+    batch_size: 1
+    context_length_min: 4000
+    context_length_max: 32000
+    reg_weight: 0.06
+    lr: 0.04
+    dataset_format: passkey_retrival_mixed_tasks
+    steps: 2000
+    context_lengths_num_intervals: 100
+    output_dir: patterns/qwen/stage1-lr=0.04-reg=0.06-ctx=4000_32000-data=passkey_retrival_mixed_tasks
+    exp_name: qwen-stage1-lr=0.02-reg=0.06-ctx=4000_32000-data=passkey_retrival_mixed_tasks
+  stage2:
+    model_name: Qwen/Qwen2.5-7B-Instruct
+    batch_size: 1
+    context_length_min: 4000
+    context_length_max: 32000
+    reg_weight: 0.
+    lr: 0.02
+    dataset_format: passkey_retrival_mixed_tasks
+    steps: 200
+    context_lengths_num_intervals: 100
+    align: 32
+    ratio: 0.6
+    stage1_rst_path: patterns/qwen/stage1-lr=0.04-reg=0.06-ctx=4000_32000-data=passkey_retrival_mixed_tasks
+    output_dir: patterns/qwen/stage2-lr=0.02-reg=0-ctx=4000_32000-data=passkey_retrival_mixed_tasks
+    exp_name: qwen-stage2-lr=0.02-reg=0-ctx=4000_32000-data=passkey_retrival_mixed_tasks-align=32-ratio=0.6
+

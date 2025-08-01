@@ -15,6 +15,7 @@ from .pyramidkv import PyramidKVCluster
 from .quest import *
 from .retr_attn import RetrAttnCache
 from .snapkv import SnapKVCluster, StreamingLLMKVCluster
+from .leank import LeanKCache
 
 
 def prepare_inputs_for_generation_kvcompression(
@@ -458,4 +459,5 @@ method_to_cache_obj = {
     "quest": DynamicCacheWithRepeat,
     "retr_attn": RetrAttnCache,
     "kivi": KiviCache,
+    "leank": LeanKCache,
 }

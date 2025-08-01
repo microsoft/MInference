@@ -1,7 +1,7 @@
 # Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
-from .configs.model2path import MODEL2PATH
+from .configs.model2path import MODEL2PATH, LEANKPATNS
 
 
 class MInferenceConfig:
@@ -37,6 +37,7 @@ class MInferenceConfig:
         "quest",
         "retr_attn",
         "kivi",
+        "leank",
     ]
 
     def __init__(
@@ -77,6 +78,9 @@ class MInferenceConfig:
             "config_path": config_path,
             **attn_kwargs,
         }
+        if kv_type == "leank":
+            model_name = model_name.split("/")[-1]
+            self.leank_path = LEANKPATNS[model_name]
 
     def update_config_path(self, config_path: str = None, model_name: str = None):
         if self.attn_type in self.OTHER_ATTENTION_TYPES:

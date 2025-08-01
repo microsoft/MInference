@@ -30,6 +30,7 @@ from .flexprefill import flexprefill_forward
 from .kvcompression import *
 from .quest import quest_forward
 from .snapkv import *
+from .leank import *
 
 try:
     from flash_attn import flash_attn_func
@@ -784,6 +785,7 @@ def kvcompress_forward(
         "streaming": snapkv_forward,
         "quest": quest_forward,
         "dense": snapkv_forward,
+        "leank": leank_forward,
     }
 
     return forward_map[method]
