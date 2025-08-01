@@ -10,7 +10,7 @@ training:
     steps: 2000
     context_lengths_num_intervals: 100
     output_dir: patterns/qwen/stage1-lr=0.04-reg=0.06-ctx=4000_32000-data=passkey_retrival_mixed_tasks
-    exp_name: qwen-stage1-lr=0.02-reg=0.06-ctx=4000_32000-data=passkey_retrival_mixed_tasks
+    exp_name: qwen-stage1-lr=0.04-reg=0.06-ctx=4000_32000-data=passkey_retrival_mixed_tasks
   stage2:
     model_name: Qwen/Qwen2.5-7B-Instruct
     batch_size: 1
