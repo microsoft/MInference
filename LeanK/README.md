@@ -151,8 +151,8 @@ python test_memory.py
 | Method | Seq_len | Batch_size | Gen_time | Max_memory | KV_size |
 | --- | --- | --- | --- | --- | --- | 
 | HF | 4096 | 52 | 47.27 | 64.64 | 26.80 |
-| LeanK | 4096 | 52 | 38.32 | 60.32 | 20.43 |
-| LeanK | 4096 | 64 (1.2x larger) | 47.62 | 70.79 | 25.14 |
+| LeanK | 4096 | 52 | 38.32 | 57.27 | 20.43 |
+| LeanK | 4096 | 64 (1.2x larger) | 47.62 | 67.03 | 25.14 |
 
 Tilelang 0.1.5 added requirements on contiguous inputs, resulting in additional processing on KV cache before decoding and at each updating step. That's why the throughput reported here are lower than in the paper.  
 
