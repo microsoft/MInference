@@ -101,6 +101,7 @@ class LeanKCache(DynamicCache):
         # value caches
         self.value_cache_full = []
         self.value_cache_mid = []
+        self.mid_seq_len = -1
         import gc; gc.collect() # fix tilelang kernel compile related issues
     
     def update(self, key_states, value_states, layer_idx, mask, boundaries, counts, cache_kwargs):
@@ -121,6 +122,8 @@ class LeanKCache(DynamicCache):
                     self.key_cache_mid[layer_idx][count] = mask_channels_key(key_states[:, l:r, self.sink_size: - self.recent_size], mask[l:r], count).contiguous()
                     self.value_cache_mid[layer_idx][count] = value_states[:, l:r, self.sink_size: -self.recent_size].contiguous()
                     l = r
+                
+                self.mid_seq_len = value_states.shape[-2] - self.full_size
 
             else:
                 self.key_cache_full[layer_idx] = torch.cat([self.key_cache_full[layer_idx], key_states], dim=-2)
@@ -140,6 +143,8 @@ class LeanKCache(DynamicCache):
                                                                             self.value_cache_full[layer_idx][:,l:r, self.sink_size : -self.recent_size]), dim=-2).contiguous()
                         l = r
                     
+                    self.mid_seq_len += self.accumu_size
+                    
                     self.key_cache_full[layer_idx] = torch.cat((self.key_cache_full[layer_idx][:, :, :self.sink_size], self.key_cache_full[layer_idx][:, :, -self.recent_size:]), dim=-2)
         
         torch.cuda.empty_cache()
@@ -152,9 +157,7 @@ class LeanKCache(DynamicCache):
         )
         if is_empty_layer:
             return 0
-        for layer_id in range(len(self.key_cache_full)):
-            for i in self.key_cache_mid[layer_id].keys():
-                return self.value_cache_full[layer_id].shape[-2] + self.value_cache_mid[layer_id][i].shape[-2]
+        return self.value_cache_full[layer_idx].shape[-2] + self.mid_seq_len
 
 def leank_forward(
     query_states: torch.Tensor,
