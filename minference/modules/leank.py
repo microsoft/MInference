@@ -1,18 +1,12 @@
-# Copyright (c) 2025 Microsoft
-# Licensed under The MIT License [see LICENSE for details]
-
 from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
-from transformers.cache_utils import DynamicCache, Cache
+from transformers.cache_utils import DynamicCache
 from transformers.processing_utils import Unpack
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
-from typing import Union, List, Optional, Tuple
-import types
-import time
+from typing import Union, List, Optional
 import torch
 import tilelang
 import tilelang.language as T
-from transformers.modeling_outputs import BaseModelOutputWithPast
 try:
     from minference.ops.leank_flash_decoding import leank_flashattn
 except:
@@ -70,7 +64,7 @@ def mask_channels_key(key_states, mask, remained_count):
     bs, nh, seq_len, dim = key_states.shape
     return key_states.transpose(1, 2) \
                     .reshape(bs, seq_len, dim * nh)[..., mask.flatten().bool()] \
-                    .reshape(bs, seq_len, nh, remained_count)
+                    .reshape(bs, seq_len, nh, remained_count).transpose(1, 2)
       
                     
 def mask_channels_query(query_states, mask, remained_count):
@@ -118,14 +112,15 @@ class LeanKCache(DynamicCache):
                 self.value_cache_full.append(torch.cat((value_states[:, :, :self.sink_size], value_states[:, :, -self.recent_size:]), dim=-2))
                 
                 self.key_cache_mid.append({})
+                self.value_cache_mid.append({})
                 
                 l, r = boundaries[0], -1
                 for boundary, count in zip(boundaries[1:], counts[1:]):
                     r = boundary
-                    self.key_cache_mid[layer_idx][count] = mask_channels_key(key_states[:, l:r, self.sink_size: - self.recent_size], mask[l:r], count)
+                    # Tilelang 0.1.5 requires contiguous inputs
+                    self.key_cache_mid[layer_idx][count] = mask_channels_key(key_states[:, l:r, self.sink_size: - self.recent_size], mask[l:r], count).contiguous()
+                    self.value_cache_mid[layer_idx][count] = value_states[:, l:r, self.sink_size: -self.recent_size].contiguous()
                     l = r
-                
-                self.value_cache_mid.append(value_states[:, boundaries[0]:, self.sink_size: -self.recent_size])
 
             else:
                 self.key_cache_full[layer_idx] = torch.cat([self.key_cache_full[layer_idx], key_states], dim=-2)
@@ -133,8 +128,6 @@ class LeanKCache(DynamicCache):
 
                 if self.key_cache_full[layer_idx].shape[-2] >= self.full_size + self.accumu_size:
                     
-                    self.value_cache_mid[layer_idx] = torch.cat((self.value_cache_mid[layer_idx], 
-                                                                 self.value_cache_full[layer_idx][:, boundaries[0]:, self.sink_size : -self.recent_size]), dim=-2)
                     self.value_cache_full[layer_idx] = torch.cat((self.value_cache_full[layer_idx][:, :, : self.sink_size], 
                                                                   self.value_cache_full[layer_idx][:, :, -self.recent_size :]), dim=-2)
                     
@@ -142,11 +135,12 @@ class LeanKCache(DynamicCache):
                     for boundary, count in zip(boundaries[1:], counts[1:]):
                         r = boundary
                         self.key_cache_mid[layer_idx][count] = torch.cat((self.key_cache_mid[layer_idx][count], 
-                                                                    mask_channels_key(self.key_cache_full[layer_idx][:, l:r, self.sink_size: - self.recent_size], mask[l:r], count)), dim=1)
+                                                                    mask_channels_key(self.key_cache_full[layer_idx][:, l:r, self.sink_size: - self.recent_size], mask[l:r], count)), dim=2).contiguous()
+                        self.value_cache_mid[layer_idx][count] = torch.cat((self.value_cache_mid[layer_idx][count],
+                                                                            self.value_cache_full[layer_idx][:,l:r, self.sink_size : -self.recent_size]), dim=-2).contiguous()
                         l = r
                     
-                    self.key_cache_full[layer_idx] = torch.cat((self.key_cache_full[layer_idx][:, :, :self.sink_size], 
-                                                                self.key_cache_full[layer_idx][:, :, -self.recent_size:]), dim=-2)
+                    self.key_cache_full[layer_idx] = torch.cat((self.key_cache_full[layer_idx][:, :, :self.sink_size], self.key_cache_full[layer_idx][:, :, -self.recent_size:]), dim=-2)
         
         torch.cuda.empty_cache()
         return self.key_cache_full[layer_idx], self.key_cache_mid[layer_idx], self.value_cache_mid[layer_idx], self.value_cache_full[layer_idx]
@@ -158,11 +152,10 @@ class LeanKCache(DynamicCache):
         )
         if is_empty_layer:
             return 0
-        return self.value_cache_full[layer_idx].shape[-2] + self.value_cache_mid[layer_idx].shape[-2]
+        for layer_id in range(len(self.key_cache_full)):
+            for i in self.key_cache_mid[layer_id].keys():
+                return self.value_cache_full[layer_id].shape[-2] + self.value_cache_mid[layer_id][i].shape[-2]
 
-    def get_mid_length(self, layer_idx: Optional[int] = 0) -> int:
-        return self.value_cache_mid[layer_idx].shape[-2]
-    
 def leank_forward(
     query_states: torch.Tensor,
     key_states_full: torch.Tensor,
@@ -181,7 +174,7 @@ def leank_forward(
     if len(key_states_mid) == 0:
         kv_seqlen = 0
     else:
-        kv_seqlen = value_states_mid.shape[-2]
+        kv_seqlen = next(iter(key_states_mid.items()))[1].shape[-2]
         maskmid = torch.ones((bsz, kv_seqlen), dtype=torch.uint8, device=device)
         
     need_compile = False
@@ -217,8 +210,8 @@ def leank_forward(
     for boundary, count in zip(boundaries[1:], counts[1:]):
         r = boundary
         args.append(mask_channels_query(query_states[:, l * heads_per_group: r * heads_per_group, 0], kwargs["full_attn_channels"][l:r], count))
-        args.append(key_states_mid[count].transpose(1, 2).contiguous())
-        args.append(value_states_mid[:, l-boundaries[0]:r-boundaries[0]].contiguous())
+        args.append(key_states_mid[count])
+        args.append(value_states_mid[count])
         args.append(glse[:, l * heads_per_group: r * heads_per_group].contiguous())
         args.append(Output_partial[:, l * heads_per_group: r * heads_per_group].contiguous())
         number_groups.append(r - l)
