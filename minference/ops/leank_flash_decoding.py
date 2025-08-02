@@ -55,11 +55,11 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
     kv_group_num = heads // groups
 
     def kernel_func(block_N, block_H, num_split, num_stages, threads):
-        part_shape = [batch, heads, num_split + 1, dim]
-        part_shape1 = [batch, heads1, num_split + 1, dim]
-        part_shape2 = [batch, heads2, num_split + 1, dim]
-        part_shape3 = [batch, heads3, num_split + 1, dim]
-        part_shape4 = [batch, heads - heads1 - heads2 - heads3, num_split + 1, dim]
+        part_shape = [heads, batch, num_split + 1, dim]
+        part_shape1 = [heads1, batch, num_split + 1, dim]
+        part_shape2 = [heads2, batch, num_split + 1, dim]
+        part_shape3 = [heads3, batch, num_split + 1, dim]
+        part_shape4 = [heads - heads1 - heads2 - heads3, batch, num_split + 1, dim]
         valid_block_H = min(block_H, kv_group_num)
 
         @T.macro
@@ -68,7 +68,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K: T.Tensor(shape_k1, dtype),
                 V: T.Tensor(shape_v1, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
-                glse1: T.Tensor([batch, heads1, num_split + 1], dtype),
+                glse1: T.Tensor([heads1, batch, num_split + 1], dtype),
                 Output_partial1: T.Tensor(part_shape1, dtype),
         ):
             with T.Kernel(
@@ -150,10 +150,10 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
 
                     for i in T.Parallel(block_H):
                         if i < valid_block_H:
-                            glse1[bid, hid * valid_block_H + i, sid] = logsum[i]
+                            glse1[hid * valid_block_H + i, bid, sid] = logsum[i]
                     T.copy(acc_o[:valid_block_H, :], O_shared)
-                    T.copy(O_shared, Output_partial1[bid, hid * valid_block_H:(hid + 1) * valid_block_H,
-                                                    sid, :])
+                    T.copy(O_shared, Output_partial1[hid * valid_block_H:(hid + 1) * valid_block_H,
+                                                    sid, bid, :])
 
         @T.macro
         def flash_attn_split2(
@@ -161,7 +161,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K2: T.Tensor(shape_k2, dtype),
                 V2: T.Tensor(shape_v2, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
-                glse2: T.Tensor([batch, heads2, num_split + 1], dtype),
+                glse2: T.Tensor([heads2, batch, num_split + 1], dtype),
                 Output_partial2: T.Tensor(part_shape2, dtype),
         ):
             with T.Kernel(
@@ -243,10 +243,10 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
 
                     for i in T.Parallel(block_H):
                         if i < valid_block_H:
-                            glse2[bid, hid * valid_block_H + i, sid] = logsum[i]
+                            glse2[hid * valid_block_H + i, bid, sid] = logsum[i]
                     T.copy(acc_o[:valid_block_H, :], O_shared)
-                    T.copy(O_shared, Output_partial2[bid, hid * valid_block_H:(hid + 1) * valid_block_H,
-                                                    sid, :])
+                    T.copy(O_shared, Output_partial2[hid * valid_block_H:(hid + 1) * valid_block_H,
+                                                    sid, bid, :])
         
         @T.macro
         def flash_attn_split3(
@@ -254,7 +254,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K3: T.Tensor(shape_k3, dtype),
                 V3: T.Tensor(shape_v3, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
-                glse3: T.Tensor([batch, heads3, num_split + 1], dtype),
+                glse3: T.Tensor([heads3, batch, num_split + 1], dtype),
                 Output_partial3: T.Tensor(part_shape3, dtype),
         ):
             with T.Kernel(
@@ -336,10 +336,10 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
 
                     for i in T.Parallel(block_H):
                         if i < valid_block_H:
-                            glse3[bid, hid * valid_block_H + i, sid] = logsum[i]
+                            glse3[hid * valid_block_H + i, bid, sid] = logsum[i]
                     T.copy(acc_o[:valid_block_H, :], O_shared)
-                    T.copy(O_shared, Output_partial3[bid, hid * valid_block_H:(hid + 1) * valid_block_H,
-                                                    sid, :])
+                    T.copy(O_shared, Output_partial3[hid * valid_block_H:(hid + 1) * valid_block_H,
+                                                    sid, bid, :])
                 
         @T.macro
         def flash_attn_split4(
@@ -347,7 +347,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K4: T.Tensor(shape_k4, dtype),
                 V4: T.Tensor(shape_v4, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
-                glse4: T.Tensor([batch, heads - heads1 - heads2 - heads3, num_split + 1], dtype),
+                glse4: T.Tensor([heads - heads1 - heads2 - heads3, batch, num_split + 1], dtype),
                 Output_partial4: T.Tensor(part_shape4, dtype),
         ):
             with T.Kernel(
@@ -429,10 +429,10 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
 
                     for i in T.Parallel(block_H):
                         if i < valid_block_H:
-                            glse4[bid, hid * valid_block_H + i, sid] = logsum[i]
+                            glse4[hid * valid_block_H + i, bid, sid] = logsum[i]
                     T.copy(acc_o[:valid_block_H, :], O_shared)
-                    T.copy(O_shared, Output_partial4[bid, hid * valid_block_H: (hid + 1) * valid_block_H,
-                                                    sid, :])
+                    T.copy(O_shared, Output_partial4[hid * valid_block_H: (hid + 1) * valid_block_H,
+                                                    sid, bid, :])
         
         @T.macro
         def flash_attn_split_full(
@@ -440,7 +440,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K_full: T.Tensor(shape_full_k, dtype),
                 V_full: T.Tensor(shape_full_v, dtype),
                 mask: T.Tensor([batch, true_full_len], "uint8"),
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
         ):
             with T.Kernel(
@@ -517,14 +517,14 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
 
                 for i in T.Parallel(block_H):
                     if i < valid_block_H:
-                        glse[bid, hid * valid_block_H + i, sid] = logsum[i]
+                        glse[hid * valid_block_H + i, bid, sid] = logsum[i]
                 T.copy(acc_o[:valid_block_H, :], O_shared)
-                T.copy(O_shared, Output_partial[bid, hid * valid_block_H:(hid + 1) * valid_block_H,
-                                                sid, :])
+                T.copy(O_shared, Output_partial[hid * valid_block_H:(hid + 1) * valid_block_H,
+                                                sid, bid, :])
 
         @T.macro
         def combine(
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
                 Output: T.Tensor(shape_o, dtype),
         ):
@@ -549,16 +549,16 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 T.clear(lse_logsum_local)
                 T.clear(o_accum_local)
                 for k, j in T.Parallel(num_split + 1, 128):
-                    lse_local[k, j] = glse[bz, by, k]
+                    lse_local[k, j] = glse[by, bz, k]
                 T.reduce_max(lse_local, lse_max_local, dim=0, clear=True)
                 for k in T.Pipelined(num_split + 1, num_stages=1):
-                    lse_local_split[0] = glse[bz, by, k]
+                    lse_local_split[0] = glse[by, bz, k]
                     lse_logsum_local[0] += T.exp2(lse_local_split[0] - lse_max_local[0])
                 lse_logsum_local[0] = T.log2(lse_logsum_local[0]) + lse_max_local[0]
                 for k in T.serial(num_split + 1):
                     for i in T.Parallel(dim):
-                        po_local[i] = Output_partial[bz, by, k, i]
-                    lse_local_split[0] = glse[bz, by, k]
+                        po_local[i] = Output_partial[by, bz, k, i]
+                    lse_local_split[0] = glse[by, bz, k]
                     scale_local[0] = T.exp2(lse_local_split[0] - lse_logsum_local[0])
                     for i in T.Parallel(dim):
                         o_accum_local[i] += po_local[i] * scale_local[0]
@@ -571,7 +571,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K_full: T.Tensor(shape_full_k, dtype),
                 V_full: T.Tensor(shape_full_v, dtype),
                 mask: T.Tensor([batch, true_full_len], "uint8"),
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
                 Output: T.Tensor(shape_o, dtype),
         ):
@@ -584,12 +584,12 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K_full: T.Tensor(shape_full_k, dtype),
                 V_full: T.Tensor(shape_full_v, dtype),
                 mask: T.Tensor([batch, true_full_len], "uint8"),
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
                 Q: T.Tensor(shape_q1, dtype),
                 K: T.Tensor(shape_k1, dtype),
                 V: T.Tensor(shape_v1, dtype),
-                glse1: T.Tensor([batch, heads1, num_split + 1], dtype),
+                glse1: T.Tensor([heads1, batch, num_split + 1], dtype),
                 Output_partial1: T.Tensor(part_shape1, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
@@ -604,17 +604,17 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K_full: T.Tensor(shape_full_k, dtype),
                 V_full: T.Tensor(shape_full_v, dtype),
                 mask: T.Tensor([batch, true_full_len], "uint8"),
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
                 Q: T.Tensor(shape_q1, dtype),
                 K: T.Tensor(shape_k1, dtype),
                 V: T.Tensor(shape_v1, dtype),
-                glse1: T.Tensor([batch, heads1, num_split + 1], dtype),
+                glse1: T.Tensor([heads1, batch, num_split + 1], dtype),
                 Output_partial1: T.Tensor(part_shape1, dtype),
                 Q2: T.Tensor(shape_q2, dtype),
                 K2: T.Tensor(shape_k2, dtype),
                 V2: T.Tensor(shape_v2, dtype),
-                glse2: T.Tensor([batch, heads2, num_split + 1], dtype),
+                glse2: T.Tensor([heads2, batch, num_split + 1], dtype),
                 Output_partial2: T.Tensor(part_shape2, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
@@ -630,22 +630,22 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K_full: T.Tensor(shape_full_k, dtype),
                 V_full: T.Tensor(shape_full_v, dtype),
                 mask: T.Tensor([batch, true_full_len], "uint8"),
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
                 Q: T.Tensor(shape_q1, dtype),
                 K: T.Tensor(shape_k1, dtype),
                 V: T.Tensor(shape_v1, dtype),
-                glse1: T.Tensor([batch, heads1, num_split + 1], dtype),
+                glse1: T.Tensor([heads1, batch, num_split + 1], dtype),
                 Output_partial1: T.Tensor(part_shape1, dtype),
                 Q2: T.Tensor(shape_q2, dtype),
                 K2: T.Tensor(shape_k2, dtype),
                 V2: T.Tensor(shape_v2, dtype),
-                glse2: T.Tensor([batch, heads2, num_split + 1], dtype),
+                glse2: T.Tensor([heads2, batch, num_split + 1], dtype),
                 Output_partial2: T.Tensor(part_shape2, dtype),
                 Q3: T.Tensor(shape_q3, dtype),
                 K3: T.Tensor(shape_k3, dtype),
                 V3: T.Tensor(shape_v3, dtype),
-                glse3: T.Tensor([batch, heads3, num_split + 1], dtype),
+                glse3: T.Tensor([heads3, batch, num_split + 1], dtype),
                 Output_partial3: T.Tensor(part_shape3, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
@@ -662,27 +662,27 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K_full: T.Tensor(shape_full_k, dtype),
                 V_full: T.Tensor(shape_full_v, dtype),
                 mask: T.Tensor([batch, true_full_len], "uint8"),
-                glse: T.Tensor([batch, heads, num_split + 1], dtype),
+                glse: T.Tensor([heads, batch, num_split + 1], dtype),
                 Output_partial: T.Tensor(part_shape, dtype),
                 Q: T.Tensor(shape_q1, dtype),
                 K: T.Tensor(shape_k1, dtype),
                 V: T.Tensor(shape_v1, dtype),
-                glse1: T.Tensor([batch, heads1, num_split + 1], dtype),
+                glse1: T.Tensor([heads1, batch, num_split + 1], dtype),
                 Output_partial1: T.Tensor(part_shape1, dtype),
                 Q2: T.Tensor(shape_q2, dtype),
                 K2: T.Tensor(shape_k2, dtype),
                 V2: T.Tensor(shape_v2, dtype),
-                glse2: T.Tensor([batch, heads2, num_split + 1], dtype),
+                glse2: T.Tensor([heads2, batch, num_split + 1], dtype),
                 Output_partial2: T.Tensor(part_shape2, dtype),
                 Q3: T.Tensor(shape_q3, dtype),
                 K3: T.Tensor(shape_k3, dtype),
                 V3: T.Tensor(shape_v3, dtype),
-                glse3: T.Tensor([batch, heads3, num_split + 1], dtype),
+                glse3: T.Tensor([heads3, batch, num_split + 1], dtype),
                 Output_partial3: T.Tensor(part_shape3, dtype),
                 Q4: T.Tensor(shape_q4, dtype),
                 K4: T.Tensor(shape_k4, dtype),
                 V4: T.Tensor(shape_v4, dtype),
-                glse4: T.Tensor([batch, heads - heads1 - heads2 - heads3, num_split + 1], dtype),
+                glse4: T.Tensor([heads - heads1 - heads2 - heads3, batch, num_split + 1], dtype),
                 Output_partial4: T.Tensor(part_shape4, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),

@@ -154,8 +154,6 @@ python test_memory.py
 | LeanK | 4096 | 52 | 38.32 | 57.27 | 20.43 |
 | LeanK | 4096 | 64 (1.2x larger) | 47.62 | 67.03 | 25.14 |
 
-Tilelang 0.1.5 added requirements on contiguous inputs, resulting in additional processing on KV cache before decoding and at each updating step. That's why the throughput reported here are lower than in the paper.  
-
 ### Acknowledgements
 
 This project incorporates code from [Tile-Lang](https://github.com/tile-ai/tilelang), [DuoAttention](https://github.com/mit-han-lab/duo-attention), [RULER](https://github.com/NVIDIA/RULER) and [LongBench](https://github.com/THUDM/LongBench). We deeply appreciate the contributions of the original authors.
