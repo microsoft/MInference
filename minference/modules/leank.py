@@ -193,8 +193,8 @@ def leank_forward(
         mask = kwargs["attention_mask"].to(torch.uint8)
     else:
         mask = torch.ones((bsz, full_kvlen), dtype=torch.uint8, device=device)
-    glse = torch.full((nh, bsz, num_split + 1), -torch.inf, dtype=dtype, device=device)
-    Output_partial = torch.zeros(nh, bsz, num_split + 1, dim, dtype=dtype, device=device)
+    glse = torch.full((bsz, nh, num_split + 1), -torch.inf, dtype=dtype, device=device)
+    Output_partial = torch.zeros(bsz, nh, num_split + 1, dim, dtype=dtype, device=device)
     
     args = []
     number_groups = []
@@ -215,8 +215,8 @@ def leank_forward(
         args.append(mask_channels_query(query_states[:, l * heads_per_group: r * heads_per_group, 0], kwargs["full_attn_channels"][l:r], count))
         args.append(key_states_mid[count])
         args.append(value_states_mid[count])
-        args.append(glse[l * heads_per_group: r * heads_per_group])
-        args.append(Output_partial[l * heads_per_group: r * heads_per_group])
+        args.append(glse[:, l * heads_per_group: r * heads_per_group].contiguous())
+        args.append(Output_partial[:, l * heads_per_group: r * heads_per_group].contiguous())
         number_groups.append(r - l)
         l = r
         
