@@ -27,7 +27,7 @@ def get_configs():
     } for c in _configs]
     return configs
 
-def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, groups2, groups3, seqlen_kv, true_seq_len, seqlen_fullkv, true_full_len, dim, dim1, dim2, dim3, ndim, dtype, tune=False):
+def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups1, groups2, groups3, groups4, seqlen_kv, true_seq_len, seqlen_fullkv, true_full_len, dim, dim1, dim2, dim3, dim4, ndim, dtype, tune=False):
     scale = (1.0 / dim)**0.5 * 1.44269504  # log2(e)
     shape_q1 = [batch, heads1, dim1]
     shape_k1 = [batch, groups1, true_seq_len, dim1]
@@ -41,9 +41,9 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
     shape_k3 = [batch, groups3, true_seq_len, dim3]
     shape_v3 = [batch, groups3, true_seq_len, dim]
     
-    shape_q4 = [batch, heads3, dim]
-    shape_k4 = [batch, groups3, true_seq_len, dim]
-    shape_v4 = [batch, groups3, true_seq_len, dim]
+    shape_q4 = [batch, heads4, dim]
+    shape_k4 = [batch, groups4, true_seq_len, dim4]
+    shape_v4 = [batch, groups4, true_seq_len, dim]
     
     shape_full_q = [batch, heads, dim]
     shape_full_k = [batch, groups, true_full_len, dim]
@@ -59,7 +59,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
         part_shape1 = [batch, heads1, num_split + 1, dim]
         part_shape2 = [batch, heads2, num_split + 1, dim]
         part_shape3 = [batch, heads3, num_split + 1, dim]
-        part_shape4 = [batch, heads - heads1 - heads2 - heads3, num_split + 1, dim]
+        part_shape4 = [batch, heads4, num_split + 1, dim]
         valid_block_H = min(block_H, kv_group_num)
 
         @T.macro
@@ -347,13 +347,13 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 K4: T.Tensor(shape_k4, dtype),
                 V4: T.Tensor(shape_v4, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
-                glse4: T.Tensor([batch, heads - heads1 - heads2 - heads3, num_split + 1], dtype),
+                glse4: T.Tensor([batch, heads4, num_split + 1], dtype),
                 Output_partial4: T.Tensor(part_shape4, dtype),
         ):
             with T.Kernel(
                     batch, heads1 // valid_block_H, num_split, threads=threads) as (bx, by, bz):
-                Q_shared = T.alloc_shared([block_H, dim3], dtype)
-                K_shared = T.alloc_shared([block_N, dim3], dtype)
+                Q_shared = T.alloc_shared([block_H, dim4], dtype)
+                K_shared = T.alloc_shared([block_N, dim4], dtype)
                 V_shared = T.alloc_shared([block_N, dim], dtype)
                 O_shared = T.alloc_shared([valid_block_H, dim], dtype)
                 acc_s = T.alloc_fragment([block_H, block_N], accum_dtype)
@@ -682,7 +682,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, groups, groups1, group
                 Q4: T.Tensor(shape_q4, dtype),
                 K4: T.Tensor(shape_k4, dtype),
                 V4: T.Tensor(shape_v4, dtype),
-                glse4: T.Tensor([batch, heads - heads1 - heads2 - heads3, num_split + 1], dtype),
+                glse4: T.Tensor([batch, heads4, num_split + 1], dtype),
                 Output_partial4: T.Tensor(part_shape4, dtype),
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),

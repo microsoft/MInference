@@ -96,8 +96,8 @@ def main(batch: int = 1,
             l = r
         
         n_groups = len(number_groups)
-        if n_groups < 3:
-            number_groups += [0] * (3 - n_groups)
+        if n_groups < 4:
+            number_groups += [0] * (4 - n_groups)
         
         kernel_kwargs = [batch, heads]
         kernel_kwargs += [i * heads_per_group for i in number_groups]
@@ -105,8 +105,8 @@ def main(batch: int = 1,
         kernel_kwargs += number_groups
         kernel_kwargs += [kv_seqlen, kv_seqlen, kv_fulllen, kv_fulllen, dim]
         kernel_kwargs += counts[1:]
-        if n_groups < 3:
-            kernel_kwargs += [0] * (3 - n_groups)
+        if n_groups < 4:
+            kernel_kwargs += [0] * (4 - n_groups)
         kernel_kwargs += [n_groups]
         kernel_kwargs += ["bfloat16"]
         

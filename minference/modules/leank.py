@@ -223,8 +223,8 @@ def leank_forward(
     n_groups = len(number_groups)
     if n_groups > 0:
         args.append(maskmid)
-    if n_groups < 3:
-        number_groups += [0] * (3 - n_groups)
+    if n_groups < 4:
+        number_groups += [0] * (4 - n_groups)
     
     kernel_kwargs = [T.symbolic("batch"), nh]
     kernel_kwargs += [i * heads_per_group for i in number_groups]
@@ -232,8 +232,8 @@ def leank_forward(
     kernel_kwargs += number_groups
     kernel_kwargs += [last_length, T.symbolic("cur_len"), kwargs["full_size"], T.symbolic("cur_full_len"), dim]
     kernel_kwargs += counts[1:]
-    if n_groups < 3:
-        kernel_kwargs += [0] * (3 - n_groups)
+    if n_groups < 4:
+        kernel_kwargs += [0] * (4 - n_groups)
     kernel_kwargs += [n_groups]
     kernel_kwargs += ["float16" if dtype == torch.float16 else "bfloat16"]
     
