@@ -13,9 +13,9 @@ from ..modules.kivi import kivi_forward
 from ..modules.minference_forward import minference_prefill_forward
 from ..modules.quest import quest_decode_kernel
 from ..modules.retr_attn import retr_attn
+from ..modules.tri_mix import tri_mix_forward, tri_mix_minference_forward
 from ..modules.xattention import xattention_forward
 from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
-from ..modules.tri_mix import tri_mix_forward, tri_mix_minference_forward
 
 
 def attn_forward(
@@ -34,6 +34,7 @@ def attn_forward(
     decoding_forward=None,
     customized_rope_func=None,
     attn_forward_config=None,
+    **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     output_attentions = False
 

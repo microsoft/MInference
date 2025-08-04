@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 from __future__ import annotations
@@ -1292,7 +1292,7 @@ class GreedySearch:
             use_cache=True,
             return_dict=True,
             past_key_values=past_key_values,
-            num_logits_to_keep=1,
+            logits_to_keep=1,
         )
         _, past_key_values = out.logits, out.past_key_values
 
@@ -1336,7 +1336,7 @@ class GreedySearch:
                     use_cache=True,
                     return_dict=True,
                     past_key_values=past_key_values,
-                    num_logits_to_keep=1,
+                    logits_to_keep=1,
                 )
                 logits, past_key_values = out.logits, out.past_key_values
 
@@ -1423,7 +1423,7 @@ class GreedySearch_RetrAttn(GreedySearch):
                             use_cache=True,
                             return_dict=True,
                             past_key_values=past_key_values,
-                            num_logits_to_keep=1,
+                            logits_to_keep=1,
                         )
                         logits, past_key_values = out.logits, out.past_key_values
                 else:
@@ -1432,7 +1432,7 @@ class GreedySearch_RetrAttn(GreedySearch):
                         use_cache=True,
                         return_dict=True,
                         past_key_values=past_key_values,
-                        num_logits_to_keep=1,
+                        logits_to_keep=1,
                     )
                     logits, past_key_values = out.logits, out.past_key_values
 

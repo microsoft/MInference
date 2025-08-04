@@ -34,7 +34,7 @@ def run_target_length(m: int, model, attn_type: str):
                     input_ids,
                     attention_mask,
                     use_cache=False,
-                    num_logits_to_keep=1,
+                    logits_to_keep=1,
                 )
             else:
                 model.generate(

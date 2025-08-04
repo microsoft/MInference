@@ -73,7 +73,7 @@ class MInferenceE2ETester(unittest.TestCase):
                         input_ids,
                         attention_mask,
                         use_cache=False,
-                        num_logits_to_keep=1,
+                        logits_to_keep=1,
                     )
                 else:
                     model.generate(

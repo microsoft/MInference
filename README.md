@@ -118,7 +118,7 @@ Currently, we support the following LLMs:
 ### How to use MInference
 
 > [!TIP]
-> To benefit from fast kernel implementations, we recommend installing **SGLang** or **vLLM**. 
+> To benefit from fast kernel implementations, we recommend installing **SGLang** or **vLLM**.
 > for sglang
 > ```bash
 > uv pip install "sglang[all]>=0.4.6.post4"
@@ -297,9 +297,9 @@ All four approaches (MInference, SSM, Linear Attention, and Sparse Attention) ef
 
 _Solution_: Set the Hugging Face model's attention backend to FlashAttention-2 by adding the following argument during model initialization: `_attn_implementation="flash_attention_2",`.
 
-**Q6**: CUDA Out of Memory in in `logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])`
+**Q6**: CUDA Out of Memory in in `logits = self.lm_head(hidden_states[:, -logits_to_keep:, :])`
 
-_Solution_: Set the `num_logits_to_keep=1` in model forward.
+_Solution_: Set the `logits_to_keep=1` in model forward.
 
 ## Citation
 
