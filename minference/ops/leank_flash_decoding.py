@@ -63,7 +63,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
         valid_block_H = min(block_H, kv_group_num)
 
         @T.macro
-        def flash_attn_split(
+        def flash_attn_split1(
                 Q: T.Tensor(shape_q1, dtype),
                 K: T.Tensor(shape_k1, dtype),
                 V: T.Tensor(shape_v1, dtype),
@@ -594,7 +594,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
         ):
-            flash_attn_split(Q, K, V, mask_mid, glse1, Output_partial1)
+            flash_attn_split1(Q, K, V, mask_mid, glse1, Output_partial1)
             flash_attn_split_full(Q_full, K_full, V_full, mask, glse, Output_partial)
             combine(glse, Output_partial, Output)
 
@@ -619,7 +619,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
         ):
-            flash_attn_split(Q, K, V, mask_mid, glse1, Output_partial1)
+            flash_attn_split1(Q, K, V, mask_mid, glse1, Output_partial1)
             flash_attn_split2(Q2, K2, V2, mask_mid, glse2, Output_partial2)
             flash_attn_split_full(Q_full, K_full, V_full, mask, glse, Output_partial)
             combine(glse, Output_partial, Output)
@@ -650,7 +650,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
         ):
-            flash_attn_split(Q, K, V, mask_mid, glse1, Output_partial1)
+            flash_attn_split1(Q, K, V, mask_mid, glse1, Output_partial1)
             flash_attn_split2(Q2, K2, V2, mask_mid, glse2, Output_partial2)
             flash_attn_split3(Q3, K3, V3, mask_mid, glse3, Output_partial3)
             flash_attn_split_full(Q_full, K_full, V_full, mask, glse, Output_partial)
@@ -687,7 +687,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_mid: T.Tensor([batch, true_seq_len], "uint8"),
                 Output: T.Tensor(shape_o, dtype),
         ):
-            flash_attn_split(Q, K, V, mask_mid, glse1, Output_partial1)
+            flash_attn_split1(Q, K, V, mask_mid, glse1, Output_partial1)
             flash_attn_split2(Q2, K2, V2, mask_mid, glse2, Output_partial2)
             flash_attn_split3(Q3, K3, V3, mask_mid, glse3, Output_partial3)
             flash_attn_split4(Q4, K4, V4, mask_mid, glse4, Output_partial4)

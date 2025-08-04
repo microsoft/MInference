@@ -1,3 +1,7 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+# Part of the code is adapted from DuoAttention (https://github.com/mit-han-lab/duo-attention). We thank the authors for their work.
+
 from typing import Optional, Tuple
 
 import torch

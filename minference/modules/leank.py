@@ -186,7 +186,7 @@ def leank_forward(
     if last_length != rouned_seq_len:
         last_length = rouned_seq_len
         if kwargs["layer_idx"]== 0:
-            print(f"--- Compiling LeanK decoding kernel for sequence length, might take some time ---")
+            print(f"--- Compiling LeanK decoding kernel, might take some time ---")
         need_compile = True
     
     if kwargs["attention_mask"] is not None:
