@@ -80,9 +80,9 @@ def update_kwargs(
 def causal_model_forward(original_forward):
     @functools.wraps(original_forward)
     def new_forward(self, *args, **kwargs):
-        if kwargs.get("num_logits_to_keep", None) == 1:
+        if kwargs.get("logits_to_keep", None) == 1:
             kwargs["return_last_logit"] = True
-            kwargs.pop("num_logits_to_keep")
+            kwargs.pop("logits_to_keep")
         if kwargs.get("position_ids", None) is None:
             kv_cache = kwargs.get("past_key_values")
             input_ids = kwargs.get("input_ids")
