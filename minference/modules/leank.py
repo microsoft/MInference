@@ -12,11 +12,6 @@ from transformers.models.llama.modeling_llama import LlamaForCausalLM
 from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
 from transformers.processing_utils import Unpack
 
-try:
-    from minference.ops.leank_flash_decoding import leank_flashattn
-except:
-    pass
-
 
 def reorder_linear_weights(
     linear_module: torch.nn.Linear,
@@ -342,6 +337,12 @@ def leank_forward(
     kernel_kwargs += ["float16" if dtype == torch.float16 else "bfloat16"]
 
     if need_compile or kwargs["kernel"] is None:
+        try:
+            from minference.ops.leank_flash_decoding import leank_flashattn
+        except:
+            raise ImportError(
+                "LeanK Flash Decoding kernel is not available. Please install the required Tilelang package."
+            )
         program = leank_flashattn(*kernel_kwargs)(
             num_split=num_split, **kwargs["kernel_config"]
         )
