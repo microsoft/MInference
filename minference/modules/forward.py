@@ -10,6 +10,7 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repea
 
 from ..modules.flexprefill import flexprefill_forward
 from ..modules.kivi import kivi_forward
+from ..modules.leank import leank_forward
 from ..modules.minference_forward import minference_prefill_forward
 from ..modules.quest import quest_decode_kernel
 from ..modules.retr_attn import retr_attn
@@ -97,16 +98,34 @@ def attn_forward(
             "query_states": query_states,
             "update_global_past_kv": getattr(self, "update_global_past_kv", True),
         }
-        (
-            key_states,
-            value_states,
-        ) = past_key_value.update(  # DynamicCache/KvcompressCache
-            key_states,
-            value_states,
-            self.layer_idx,
-            cache_kwargs,
-        )
-    if query_states.size(1) != key_states.size(1):
+        if decoding_forward == leank_forward:
+            (
+                key_states_full,
+                key_states_mid,
+                value_states_mid,
+                value_states_full,
+            ) = past_key_value.update(
+                key_states,
+                value_states,
+                self.layer_idx,
+                self.full_attn_channels,
+                self.boundaries,
+                self.counts,
+                cache_kwargs,
+            )
+        else:
+            (
+                key_states,
+                value_states,
+            ) = past_key_value.update(  # DynamicCache/KvcompressCache
+                key_states,
+                value_states,
+                self.layer_idx,
+                cache_kwargs,
+            )
+    if decoding_forward == leank_forward and prefill_forward is None:
+        pass
+    elif query_states.size(1) != key_states.size(1):
         key_states = repeat_kv(key_states, query_states.size(1) // key_states.size(1))
         value_states = repeat_kv(
             value_states, query_states.size(1) // value_states.size(1)
@@ -155,12 +174,38 @@ def attn_forward(
                 "position_ids": position_ids,
                 "num_key_value_groups": self.num_key_value_groups,
             }
-            attn_output = decoding_forward(  # [bsz, num_heads, q_len, head_dim]
-                query_states,
-                key_states,
-                value_states,
-                decoding_kwargs,
-            )
+            if decoding_forward == leank_forward:
+                decoding_kwargs.update(
+                    {
+                        "last_length": self.last_length,
+                        "kernel": self.kernel,
+                        "boundaries": self.boundaries,
+                        "counts": self.counts,
+                        "full_size": self.sink_size
+                        + self.recent_size
+                        + self.accumu_size,
+                        "kernel_config": self.kernel_config,
+                        "full_attn_channels": self.full_attn_channels,
+                        "attention_mask": attention_mask,
+                    }
+                )
+                attn_output, last_length, kernel = decoding_forward(
+                    query_states,
+                    key_states_full,
+                    key_states_mid,
+                    value_states_full,
+                    value_states_mid,
+                    **decoding_kwargs,
+                )
+                self.last_length = last_length
+                self.kernel = kernel
+            else:
+                attn_output = decoding_forward(  # [bsz, num_heads, q_len, head_dim]
+                    query_states,
+                    key_states,
+                    value_states,
+                    decoding_kwargs,
+                )
             attn_output = attn_output.transpose(
                 1, 2
             )  # [bsz, q_len, num_heads, head_dim]
@@ -208,4 +253,5 @@ decoding_forwards = {
     "streamingllm": None,
     "retr_attn": retr_attn,
     "kivi": kivi_forward,
+    "leank": leank_forward,
 }
