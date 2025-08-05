@@ -1,6 +1,6 @@
 # TriangleMix: A Lossless and Efficient Attention Pattern for Long Context Prefilling
 
-We propose `TriangleMix`, a training-free static attention pattern for efficient long context prefilling. 
+We propose `TriangleMix`, a training-free static attention pattern for efficient long context prefilling.
 
 <p align="center">
   <img src="./images/overview.jpg"=width="700">
@@ -115,4 +115,3 @@ TTFT in seconds on A100 80GB:
 | MInference         | 5.5 (+34%)  | 7.8 (+7%)   | 10.1 (-10%) | 12.3 (-23%) | 13.4 (-37%) | 15.9 (-42%) | 18.0 (-48%) |
 | TriangleMix        | **3.6 (-12%)**  | **5.9 (-19%)**  | 8.6 (-23%)  | 11.7 (-26%) | 15.2 (-29%) | 19.1 (-31%) | 23.4 (-32%) |
 | Ours + MInference  | 4.2 (+2%)   | 6.0 (-18%)  | **7.7 (-31%)**  | **9.5 (-40%)**  | **10.9 (-49%)** | **12.7 (-54%)** | **14.5 (-58%)** |
-
