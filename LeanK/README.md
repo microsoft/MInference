@@ -148,11 +148,11 @@ LeanK Decoding (Average): 4.13 ms
 python test_memory.py
 ```
 
-| Method | Seq_len | Batch_size | Gen_time | Max_memory | KV_size |
-| --- | --- | --- | --- | --- | --- | 
-| HF | 4096 | 52 | 47.27 | 64.64 | 26.80 |
-| LeanK | 4096 | 52 | 38.32 | 57.27 | 20.43 |
-| LeanK | 4096 | 64 (1.2x larger) | 47.62 | 67.03 | 25.14 |
+| Method | Seq_len | Batch_size | Gen_time | Max_memory |
+| --- | --- | --- | --- | --- |
+| HF | 4096 | 52 | 47.27 | 64.64 |
+| LeanK | 4096 | 52 | 38.32 | 57.27 |
+| LeanK | 4096 | 64 (1.2x larger) | 47.62 | 67.03 |
 
 ### Acknowledgements
 
