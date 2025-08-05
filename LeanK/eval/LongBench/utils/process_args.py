@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 # coding=utf-8
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
@@ -26,11 +29,11 @@ class ModelArguments:
         metadata={"help": "KV_cache quantization bits."},
     )
     k_quant_dim: Optional[str] = field(
-        default='token',
+        default="token",
         metadata={"help": "KV_cache quantization bits."},
     )
     v_quant_dim: Optional[str] = field(
-        default='token',
+        default="token",
         metadata={"help": "KV_cache quantization bits."},
     )
     group_size: Optional[int] = field(
@@ -65,11 +68,11 @@ class ModelArguments:
         metadata={"help": "LoRA r"},
     )
     lora_alpha: Optional[float] = field(
-        default=1.,
+        default=1.0,
         metadata={"help": "LoRA alpha"},
     )
     lora_dropout: Optional[float] = field(
-        default=0.,
+        default=0.0,
         metadata={"help": "LoRA dropout"},
     )
     enable_leank: Optional[str] = field(
@@ -85,15 +88,15 @@ class ModelArguments:
 @dataclass
 class DataArguments:
     dataset: Optional[str] = field(
-        default='c4',
+        default="c4",
         metadata={"help": "The dataset used for fine-tuning the model."},
     )
     eval_tasks: Optional[str] = field(
-        default='wikitext',
+        default="wikitext",
         metadata={"help": "The dataset used for evaluation."},
     )
     tasks: Optional[str] = field(
-        default='wikitext',
+        default="wikitext",
         metadata={"help": "The dataset used for evaluation."},
     )
     batch_size: Optional[int] = field(
@@ -105,7 +108,7 @@ class DataArguments:
         metadata={"help": "The number of fewshot examples."},
     )
     output_path: Optional[str] = field(
-        default='./outputs',
+        default="./outputs",
         metadata={"help": "The output path."},
     )
     e: Optional[bool] = field(
@@ -115,9 +118,7 @@ class DataArguments:
 
 
 def process_args():
-    parser = transformers.HfArgumentParser(
-        (ModelArguments, DataArguments)
-    )
+    parser = transformers.HfArgumentParser((ModelArguments, DataArguments))
     model_args, data_args = parser.parse_args_into_dataclasses()
 
     return model_args, data_args

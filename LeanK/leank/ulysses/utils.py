@@ -1,14 +1,16 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: Apache-2.0
 
 # DeepSpeed Team
 
-import torch
-
 from typing import Any, Tuple
-from torch import Tensor
 
+import torch
 import torch.distributed as dist
+from torch import Tensor
 
 
 def all_to_all_4D(
@@ -211,7 +213,6 @@ class SeqAllToAll5D(torch.autograd.Function):
         scatter_idx: int = 3,
         gather_idx: int = 1,
     ) -> Tensor:
-
         ctx.group = group
         ctx.scatter_idx = scatter_idx
         ctx.gather_idx = gather_idx

@@ -1,7 +1,7 @@
 # Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
-from .configs.model2path import MODEL2PATH, LEANKPATNS
+from .configs.model2path import LEANKPATNS, MODEL2PATH
 
 
 class MInferenceConfig:

@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +31,7 @@ MODEL_SELECT() {
     MODEL_NAME=$1
     MODEL_DIR=$2
     ENGINE_DIR=$3
-    
+
     case $MODEL_NAME in
         llama2-7b-chat)
             MODEL_PATH="${MODEL_DIR}/llama2-7b-chat-hf"

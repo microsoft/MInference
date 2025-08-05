@@ -1,6 +1,6 @@
 # LeanK: Learnable K Cache Channel Pruning for Efficient Decoding
 
-Building upon the observation that QK vectors are **statically sparse** in the **channel (head_dim)** dimension, LeanK uses a learning-based approach to obtain channel-wise static mask used for KV Cache pruning. 
+Building upon the observation that QK vectors are **statically sparse** in the **channel (head_dim)** dimension, LeanK uses a learning-based approach to obtain channel-wise static mask used for KV Cache pruning.
 
 Experiments demonstrate up to **70%** K cache and **16%–18%** V cache memory reduction, reduces GPU memory and accelerates decoding without sacrificing accuracy.
 
@@ -13,7 +13,7 @@ Experiments demonstrate up to **70%** K cache and **16%–18%** V cache memory r
 
 Requirement: install the latest version of minference and tilelang
 
-Add the following patch to enable LeanK decoding patched on Huggingface transformers: 
+Add the following patch to enable LeanK decoding patched on Huggingface transformers:
 
 ```diff
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -44,7 +44,7 @@ generated_text = tokenizer.decode(
 print(f"Generated text: {generated_text!r}")
 ```
 
-Note: for unseen sequence length, Tilelang kernel compilation may take considerable longer time. It will be much faster once the kernel is compiled and kept in cache. 
+Note: for unseen sequence length, Tilelang kernel compilation may take considerable longer time. It will be much faster once the kernel is compiled and kept in cache.
 
 ### Environment Setup
 
@@ -67,11 +67,11 @@ pip install cloudpickle wonderwords bs4 nltk html2text pyyaml
 pip install tilelang==0.1.5
 pip install minference
 
-pip install jsonlines pandas seaborn tqdm 
-pip install jieba mysql-connector-python fuzzywuzzy rouge SentencePiece 
-pip install git+https://github.com/NVIDIA/NeMo.git 
+pip install jsonlines pandas seaborn tqdm
+pip install jieba mysql-connector-python fuzzywuzzy rouge SentencePiece
+pip install git+https://github.com/NVIDIA/NeMo.git
 
-pip install ipython hydra-core lightning lhotse jiwer librosa pyannote.core pyannote-core webdataset editdistance pyannote.metrics tenacity 
+pip install ipython hydra-core lightning lhotse jiwer librosa pyannote.core pyannote-core webdataset editdistance pyannote.metrics tenacity
 ```
 
 
@@ -81,14 +81,14 @@ Download PaulGraham Essays dataset for training:
 ```bash
 # for training
 cd leank/data
-python download_paulgraham_essay.py 
+python download_paulgraham_essay.py
 python -c "import nltk; nltk.download('punkt_tab')"
 wget https://huggingface.co/datasets/togethercomputer/Long-Data-Collections/resolve/main/fine-tune/booksum.jsonl.zst
 
 # for evaluation
-cd eval/RULER/scripts/data/synthetic/json 
-python download_paulgraham_essay.py 
-bash download_qa_dataset.sh 
+cd eval/RULER/scripts/data/synthetic/json
+python download_paulgraham_essay.py
+bash download_qa_dataset.sh
 ```
 
 ### Training
@@ -96,18 +96,18 @@ bash download_qa_dataset.sh
 ```bash
 # run double-stage training on Llama-3.1-8B-Instruct
 torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/llama3.1-8b.yaml
-torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/llama3.1-8b.yaml --stage2 
+torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/llama3.1-8b.yaml --stage2
 
 # run double-stage training on Qwen2.5-7B-Instruct w/o Yarn
 torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b.yaml
-torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b.yaml --stage2 
+torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b.yaml --stage2
 
 # run double-stage training on Qwen2.5-7B-Instruct w/ Yarn
 torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml
-torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml --stage2 
+torchrun --nnodes 1 --nproc_per_node 1 train.py --config scripts/qwen2.5-7b-yarn.yaml --stage2
 ```
 
-For Qwen w/ Yarn extrapolation, add the following to config.json for training and testing: 
+For Qwen w/ Yarn extrapolation, add the following to config.json for training and testing:
 
 ```json
 "rope_scaling": {
@@ -157,4 +157,3 @@ python test_memory.py
 ### Acknowledgements
 
 This project incorporates code from [Tile-Lang](https://github.com/tile-ai/tilelang), [DuoAttention](https://github.com/mit-han-lab/duo-attention), [RULER](https://github.com/NVIDIA/RULER) and [LongBench](https://github.com/THUDM/LongBench). We deeply appreciate the contributions of the original authors.
-

@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,17 +20,16 @@
 import json
 import logging
 import sys
-import json
-from pathlib import Path
 from argparse import ArgumentParser
+from pathlib import Path
 
 import numpy as np
-import torch
 import tensorrt_llm
+import torch
 from flask import Flask, jsonify, request
 from flask_restful import Api, Resource
-from tensorrt_llm.runtime import ModelRunnerCpp
 from mpi4py import MPI
+from tensorrt_llm.runtime import ModelRunnerCpp
 from transformers import AutoTokenizer
 
 
@@ -46,7 +48,7 @@ class TritonServerGenerate(Resource):
         repetition_penalty,
         random_seed,
         stop_words_list,
-        max_attention_window_size=None
+        max_attention_window_size=None,
     ):
         output = self.model.forward(
             prompts,
@@ -103,7 +105,9 @@ def parse_input(input_texts: str, tokenizer):
         )
         for input_text in input_texts
     ]
-    batch_input_ids = [torch.tensor(x, dtype=torch.int32, device="cuda") for x in batch_input_ids]
+    batch_input_ids = [
+        torch.tensor(x, dtype=torch.int32, device="cuda") for x in batch_input_ids
+    ]
     input_lengths = [x.size(0) for x in batch_input_ids]
 
     return batch_input_ids, input_lengths
@@ -140,7 +144,7 @@ def prepare_stop_words(stop_words_list, tokenizer):
             # words as well as newlines that we commonly use. But note that it's not a universal fix, so this might
             # require refactoring if different stop words are used in the future.
             # Eventually, this needs to be fixed inside TensorRT-LLM itself.
-            ids = tokenizer.encode('magic' + word)
+            ids = tokenizer.encode("magic" + word)
             ids = ids[2:]  # skipping "magic"
 
             if len(ids) == 0:
@@ -177,11 +181,14 @@ def load_tokenizer(tokenizer_dir: str):
     return tokenizer, pad_id, end_id
 
 
-
 class TensorRTLLM:
     def __init__(self, model_path: str):
-        self.tokenizer, self.pad_id, self.end_id = load_tokenizer(tokenizer_dir=model_path)
-        self.runner = ModelRunnerCpp.from_dir(engine_dir=model_path, rank=tensorrt_llm.mpi_rank())
+        self.tokenizer, self.pad_id, self.end_id = load_tokenizer(
+            tokenizer_dir=model_path
+        )
+        self.runner = ModelRunnerCpp.from_dir(
+            engine_dir=model_path, rank=tensorrt_llm.mpi_rank()
+        )
 
     @torch.no_grad()
     def forward(
@@ -219,7 +226,9 @@ class TensorRTLLM:
             )
             torch.cuda.synchronize()
 
-            output = get_output(output_ids, input_lengths, max_output_token, self.tokenizer, self.end_id)
+            output = get_output(
+                output_ids, input_lengths, max_output_token, self.tokenizer, self.end_id
+            )
         except RuntimeError as e:
             logging.error("RuntimeError: %s", e)
             output = [f"RuntimeError: {e}"] * len(input_texts)
@@ -237,7 +246,9 @@ class WrapperServer:
         if self.rank == 0:
             self.app = Flask(__file__, static_url_path="")
             api = Api(self.app)
-            api.add_resource(TritonServerGenerate, "/generate", resource_class_args=[self.model])
+            api.add_resource(
+                TritonServerGenerate, "/generate", resource_class_args=[self.model]
+            )
 
     def run(self, url, port=5000):
         if self.rank == 0:

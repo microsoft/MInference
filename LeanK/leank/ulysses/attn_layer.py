@@ -1,14 +1,17 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 # Copyright (c) Microsoft Corporation.
 # SPDX-License-Identifier: Apache-2.0
 
 # DeepSpeed Team
 
-import torch
-
 from typing import Any
+
+import torch
+import torch.distributed as dist
 from torch import Tensor
 
-import torch.distributed as dist
 from .utils import SeqAllToAll4D
 
 
@@ -29,7 +32,6 @@ class UlyssesAttention(torch.nn.Module):
         scatter_idx: int = 2,
         gather_idx: int = 1,
     ) -> None:
-
         super(UlyssesAttention, self).__init__()
         self.spg = sequence_process_group
         self.scatter_idx = scatter_idx
@@ -76,6 +78,7 @@ class UlyssesAttention(torch.nn.Module):
         # out e.g., [s/p::h]
         return output
 
+
 class UlyssesAttentionDecode(torch.nn.Module):
     """Initialization.
 
@@ -93,7 +96,6 @@ class UlyssesAttentionDecode(torch.nn.Module):
         scatter_idx: int = 2,
         gather_idx: int = 1,
     ) -> None:
-
         super(UlyssesAttentionDecode, self).__init__()
         self.spg = sequence_process_group
         self.scatter_idx = scatter_idx
@@ -120,14 +122,14 @@ class UlyssesAttentionDecode(torch.nn.Module):
         Returns:
             * output (Tensor): context output
         """
-        
+
         # import IPython; IPython.embed()
-        
+
         q = SeqAllToAll4D.apply(self.spg, query, self.scatter_idx, self.gather_idx)
         k = SeqAllToAll4D.apply(self.spg, key, self.scatter_idx, self.gather_idx)
         v = SeqAllToAll4D.apply(self.spg, value, self.scatter_idx, self.gather_idx)
         k2 = SeqAllToAll4D.apply(self.spg, key2, self.scatter_idx, self.gather_idx)
-        
+
         # import IPython; IPython.embed()
 
         context_layer = self.attn_func(

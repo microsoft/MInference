@@ -14,9 +14,9 @@ from ..modules.leank import leank_forward
 from ..modules.minference_forward import minference_prefill_forward
 from ..modules.quest import quest_decode_kernel
 from ..modules.retr_attn import retr_attn
+from ..modules.tri_mix import tri_mix_forward, tri_mix_minference_forward
 from ..modules.xattention import xattention_forward
 from ..ops.streaming_kernel import a_shape_kernel, tri_shape_kernel
-from ..modules.tri_mix import tri_mix_forward, tri_mix_minference_forward
 
 
 def attn_forward(
@@ -99,18 +99,19 @@ def attn_forward(
         }
         if decoding_forward == leank_forward:
             (
-                key_states_full, 
-                key_states_mid, 
-                value_states_mid, 
+                key_states_full,
+                key_states_mid,
+                value_states_mid,
                 value_states_full,
             ) = past_key_value.update(
-                key_states, 
-                value_states, 
-                self.layer_idx, 
+                key_states,
+                value_states,
+                self.layer_idx,
                 self.full_attn_channels,
                 self.boundaries,
-                self.counts, 
-                cache_kwargs)
+                self.counts,
+                cache_kwargs,
+            )
         else:
             (
                 key_states,
@@ -173,16 +174,20 @@ def attn_forward(
                 "num_key_value_groups": self.num_key_value_groups,
             }
             if decoding_forward == leank_forward:
-                decoding_kwargs.update({
-                    "last_length": self.last_length, 
-                    "kernel": self.kernel, 
-                    "boundaries": self.boundaries, 
-                    "counts": self.counts,
-                    "full_size": self.sink_size + self.recent_size + self.accumu_size,
-                    "kernel_config": self.kernel_config, 
-                    "full_attn_channels": self.full_attn_channels,
-                    "attention_mask": attention_mask,
-                })
+                decoding_kwargs.update(
+                    {
+                        "last_length": self.last_length,
+                        "kernel": self.kernel,
+                        "boundaries": self.boundaries,
+                        "counts": self.counts,
+                        "full_size": self.sink_size
+                        + self.recent_size
+                        + self.accumu_size,
+                        "kernel_config": self.kernel_config,
+                        "full_attn_channels": self.full_attn_channels,
+                        "attention_mask": attention_mask,
+                    }
+                )
                 attn_output, last_length, kernel = decoding_forward(
                     query_states,
                     key_states_full,

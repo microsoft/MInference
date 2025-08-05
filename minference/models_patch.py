@@ -5,7 +5,13 @@ import json
 import os
 
 from .minference_configuration import MInferenceConfig
-from .patch import minference_patch, minference_patch_vllm, new_patch, patch_hf, patch_leank
+from .patch import (
+    minference_patch,
+    minference_patch_vllm,
+    new_patch,
+    patch_hf,
+    patch_leank,
+)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -69,7 +75,7 @@ class MInference:
         if self.config.kv_type == "streamingllm":
             self.config.attn_kwargs.setdefault("n_local", 3968)
             self.config.attn_kwargs.setdefault("n_init", 128)
-        
+
         if self.config.kv_type == "leank":
             self.config.attn_kwargs.setdefault("recent_size", 768)
             self.config.attn_kwargs.setdefault("sink_size", 128)

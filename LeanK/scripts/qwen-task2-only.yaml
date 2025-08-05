@@ -26,4 +26,3 @@ training:
     stage1_rst_path: patterns/qwen/stage1-lr=0.04-reg=0.08-ctx=4000_32000-data=multi_val_retrival
     output_dir: patterns/qwen/stage2-lr=0.02-reg=0-ctx=4000_32000-data=multi_val_retrival
     exp_name: qwen-stage2-lr=0.02-reg=0-ctx=4000_32000-data=multi_val_retrival-align=32-ratio=0.6
-

@@ -2,6 +2,7 @@
 # Licensed under The MIT License [see LICENSE for details]
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
 from minference import MInference
 
 prompt = open("narrativeqa_example.txt").read()
@@ -17,9 +18,7 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 
 # Patch model with dense prefill and leank decoding
-minference_patch = MInference(
-    attn_type="dense", model_name=model_name, kv_type="leank"
-)
+minference_patch = MInference(attn_type="dense", model_name=model_name, kv_type="leank")
 model = minference_patch(model)
 
 batch_inputs = tokenizer(prompt, return_tensors="pt").to("cuda")

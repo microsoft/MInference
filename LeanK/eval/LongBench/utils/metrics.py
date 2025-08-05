@@ -1,13 +1,16 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
+import difflib
 import re
 import string
+from collections import Counter
+from typing import List
 
 import jieba
 from fuzzywuzzy import fuzz
-import difflib
-
-from typing import List
-from collections import Counter
 from rouge import Rouge
+
 
 def normalize_answer(s):
     """Lower text and remove punctuation, articles and extra whitespace."""
@@ -44,6 +47,7 @@ def normalize_zh_answer(s):
 
     return white_space_fix(remove_punc(lower(s)))
 
+
 def count_score(prediction, ground_truth, **kwargs):
     numbers = re.findall(r"\d+", prediction)
     right_num = 0
@@ -53,8 +57,9 @@ def count_score(prediction, ground_truth, **kwargs):
     final_score = 0.0 if len(numbers) == 0 else right_num / len(numbers)
     return float(final_score)
 
+
 def retrieval_score(prediction, ground_truth, **kwargs):
-    pattern = r'Paragraph (\d+)'
+    pattern = r"Paragraph (\d+)"
     matches = re.findall(pattern, ground_truth)
     ground_truth_id = matches[0]
     numbers = re.findall(r"\d+", prediction)
@@ -64,9 +69,10 @@ def retrieval_score(prediction, ground_truth, **kwargs):
             right_num += 1
     final_score = 0.0 if len(numbers) == 0 else right_num / len(numbers)
     return float(final_score)
+
 
 def retrieval_zh_score(prediction, ground_truth, **kwargs):
-    pattern = r'段落(\d+)'
+    pattern = r"段落(\d+)"
     matches = re.findall(pattern, ground_truth)
     ground_truth_id = matches[0]
     numbers = re.findall(r"\d+", prediction)
@@ -77,14 +83,16 @@ def retrieval_zh_score(prediction, ground_truth, **kwargs):
     final_score = 0.0 if len(numbers) == 0 else right_num / len(numbers)
     return float(final_score)
 
+
 def code_sim_score(prediction, ground_truth, **kwargs):
-    all_lines = prediction.lstrip('\n').split('\n')
+    all_lines = prediction.lstrip("\n").split("\n")
     prediction = ""
     for line in all_lines:
-        if ('`' not in line) and ('#' not in line) and ('//' not in line):
+        if ("`" not in line) and ("#" not in line) and ("//" not in line):
             prediction = line
             break
-    return (fuzz.ratio(prediction, ground_truth) / 100)
+    return fuzz.ratio(prediction, ground_truth) / 100
+
 
 def classification_score(prediction, ground_truth, **kwargs):
     em_match_list = []
@@ -97,7 +105,7 @@ def classification_score(prediction, ground_truth, **kwargs):
             em_match_list.remove(match_term)
     if em_match_list != 0:
         if ground_truth in em_match_list:
-            score = (1.0 / len(em_match_list))
+            score = 1.0 / len(em_match_list)
         else:
             score = 0.0
     else:
@@ -110,7 +118,8 @@ def classification_score(prediction, ground_truth, **kwargs):
                 best_match = string
         score = float(best_match == ground_truth)
     return score
-    
+
+
 def rouge_score(prediction, ground_truth, **kwargs):
     rouge = Rouge()
     try:
@@ -119,11 +128,13 @@ def rouge_score(prediction, ground_truth, **kwargs):
         return 0.0
     return scores["rouge-l"]["f"]
 
+
 def rouge_zh_score(prediction, ground_truth, **kwargs):
     prediction = " ".join(list(jieba.cut(prediction, cut_all=False)))
-    ground_truth = " ".join(list(jieba.cut(ground_truth, cut_all=False))) 
+    ground_truth = " ".join(list(jieba.cut(ground_truth, cut_all=False)))
     score = rouge_score(prediction, ground_truth)
     return score
+
 
 def f1_score(prediction, ground_truth, **kwargs):
     common = Counter(prediction) & Counter(ground_truth)
@@ -134,6 +145,7 @@ def f1_score(prediction, ground_truth, **kwargs):
     recall = 1.0 * num_same / len(ground_truth)
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
+
 
 def qa_f1_score(prediction, ground_truth, **kwargs):
     normalized_prediction = normalize_answer(prediction)

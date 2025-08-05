@@ -1,24 +1,26 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
+import os
+
+import numpy as np
+import torch
+
 from .llama import (
     enable_llama_training,
     full_attn_forward_llama,
-    scaled_attn_forward_llama,
     get_scaling_factors_llama,
-    set_scaling_factors_llama,
     map_scaling_factors_llama,
+    scaled_attn_forward_llama,
+    set_scaling_factors_llama,
 )
-
 from .qwen import (
     enable_qwen_training,
     full_attn_forward_qwen,
+    map_scaling_factors_qwen,
     scaled_attn_forward_qwen,
     set_scaling_factors_qwen,
-    set_scaling_factors_qwen,
-    map_scaling_factors_qwen,
 )
-
-import numpy as np
-import os
-import torch
 
 
 def enable_training(
@@ -29,7 +31,6 @@ def enable_training(
     enable_ulysses_attention=False,
     scaling_factors=None,
 ):
-
     if "llama" in model.config.model_type:
         enable_llama_training(
             model,

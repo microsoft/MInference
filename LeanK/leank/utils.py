@@ -1,10 +1,14 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
 import argparse
-import transformers
-import torch
-from accelerate import infer_auto_device_map, dispatch_model
-from accelerate.utils import get_balanced_memory
+
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
+import transformers
+from accelerate import dispatch_model, infer_auto_device_map
+from accelerate.utils import get_balanced_memory
 
 
 def parse_args():
@@ -69,7 +73,7 @@ def parse_args():
     parser.add_argument("--prefilling_chunk_size", type=int, default=4096)
 
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--config", type=str, required=True, help='Path to YAML config')
+    parser.add_argument("--config", type=str, required=True, help="Path to YAML config")
 
     args = parser.parse_args()
 
@@ -98,6 +102,7 @@ def get_model(model_name):
 
     return model
 
+
 def get_tokenizer(tokenizer_name):
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         tokenizer_name, use_fast=False, trust_remote_code=True
@@ -124,7 +129,7 @@ def convert_to_list(scaling_factors):
 def visualize_patterns(scaling_factors):
     img = np.array(scaling_factors)
     fig = plt.figure(figsize=(10, 10))
-    plt.imshow(img, cmap="coolwarm", interpolation="nearest", aspect='auto')
+    plt.imshow(img, cmap="coolwarm", interpolation="nearest", aspect="auto")
     plt.xlabel("Attention Heads")
     plt.ylabel("Layers")
     plt.colorbar(fraction=0.046, pad=0.04)
@@ -134,8 +139,11 @@ def visualize_patterns(scaling_factors):
     plt.title("Ratio of Full Attention Computations")
     return fig
 
+
 def seed_everything(seed):
-    import random, os
+    import os
+    import random
+
     import numpy as np
     import torch
 
@@ -146,7 +154,7 @@ def seed_everything(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
-    
+
 
 def save_scaling_factors(scaling_factors, output_filename):
     np.savetxt(
@@ -154,6 +162,7 @@ def save_scaling_factors(scaling_factors, output_filename):
         np.array(scaling_factors),
         delimiter="\t",
     )
+
 
 def sparsify_scaling_factors(scaling_factors, ratio, round_to):
     l = len(scaling_factors)
@@ -164,8 +173,8 @@ def sparsify_scaling_factors(scaling_factors, ratio, round_to):
     threshold = np.quantile(scaling_factors, ratio)
     mask = (scaling_factors >= threshold).astype(float)
 
-    head_k = (mask.reshape(l, h, d).sum(-1) + round_to // 2) // round_to *  round_to
-    
+    head_k = (mask.reshape(l, h, d).sum(-1) + round_to // 2) // round_to * round_to
+
     ind = np.argsort(scaling_factors.reshape(l, h, d))[:, :, ::-1]
     reverse_ind = np.argsort(ind)
     mask_round = reverse_ind < head_k[:, :, None]

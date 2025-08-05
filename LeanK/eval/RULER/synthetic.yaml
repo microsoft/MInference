@@ -104,7 +104,7 @@ cwe:
     freq_cw: 30
     freq_ucw: 3
     num_cw: 10
-    
+
 fwe:
   task: freq_words_extraction
   args:

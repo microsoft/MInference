@@ -1,9 +1,13 @@
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
+import random
+
 import numpy as np
 import torch
-import random
-from torch.utils.data import Dataset
 from datasets import load_dataset
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+
 
 class TextDataset(torch.utils.data.IterableDataset):
     def __init__(self, data, tokenizer, seqlen, col_key, cutoff=1000):
@@ -60,7 +64,7 @@ class TextDataset(torch.utils.data.IterableDataset):
         }
         result["labels"] = result["input_ids"].copy()
         return result
-    
+
 
 def set_seed(seed):
     np.random.seed(seed)
@@ -70,27 +74,34 @@ def set_seed(seed):
 
 def get_c4(n_train_samples, n_eval_samples, seqlen, tokenizer):
     # raw_tra_data = load_dataset("c4", split="train")
-    raw_tra_data = load_dataset('allenai/c4', 'allenai--c4', 
-                                data_files={'train': 'en/c4-train.00000-of-01024.json.gz'}, 
-                                split='train')
+    raw_tra_data = load_dataset(
+        "allenai/c4",
+        "allenai--c4",
+        data_files={"train": "en/c4-train.00000-of-01024.json.gz"},
+        split="train",
+    )
     # raw_val_data = load_dataset("c4", split="validation")
-    raw_val_data = load_dataset('allenai/c4', 'allenai--c4', 
-                                data_files={'validation': 'en/c4-validation.00000-of-00008.json.gz'}, 
-                                split='validation')
-    train_dataset = TextDataset(raw_tra_data, tokenizer, 
-                                col_key='text', 
-                                cutoff=n_train_samples, 
-                                seqlen=seqlen)
-    val_dataset = TextDataset(raw_val_data, tokenizer,
-                              col_key='text', 
-                              cutoff=n_eval_samples, # todo: change to 1100
-                              seqlen=seqlen)
+    raw_val_data = load_dataset(
+        "allenai/c4",
+        "allenai--c4",
+        data_files={"validation": "en/c4-validation.00000-of-00008.json.gz"},
+        split="validation",
+    )
+    train_dataset = TextDataset(
+        raw_tra_data, tokenizer, col_key="text", cutoff=n_train_samples, seqlen=seqlen
+    )
+    val_dataset = TextDataset(
+        raw_val_data,
+        tokenizer,
+        col_key="text",
+        cutoff=n_eval_samples,  # todo: change to 1100
+        seqlen=seqlen,
+    )
     return train_dataset, val_dataset
 
 
-def get_loaders(
-    name, enc, n_train_samples=128, n_eval_samples=1024, seqlen=2048):
-    if 'c4' in name:
+def get_loaders(name, enc, n_train_samples=128, n_eval_samples=1024, seqlen=2048):
+    if "c4" in name:
         return get_c4(n_train_samples, n_eval_samples, seqlen, enc)
     else:
         raise NotImplementedError

@@ -2,28 +2,25 @@
 # Licensed under The MIT License [see LICENSE for details]
 # Part of the code is adapted from DuoAttention (https://github.com/mit-han-lab/duo-attention). We thank the authors for their work.
 
+import types
 from typing import Optional, Tuple
 
 import torch
 import torch.functional as F
-
-from transformers.models.llama.modeling_llama import (
-    LlamaForCausalLM,
-    List,
-    Union,
-    BaseModelOutputWithPast,
-    apply_rotary_pos_emb,
-)
-from transformers.models.qwen2.modeling_qwen2 import (
-    Qwen2ForCausalLM
-)
-import types
-
 from flash_attn import flash_attn_func, flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
-from transformers.processing_utils import Unpack
-from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.cache_utils import Cache, DynamicCache
+from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
+from transformers.models.llama.modeling_llama import (
+    BaseModelOutputWithPast,
+    List,
+    LlamaForCausalLM,
+    Union,
+    apply_rotary_pos_emb,
+)
+from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM
+from transformers.processing_utils import Unpack
+
 
 def _get_unpad_data(padding_mask):
     seqlens_in_batch = padding_mask.sum(dim=-1, dtype=torch.int32)
@@ -277,7 +274,7 @@ def old_llama_model_forward(
         raise ValueError(
             "You cannot specify both input_ids and inputs_embeds at the same time"
         )
-    
+
     if inputs_embeds is None:
         inputs_embeds = self.embed_tokens(input_ids)
 
@@ -285,16 +282,24 @@ def old_llama_model_forward(
         past_key_values = DynamicCache()
 
     if cache_position is None:
-        past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+        past_seen_tokens = (
+            past_key_values.get_seq_length() if past_key_values is not None else 0
+        )
         cache_position = torch.arange(
-            past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            past_seen_tokens,
+            past_seen_tokens + inputs_embeds.shape[1],
+            device=inputs_embeds.device,
         )
 
     if position_ids is None:
         position_ids = cache_position.unsqueeze(0)
 
     causal_mask = self._update_causal_mask(
-        attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
+        attention_mask,
+        inputs_embeds,
+        cache_position,
+        past_key_values,
+        output_attentions,
     )
 
     hidden_states = inputs_embeds
@@ -353,9 +358,9 @@ def old_llama_model_forward(
         hidden_states=all_hidden_states,
         attentions=all_self_attns,
     )
-    
+
     return output if return_dict else output.to_tuple()
-    
+
 
 def old_llama_decoder_layer_forward(
     self,
@@ -366,7 +371,9 @@ def old_llama_decoder_layer_forward(
     output_attentions: Optional[bool] = False,
     use_cache: Optional[bool] = False,
     cache_position: Optional[torch.LongTensor] = None,
-    position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
+    position_embeddings: Optional[
+        Tuple[torch.Tensor, torch.Tensor]
+    ] = None,  # necessary, but kept here for BC
     length_context: Optional[int] = None,
     **kwargs: Unpack[FlashAttentionKwargs],
 ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
@@ -457,24 +464,32 @@ def old_qwen_model_forward(
         raise ValueError(
             "You cannot specify both input_ids and inputs_embeds at the same time"
         )
-    
+
     if inputs_embeds is None:
         inputs_embeds = self.embed_tokens(input_ids)
-    
+
     if use_cache and past_key_values is None:
         past_key_values = DynamicCache()
 
     if cache_position is None:
-        past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+        past_seen_tokens = (
+            past_key_values.get_seq_length() if past_key_values is not None else 0
+        )
         cache_position = torch.arange(
-            past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            past_seen_tokens,
+            past_seen_tokens + inputs_embeds.shape[1],
+            device=inputs_embeds.device,
         )
 
     if position_ids is None:
         position_ids = cache_position.unsqueeze(0)
 
     causal_mask = self._update_causal_mask(
-        attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
+        attention_mask,
+        inputs_embeds,
+        cache_position,
+        past_key_values,
+        output_attentions,
     )
 
     hidden_states = inputs_embeds
@@ -533,7 +548,7 @@ def old_qwen_model_forward(
         hidden_states=all_hidden_states,
         attentions=all_self_attns,
     )
-    
+
     return output if return_dict else output.to_tuple()
 
 
@@ -546,7 +561,9 @@ def old_qwen_decoder_layer_forward(
     output_attentions: Optional[bool] = False,
     use_cache: Optional[bool] = False,
     cache_position: Optional[torch.LongTensor] = None,
-    position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # necessary, but kept here for BC
+    position_embeddings: Optional[
+        Tuple[torch.Tensor, torch.Tensor]
+    ] = None,  # necessary, but kept here for BC
     length_context: Optional[int] = None,
     **kwargs: Unpack[FlashAttentionKwargs],
 ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:

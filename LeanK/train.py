@@ -1,52 +1,52 @@
 # Copyright (c) 2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
-import os
-import torch
-import torch.nn.functional as F
-from tqdm import tqdm
 import json
-import wandb
+import os
+import types
+
 import matplotlib.pyplot as plt
-from leank.utils import (
-    parse_args,
-    get_tokenizer,
-    visualize_patterns,
-    convert_to_list,
-    save_scaling_factors,
-    seed_everything,
-    sparsify_scaling_factors,
-)
+import torch
+import torch.distributed as dist
+import torch.nn.functional as F
+import wandb
+import yaml
 from leank.data import (
-    PasskeyRetrievalDataset,
-    get_supervised_dataloader,
     MultiplePasskeyRetrievalDataset,
+    PasskeyRetrievalDataset,
     get_dataset,
+    get_supervised_dataloader,
 )
+from leank.loss import l1_loss
 from leank.patch import (
     enable_training,
-    get_scaling_factors,
-    map_scaling_factors,
-    load_scaling_factors,
     full_attn_forward_llama,
     full_attn_forward_qwen,
+    get_scaling_factors,
+    load_scaling_factors,
+    map_scaling_factors,
     scaled_attn_forward_llama,
     scaled_attn_forward_qwen,
 )
-
-from leank.loss import l1_loss
-import torch.distributed as dist
-from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy
+from leank.utils import (
+    convert_to_list,
+    get_tokenizer,
+    parse_args,
+    save_scaling_factors,
+    seed_everything,
+    sparsify_scaling_factors,
+    visualize_patterns,
+)
+from torch.distributed._composable.fsdp import MixedPrecisionPolicy, fully_shard
 from torch.distributed._tensor import DeviceMesh
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
     apply_activation_checkpointing,
 )
-import types
+from tqdm import tqdm
+from transformers import AutoConfig, AutoModelForCausalLM
+from transformers.models.llama.modeling_llama import LlamaAttention, LlamaDecoderLayer
+from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention, Qwen2DecoderLayer
 
-from transformers import AutoModelForCausalLM, AutoConfig
-from transformers.models.llama.modeling_llama import LlamaDecoderLayer, LlamaAttention
-from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer, Qwen2Attention
-import yaml
 
 def setup():
     # initialize the process group
@@ -108,9 +108,18 @@ def train(
 
             input_ids = batch["input_ids"]
 
-            n_seq = (input_ids.shape[-1] + world_size - 1) // world_size 
+            n_seq = (input_ids.shape[-1] + world_size - 1) // world_size
             pad_len = n_seq * world_size - input_ids.shape[-1]
-            input_ids = torch.cat((torch.Tensor([0] * pad_len).unsqueeze(0).to(input_ids.device).to(input_ids.dtype), input_ids), dim=-1)           
+            input_ids = torch.cat(
+                (
+                    torch.Tensor([0] * pad_len)
+                    .unsqueeze(0)
+                    .to(input_ids.device)
+                    .to(input_ids.dtype),
+                    input_ids,
+                ),
+                dim=-1,
+            )
             sample_len = input_ids.shape[-1]
 
             seq_parallel_chunk_start = n_seq * rank
@@ -130,20 +139,26 @@ def train(
                 elif isinstance(module._checkpoint_wrapped_module, Qwen2Attention):
                     module.forward = types.MethodType(full_attn_forward_qwen, module)
                 else:
-                    assert(False)
-                scaling_factors_list.append(module.scaling_factors.full_tensor().to(model.device))
-        
+                    assert False
+                scaling_factors_list.append(
+                    module.scaling_factors.full_tensor().to(model.device)
+                )
+
             with torch.no_grad():
                 outputs = model(
-                    input_ids=input_ids[:, seq_parallel_chunk_start:seq_parallel_chunk_end],
+                    input_ids=input_ids[
+                        :, seq_parallel_chunk_start:seq_parallel_chunk_end
+                    ],
                     position_ids=position_ids,
-                    length_context=length_context[0]+pad_len,
+                    length_context=length_context[0] + pad_len,
                 )
                 if args.stage2:
-                    mask_round = sparsify_scaling_factors(scaling_factors_list, args.ratio, args.align)
-                
+                    mask_round = sparsify_scaling_factors(
+                        scaling_factors_list, args.ratio, args.align
+                    )
+
             original_hidden_states = outputs[0]
-    
+
             for i, layer in enumerate(model.layers):
                 module = layer.self_attn
                 if isinstance(module._checkpoint_wrapped_module, LlamaAttention):
@@ -151,24 +166,33 @@ def train(
                 elif isinstance(module._checkpoint_wrapped_module, Qwen2Attention):
                     module.forward = types.MethodType(scaled_attn_forward_qwen, module)
                 else:
-                    assert(False)
+                    assert False
                 module.mask_round = mask_round[i] if args.stage2 else None
 
             outputs = model(
                 input_ids=input_ids[:, seq_parallel_chunk_start:seq_parallel_chunk_end],
                 position_ids=position_ids,
-                length_context=length_context[0]+pad_len,
+                length_context=length_context[0] + pad_len,
             )
             pruned_hidden_states = outputs[0]
 
             labels = batch["labels"]
-            labels = torch.cat((torch.Tensor([-100] * pad_len).unsqueeze(0).to(labels.device).to(labels.dtype), labels), dim=-1)
+            labels = torch.cat(
+                (
+                    torch.Tensor([-100] * pad_len)
+                    .unsqueeze(0)
+                    .to(labels.device)
+                    .to(labels.dtype),
+                    labels,
+                ),
+                dim=-1,
+            )
             labels = labels[:, seq_parallel_chunk_start:seq_parallel_chunk_end]
             label_mask = labels != -100
             num_labels = label_mask.sum()
             global_num_labels = num_labels.clone().detach()
             dist.all_reduce(global_num_labels)
-            
+
             # filter out label == IGNORE_INDEX (-100)
             original_hidden_states = original_hidden_states[label_mask].float()
             pruned_hidden_states = pruned_hidden_states[label_mask].float()
@@ -184,8 +208,7 @@ def train(
 
             scaling_factors = get_scaling_factors(model)
             scaling_factors = [
-                h.full_tensor().to(model.device)
-                for h in scaling_factors
+                h.full_tensor().to(model.device) for h in scaling_factors
             ]
 
             reg_loss = l1_loss(torch.cat(scaling_factors).float())
@@ -209,13 +232,11 @@ def train(
 
             global_step += 1
             if rank == 0:
-                scaling_factors_list = convert_to_list(
-                    scaling_factors
-                )
+                scaling_factors_list = convert_to_list(scaling_factors)
 
                 if not args.disable_wandb:
                     fig = visualize_patterns(scaling_factors_list)
-                   
+
                     wandb.log(
                         {
                             "distill_loss": distill_loss.item(),
@@ -335,7 +356,7 @@ def main(args):
         )
     else:
         scaling_factors = None
-    
+
     enable_training(
         model,
         args.sink_size,
@@ -344,7 +365,7 @@ def main(args):
         enable_ulysses_attention=True,
         scaling_factors=scaling_factors,
     )
-    
+
     model = model.model
 
     for param in model.parameters():
@@ -388,7 +409,6 @@ def main(args):
             tokenizer,
             context_length_min=args.context_length_min,
             context_length_max=args.context_length_max,
-
         )
     elif args.dataset_format == "multi_key_retrival":
         train_dataset = PasskeyRetrievalDataset(
@@ -460,13 +480,15 @@ def main(args):
         if args.output_dir is not None:
             if args.stage2:
                 with torch.no_grad():
-                    mask_final = sparsify_scaling_factors(scaling_factors, args.ratio, args.align)
+                    mask_final = sparsify_scaling_factors(
+                        scaling_factors, args.ratio, args.align
+                    )
                     torch.save(
-                        mask_final, 
+                        mask_final,
                         os.path.join(
-                            args.output_dir, 
-                            f"mask_ratio{args.ratio}_align{args.align}.pth"
-                        )
+                            args.output_dir,
+                            f"mask_ratio{args.ratio}_align{args.align}.pth",
+                        ),
                     )
 
             scaling_factors_list = convert_to_list(scaling_factors)
@@ -474,14 +496,14 @@ def main(args):
                 scaling_factors_list,
                 os.path.join(args.output_dir, "scaling_factors.tsv"),
             )
-        
+
     dist.barrier()
     cleanup()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    with open(args.config, 'r') as f:
+    with open(args.config, "r") as f:
         config = yaml.safe_load(f)
     if args.stage2:
         config = config["training"]["stage2"]

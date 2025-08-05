@@ -1,13 +1,16 @@
-import torch
-from datasets import load_dataset
+# Copyright (c) 2025 Microsoft
+# Licensed under The MIT License [see LICENSE for details]
+
+import os
+import re
 from dataclasses import dataclass
-from typing import Sequence, Dict
+from typing import Dict, Sequence
 
 import torch
 import transformers
+from datasets import load_dataset
 from torch.utils.data import Dataset, IterableDataset
-import os
-import re
+
 
 def get_dataset(dataset_name, split="train", size=None):
     dataset = load_dataset("json", data_files=dataset_name, split=split)
@@ -274,7 +277,8 @@ class MultiplePasskeyRetrievalDataset(Dataset):
 
         return dict(input_ids=input_ids, labels=labels, length_context=length_context)
         # return dict(input_ids=input_ids, labels=labels)
-    
+
+
 @dataclass
 class DataCollator(object):
     """Collate examples for supervised fine-tuning."""
@@ -283,7 +287,8 @@ class DataCollator(object):
 
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
         input_ids, labels, length_context = tuple(
-            [instance[key] for instance in instances] for key in ("input_ids", "labels", "length_context")
+            [instance[key] for instance in instances]
+            for key in ("input_ids", "labels", "length_context")
         )
         input_ids = torch.nn.utils.rnn.pad_sequence(
             input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
@@ -296,7 +301,7 @@ class DataCollator(object):
             input_ids=input_ids,
             labels=labels,
             attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-            length_context=length_context
+            length_context=length_context,
         )
         for key in instances[0].keys():
             if key not in ret_dict:
@@ -318,14 +323,15 @@ def get_supervised_dataloader(
     )
     return dataloader
 
-import uuid
-import random
-from tqdm import tqdm
+
 import json
+import random
+import uuid
+
+import numpy as np
 import wonderwords
 from nltk.tokenize import sent_tokenize
-import numpy as np
-
+from tqdm import tqdm
 
 nouns = wonderwords.random_word._get_words_from_text_file("nounlist.txt")
 adjs = wonderwords.random_word._get_words_from_text_file("adjectivelist.txt")
@@ -334,8 +340,8 @@ words = sorted(list(set(words)))
 
 DEPTHS = list(np.round(np.linspace(0, 100, num=40, endpoint=True)).astype(int))
 
+
 class PasskeyRetrievalDataset(Dataset):
-    
     def __init__(
         self,
         tokenizer: transformers.PreTrainedTokenizer,
@@ -379,78 +385,87 @@ class PasskeyRetrievalDataset(Dataset):
             context_lengths_num_intervals,
             dtype=torch.int,
         )
-        
+
         self.uuid_length = uuid_length
         self.haystack = {}
         needle = "One of the special magic {type_needle_v} for {key} is: {value}."
-        if 'essay' in type_haystack:
-            essay = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data/PaulGrahamEssays.json")
-            essay = json.load(open(essay))['text']
-            self.haystack['essay'] = re.sub(r'\s+', " ", essay).split(" ")
-        if 'repeat' in type_haystack:
-            self.haystack['repeat'] = "The grass is green. The sky is blue. The sun is yellow. Here we go. There and back again."
-        if 'needle' in type_haystack:
-            self.haystack['needle'] = needle
+        if "essay" in type_haystack:
+            essay = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "data/PaulGrahamEssays.json"
+            )
+            essay = json.load(open(essay))["text"]
+            self.haystack["essay"] = re.sub(r"\s+", " ", essay).split(" ")
+        if "repeat" in type_haystack:
+            self.haystack[
+                "repeat"
+            ] = "The grass is green. The sky is blue. The sun is yellow. Here we go. There and back again."
+        if "needle" in type_haystack:
+            self.haystack["needle"] = needle
         self.needle = needle
-    
+
         self.tokens_to_generate = tokens_to_generate
 
         self.incremental = {}
 
-        if 'essay' in type_haystack:
-            self.incremental['essay'] = 500
-        if 'repeat' in type_haystack:
-            self.incremental['repeat'] = 25
-        if 'needle' in type_haystack:
-            self.incremental['needle'] = 25
-    
+        if "essay" in type_haystack:
+            self.incremental["essay"] = 500
+        if "repeat" in type_haystack:
+            self.incremental["repeat"] = 25
+        if "needle" in type_haystack:
+            self.incremental["needle"] = 25
+
         self.num_haystack = {}
 
-        for type in type_haystack: 
+        for type in type_haystack:
             num_haystack = self.incremental[type]
-            total_tokens = 0 
-            while total_tokens + tokens_to_generate < context_length_max :  
-                input_text, answer = self.generate_input_output(num_haystack, template, type)
-                total_tokens = self.tokenizer.encode(input_text + ' '.join(answer), return_tensors="pt").shape[-1]
-                print(f'Max length {context_length_max} | Current length {total_tokens + tokens_to_generate} | Haystack: {num_haystack}')
+            total_tokens = 0
+            while total_tokens + tokens_to_generate < context_length_max:
+                input_text, answer = self.generate_input_output(
+                    num_haystack, template, type
+                )
+                total_tokens = self.tokenizer.encode(
+                    input_text + " ".join(answer), return_tensors="pt"
+                ).shape[-1]
+                print(
+                    f"Max length {context_length_max} | Current length {total_tokens + tokens_to_generate} | Haystack: {num_haystack}"
+                )
                 if total_tokens + tokens_to_generate > context_length_max:
                     num_haystack -= self.incremental[type]
                     break
-                
+
                 num_haystack += self.incremental[type]
 
             self.num_haystack[type] = num_haystack
-            print('Num haystack of', type, ':', num_haystack)
-        
+            print("Num haystack of", type, ":", num_haystack)
+
     def __len__(self):
-        return len(self.context_length_intervals) 
-    
+        return len(self.context_length_intervals)
+
     def generate_random(self):
         return str(uuid.UUID(int=random.getrandbits(self.uuid_length), version=4))
 
     def generate_random_number(self, num_digits=7):
-        lower_bound = 10**(num_digits - 1)
+        lower_bound = 10 ** (num_digits - 1)
         upper_bound = 10**num_digits - 1
         return str(random.randint(lower_bound, upper_bound))
-    
+
     def generate_random_word(self):
         word = random.choice(words)
         return word
-    
+
     def generate_random_uuid(self):
         return str(uuid.UUID(int=random.getrandbits(128), version=4))
-    
+
     def generate_random(self, type_needle: str):
-        if type_needle == 'numbers':
+        if type_needle == "numbers":
             return self.generate_random_number()
-        elif type_needle == 'words':
+        elif type_needle == "words":
             return self.generate_random_word()
-        elif type_needle == 'uuids':
+        elif type_needle == "uuids":
             return self.generate_random_uuid()
         else:
-            raise NotImplementedError(f'{type_needle} is not implemented.')
+            raise NotImplementedError(f"{type_needle} is not implemented.")
 
-    
     def generate_input_output(self, num_haystack, template, type):
         keys, values, needles = [], [], []
         for _ in range(self.num_needle_k[type]):
@@ -458,57 +473,75 @@ class PasskeyRetrievalDataset(Dataset):
             value = []
             for _ in range(random.choice(self.num_needle_v[type])):
                 value.append(self.generate_random(self.type_needle_v[type]))
-                needles.append(self.needle.format(
-                    type_needle_v=self.type_needle_v[type],
-                    key=keys[-1], 
-                    value=value[-1],
-                ))
+                needles.append(
+                    self.needle.format(
+                        type_needle_v=self.type_needle_v[type],
+                        key=keys[-1],
+                        value=value[-1],
+                    )
+                )
             values.append(value)
-        
+
         random.Random(self.random_seed).shuffle(needles)
 
-        if type == 'essay':
+        if type == "essay":
             text = " ".join(self.haystack[type][:num_haystack])
             document_sents = sent_tokenize(text.strip())
-            insertion_positions = [0] + \
-                                  sorted([int(len(document_sents) * (depth / 100)) for depth in random.sample(DEPTHS, len(needles))]) + \
-                                  [len(document_sents)]
+            insertion_positions = (
+                [0]
+                + sorted(
+                    [
+                        int(len(document_sents) * (depth / 100))
+                        for depth in random.sample(DEPTHS, len(needles))
+                    ]
+                )
+                + [len(document_sents)]
+            )
             document_sents_list = []
-            for i in range(1,len(insertion_positions)):
-                last_pos = insertion_positions[i-1]
+            for i in range(1, len(insertion_positions)):
+                last_pos = insertion_positions[i - 1]
                 next_pos = insertion_positions[i]
                 document_sents_list.append(" ".join(document_sents[last_pos:next_pos]))
-                if i-1 < len(needles):
-                    document_sents_list.append(needles[i-1])
+                if i - 1 < len(needles):
+                    document_sents_list.append(needles[i - 1])
             context = " ".join(document_sents_list)
-    
-        else:
-            if type == 'repeat':
-                sentences = [self.haystack[type]] * num_haystack
-            elif type == 'needle':
-                sentences = [self.haystack[type].format(
-                    type_needle_v=self.type_needle_v[type],
-                    key=self.generate_random(self.type_needle_k[type]),
-                    value=self.generate_random(self.type_needle_v[type]),
-                ) for _ in range(num_haystack)]
 
-            indexes = sorted(random.sample(range(num_haystack), len(needles)), reverse=True)
+        else:
+            if type == "repeat":
+                sentences = [self.haystack[type]] * num_haystack
+            elif type == "needle":
+                sentences = [
+                    self.haystack[type].format(
+                        type_needle_v=self.type_needle_v[type],
+                        key=self.generate_random(self.type_needle_k[type]),
+                        value=self.generate_random(self.type_needle_v[type]),
+                    )
+                    for _ in range(num_haystack)
+                ]
+
+            indexes = sorted(
+                random.sample(range(num_haystack), len(needles)), reverse=True
+            )
             for index, element in zip(indexes, needles):
                 sentences.insert(index, element)
             context = "\n".join(sentences)
-        
+
         indices = random.sample(range(self.num_needle_k[type]), self.num_needle_q[type])
         queries = [keys[i] for i in indices]
         answers = [a for i in indices for a in values[i]]
-        query = ', '.join(queries[:-1]) + ', and ' + queries[-1] if len(queries) > 1 else queries[0]
+        query = (
+            ", ".join(queries[:-1]) + ", and " + queries[-1]
+            if len(queries) > 1
+            else queries[0]
+        )
 
         type_needle_v = self.type_needle_v[type]
         if self.num_needle_q[type] * self.num_needle_v[type] == 1:
-            template = template.replace('Some', 'A')
-            template = template.replace('are all', 'is')
-            template = template.replace('are', 'is')
-            template = template.replace('answers', 'answer')
-            type_needle_v = type_needle_v[:-1] # remove "s"
+            template = template.replace("Some", "A")
+            template = template.replace("are all", "is")
+            template = template.replace("are", "is")
+            template = template.replace("answers", "answer")
+            type_needle_v = type_needle_v[:-1]  # remove "s"
 
         input_text = template.format(
             type_needle_v=type_needle_v,
@@ -522,20 +555,29 @@ class PasskeyRetrievalDataset(Dataset):
         context_length = self.context_length_intervals[i]
         type = self.type_haystack[i % len(self.type_haystack)]
         used_haystack = self.num_haystack[type]
-        while(True):
+        while True:
             try:
-                input_text, answer = self.generate_input_output(used_haystack, self.template, type)
-                length = self.tokenizer.encode(input_text, return_tensors="pt").shape[-1] + self.tokens_to_generate
+                input_text, answer = self.generate_input_output(
+                    used_haystack, self.template, type
+                )
+                length = (
+                    self.tokenizer.encode(input_text, return_tensors="pt").shape[-1]
+                    + self.tokens_to_generate
+                )
                 assert length <= context_length, f"{length} exceeds max_seq_length."
                 break
             except:
                 if used_haystack > self.incremental[type]:
                     used_haystack -= self.incremental[type]
 
-
         input_ids = self.tokenizer.encode(input_text + answer[0], return_tensors="pt")
-        length_context = self.tokenizer.encode(input_text, return_tensors="pt").shape[-1]
-        labels = torch.tensor([-100] * length_context + [0] * (input_ids.shape[-1] - length_context))
+        length_context = self.tokenizer.encode(input_text, return_tensors="pt").shape[
+            -1
+        ]
+        labels = torch.tensor(
+            [-100] * length_context + [0] * (input_ids.shape[-1] - length_context)
+        )
 
-        return dict(input_ids=input_ids[0], labels=labels, length_context=length_context)
-        
+        return dict(
+            input_ids=input_ids[0], labels=labels, length_context=length_context
+        )

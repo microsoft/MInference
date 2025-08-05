@@ -1,12 +1,13 @@
 # Copyright (c) 2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
+import itertools
+
+import tilelang
+import tilelang.language as T
 import torch
 import torch.nn.functional as F
-import tilelang
 from tilelang.autotuner import *
-import tilelang.language as T
-import itertools
 
 torch.random.manual_seed(0)
 
@@ -32,25 +33,25 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
     shape_q1 = [batch, heads1, dim1]
     shape_k1 = [batch, groups1, true_seq_len, dim1]
     shape_v1 = [batch, groups1, true_seq_len, dim]
-    
+
     shape_q2 = [batch, heads2, dim2]
     shape_k2 = [batch, groups2, true_seq_len, dim2]
     shape_v2 = [batch, groups2, true_seq_len, dim]
-    
+
     shape_q3 = [batch, heads3, dim3]
     shape_k3 = [batch, groups3, true_seq_len, dim3]
     shape_v3 = [batch, groups3, true_seq_len, dim]
-    
+
     shape_q4 = [batch, heads4, dim]
     shape_k4 = [batch, groups4, true_seq_len, dim4]
     shape_v4 = [batch, groups4, true_seq_len, dim]
-    
+
     shape_full_q = [batch, heads, dim]
     shape_full_k = [batch, groups, true_full_len, dim]
     shape_full_v = [batch, groups, true_full_len, dim]
-    
+
     shape_o = [batch, heads, dim]
-    
+
     accum_dtype = "float"
     kv_group_num = heads // groups
 
@@ -82,7 +83,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_local = T.alloc_fragment([block_N], "uint8")
                 acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
                 scores_max = T.alloc_fragment([block_H], accum_dtype)
-                
+
                 scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
                 scores_scale = T.alloc_fragment([block_H], accum_dtype)
                 scores_sum = T.alloc_fragment([block_H], accum_dtype)
@@ -92,7 +93,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 hid = by
                 sid = bz
                 cur_kv_head = hid // (kv_group_num // valid_block_H)
-                
+
                 T.copy(Q[bid, hid * valid_block_H: hid * valid_block_H + block_H, :], Q_shared)
                 T.fill(acc_o, 0)
                 T.fill(logsum, 0)
@@ -100,13 +101,13 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 per_block_len = T.ceildiv(seqlen_kv, num_split)
                 this_block_end = T.min(per_block_len * (sid + 1), true_seq_len)
                 this_block_begin = per_block_len * sid
-                
+
                 if this_block_begin < true_seq_len:
                     loop_range = T.ceildiv(per_block_len, block_N)
                     for k in T.Pipelined(loop_range, num_stages=num_stages):
                         if per_block_len * sid + k * block_N < true_seq_len:
                             T.copy(
-                                K[bid, cur_kv_head, per_block_len * sid + 
+                                K[bid, cur_kv_head, per_block_len * sid +
                                 k * block_N: per_block_len * sid + (k + 1) * block_N, :], K_shared)
                             for i in T.Parallel(block_N):
                                 if per_block_len * sid + k * block_N + i < this_block_end:
@@ -121,11 +122,11 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                                 acc_s,
                                 transpose_B=True,
                                 policy=T.GemmWarpPolicy.FullRow, )
-                            
+
                             for i, j in T.Parallel(block_H, block_N):
                                 acc_s[i, j] = T.if_then_else(mask_local[j] != 0, acc_s[i, j],
                                                             -T.infinity(accum_dtype))
-                                
+
                             T.copy(scores_max, scores_max_prev)
                             T.fill(scores_max, -T.infinity(accum_dtype))
                             T.reduce_max(acc_s, scores_max, dim=1, clear=False)
@@ -175,7 +176,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_local = T.alloc_fragment([block_N], "uint8")
                 acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
                 scores_max = T.alloc_fragment([block_H], accum_dtype)
-                
+
                 scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
                 scores_scale = T.alloc_fragment([block_H], accum_dtype)
                 scores_sum = T.alloc_fragment([block_H], accum_dtype)
@@ -185,7 +186,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 hid = by
                 sid = bz
                 cur_kv_head = hid // (kv_group_num // valid_block_H)
-                
+
                 T.copy(Q2[bid, hid * valid_block_H: hid * valid_block_H + block_H, :], Q_shared)
                 T.fill(acc_o, 0)
                 T.fill(logsum, 0)
@@ -193,7 +194,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 per_block_len = T.ceildiv(seqlen_kv, num_split)
                 this_block_end = T.min(per_block_len * (sid + 1), true_seq_len)
                 this_block_begin = per_block_len * sid
-                
+
                 if this_block_begin < true_seq_len:
                     loop_range = T.ceildiv(per_block_len, block_N)
                     for k in T.Pipelined(loop_range, num_stages=2):
@@ -214,11 +215,11 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                                 acc_s,
                                 transpose_B=True,
                                 policy=T.GemmWarpPolicy.FullRow, )
-                            
+
                             for i, j in T.Parallel(block_H, block_N):
                                 acc_s[i, j] = T.if_then_else(mask_local[j] != 0, acc_s[i, j],
                                                             -T.infinity(accum_dtype))
-                                
+
                             T.copy(scores_max, scores_max_prev)
                             T.fill(scores_max, -T.infinity(accum_dtype))
                             T.reduce_max(acc_s, scores_max, dim=1, clear=False)
@@ -247,7 +248,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                     T.copy(acc_o[:valid_block_H, :], O_shared)
                     T.copy(O_shared, Output_partial2[bid, hid * valid_block_H:(hid + 1) * valid_block_H,
                                                     sid, :])
-        
+
         @T.macro
         def flash_attn_split3(
                 Q3: T.Tensor(shape_q3, dtype),
@@ -268,7 +269,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_local = T.alloc_fragment([block_N], "uint8")
                 acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
                 scores_max = T.alloc_fragment([block_H], accum_dtype)
-                
+
                 scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
                 scores_scale = T.alloc_fragment([block_H], accum_dtype)
                 scores_sum = T.alloc_fragment([block_H], accum_dtype)
@@ -278,7 +279,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 hid = by
                 sid = bz
                 cur_kv_head = hid // (kv_group_num // valid_block_H)
-                
+
                 T.copy(Q3[bid, hid * valid_block_H: hid * valid_block_H + block_H, :], Q_shared)
                 T.fill(acc_o, 0)
                 T.fill(logsum, 0)
@@ -286,7 +287,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 per_block_len = T.ceildiv(seqlen_kv, num_split)
                 this_block_end = T.min(per_block_len * (sid + 1), true_seq_len)
                 this_block_begin = per_block_len * sid
-                
+
                 if this_block_begin < true_seq_len:
                     loop_range = T.ceildiv(per_block_len, block_N)
                     for k in T.Pipelined(loop_range, num_stages=num_stages):
@@ -307,11 +308,11 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                                 acc_s,
                                 transpose_B=True,
                                 policy=T.GemmWarpPolicy.FullRow, )
-                            
+
                             for i, j in T.Parallel(block_H, block_N):
                                 acc_s[i, j] = T.if_then_else(mask_local[j] != 0, acc_s[i, j],
                                                             -T.infinity(accum_dtype))
-                                
+
                             T.copy(scores_max, scores_max_prev)
                             T.fill(scores_max, -T.infinity(accum_dtype))
                             T.reduce_max(acc_s, scores_max, dim=1, clear=False)
@@ -340,7 +341,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                     T.copy(acc_o[:valid_block_H, :], O_shared)
                     T.copy(O_shared, Output_partial3[bid, hid * valid_block_H:(hid + 1) * valid_block_H,
                                                     sid, :])
-                
+
         @T.macro
         def flash_attn_split4(
                 Q4: T.Tensor(shape_q4, dtype),
@@ -361,7 +362,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_local = T.alloc_fragment([block_N], "uint8")
                 acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
                 scores_max = T.alloc_fragment([block_H], accum_dtype)
-                
+
                 scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
                 scores_scale = T.alloc_fragment([block_H], accum_dtype)
                 scores_sum = T.alloc_fragment([block_H], accum_dtype)
@@ -371,7 +372,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 hid = by
                 sid = bz
                 cur_kv_head = hid // (kv_group_num // valid_block_H)
-                
+
                 T.copy(Q4[bid, hid * valid_block_H: hid * valid_block_H + block_H, :], Q_shared)
                 T.fill(acc_o, 0)
                 T.fill(logsum, 0)
@@ -379,7 +380,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 per_block_len = T.ceildiv(seqlen_kv, num_split)
                 this_block_end = T.min(per_block_len * (sid + 1), true_seq_len)
                 this_block_begin = per_block_len * sid
-                
+
                 if this_block_begin < true_seq_len:
                     loop_range = T.ceildiv(per_block_len, block_N)
                     for k in T.Pipelined(loop_range, num_stages=num_stages):
@@ -400,11 +401,11 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                                 acc_s,
                                 transpose_B=True,
                                 policy=T.GemmWarpPolicy.FullRow, )
-                            
+
                             for i, j in T.Parallel(block_H, block_N):
                                 acc_s[i, j] = T.if_then_else(mask_local[j] != 0, acc_s[i, j],
                                                             -T.infinity(accum_dtype))
-                                
+
                             T.copy(scores_max, scores_max_prev)
                             T.fill(scores_max, -T.infinity(accum_dtype))
                             T.reduce_max(acc_s, scores_max, dim=1, clear=False)
@@ -433,7 +434,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                     T.copy(acc_o[:valid_block_H, :], O_shared)
                     T.copy(O_shared, Output_partial4[bid, hid * valid_block_H: (hid + 1) * valid_block_H,
                                                     sid, :])
-        
+
         @T.macro
         def flash_attn_split_full(
                 Q_full: T.Tensor(shape_full_q, dtype),
@@ -454,7 +455,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 mask_local = T.alloc_fragment([block_N], "uint8")
                 acc_o = T.alloc_fragment([block_H, dim], accum_dtype)
                 scores_max = T.alloc_fragment([block_H], accum_dtype)
-                
+
                 scores_max_prev = T.alloc_fragment([block_H], accum_dtype)
                 scores_scale = T.alloc_fragment([block_H], accum_dtype)
                 scores_sum = T.alloc_fragment([block_H], accum_dtype)
@@ -464,12 +465,12 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                 hid = by
                 sid = num_split
                 cur_kv_head = hid // (kv_group_num // valid_block_H)
-                
+
                 T.copy(Q_full[bid, hid * valid_block_H: hid * valid_block_H + block_H, :], Q_shared)
                 T.fill(acc_o, 0)
                 T.fill(logsum, 0)
                 T.fill(scores_max, -T.infinity(accum_dtype))
-                
+
                 loop_range = T.ceildiv(seqlen_fullkv, block_N)
                 for k in T.Pipelined(loop_range, num_stages=num_stages):
                     if k * block_N < true_full_len:
@@ -488,11 +489,11 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                             acc_s,
                             transpose_B=True,
                             policy=T.GemmWarpPolicy.FullRow, )
-                        
+
                         for i, j in T.Parallel(block_H, block_N):
                             acc_s[i, j] = T.if_then_else(mask_local[j] != 0, acc_s[i, j],
                                                         -T.infinity(accum_dtype))
-                            
+
                         T.copy(scores_max, scores_max_prev)
                         T.fill(scores_max, -T.infinity(accum_dtype))
                         T.reduce_max(acc_s, scores_max, dim=1, clear=False)
@@ -564,7 +565,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
                         o_accum_local[i] += po_local[i] * scale_local[0]
                 for i in T.Parallel(dim):
                     Output[bz, by, i] = o_accum_local[i]
-        
+
         @T.prim_func
         def flashattn_gqa_decode_split_stream(
                 Q_full: T.Tensor(shape_full_q, dtype),
@@ -577,7 +578,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
         ):
             flash_attn_split_full(Q_full, K_full, V_full, mask, glse, Output_partial)
             combine(glse, Output_partial, Output)
-        
+
         @T.prim_func
         def flashattn_gqa_decode_split_1group(
                 Q_full: T.Tensor(shape_full_q, dtype),
@@ -623,7 +624,7 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
             flash_attn_split2(Q2, K2, V2, mask_mid, glse2, Output_partial2)
             flash_attn_split_full(Q_full, K_full, V_full, mask, glse, Output_partial)
             combine(glse, Output_partial, Output)
-            
+
         @T.prim_func
         def flashattn_gqa_decode_split_3groups(
                 Q_full: T.Tensor(shape_full_q, dtype),
@@ -704,20 +705,20 @@ def leank_flashattn(batch, heads, heads1, heads2, heads3, heads4, groups, groups
             return flashattn_gqa_decode_split_3groups
         elif ndim == 4:
             return flashattn_gqa_decode_split_4groups
-        
+
 
     if tune:
-        
+
         @autotune(configs=get_configs(), warmup=10, rep=10)
         @tilelang.jit(out_idx=[5 * (ndim + 1) + 1 + (ndim > 0)])
         def kernel(block_N=None, block_H=None, num_split=None, num_stages=None, threads=None):
             return kernel_func(block_N, block_H, num_split, num_stages, threads)
 
         return kernel()
-    
+
     else:
-        
+
         def kernel(block_N, block_H, num_split, num_stages, threads):
             return kernel_func(block_N, block_H, num_split, num_stages, threads)
-        
+
     return kernel
