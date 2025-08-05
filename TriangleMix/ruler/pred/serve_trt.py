@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Microsoft
+# Copyright (c) 2024-2025 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 
 # adapted from https://github.com/Kipok/NeMo-Skills/blob/v0.1/nemo_skills/inference/server/serve_trt.py
