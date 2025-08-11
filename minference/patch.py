@@ -1052,6 +1052,7 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
 
     import vllm
     from vllm.attention import Attention
+    from vllm.forward_context import get_forward_context
     from vllm.model_executor.models.chatglm import (
         GLMAttention,
         GLMBlock,
@@ -1082,23 +1083,38 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        kv_cache: Optional[torch.Tensor],
-        attn_metadata,
-        kv_scale: float = 1.0,
+        # kv_cache: Optional[torch.Tensor],
+        # attn_metadata,
+        # kv_scale: float = 1.0,
         layer_idx: int = 0,
     ) -> torch.Tensor:
-        # check self._kv_scale
-        kv_scale = getattr(self, "_kv_scale", getattr(self, "_k_scale", kv_scale))
+        output_shape = query.shape
+        output = torch.zeros(output_shape, dtype=query.dtype, device=query.device)
+        hidden_size = output_shape[-1]
+        forward_context = get_forward_context()
+        attn_metadata = forward_context.attn_metadata
+        if isinstance(attn_metadata, dict):
+            attn_metadata = attn_metadata[self.layer_name]
+        self_kv_cache = self.kv_cache[forward_context.virtual_engine]
         return self.impl.forward(
-            query, key, value, kv_cache, attn_metadata, kv_scale, layer_idx
+            self,
+            query,
+            key,
+            value,
+            self_kv_cache,
+            attn_metadata,
+            output=output,
+            layer_idx=layer_idx,
         )
+        # check self._kv_scale
+        # kv_scale = getattr(self, "_kv_scale", getattr(self, "_k_scale", kv_scale))
+        return self.impl.forward(query, key, value, layer_idx)
 
     def llama_model_forward_vllm(
         self,
         input_ids: Optional[torch.Tensor],
         positions: torch.Tensor,
-        kv_caches: List[torch.Tensor],
-        attn_metadata,
+        intermediate_tensors,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         if inputs_embeds is not None:
@@ -1108,14 +1124,7 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
         residual = None
         for i in range(len(self.layers)):
             layer = self.layers[i]
-            hidden_states, residual = layer(
-                positions,
-                hidden_states,
-                kv_caches[i],
-                attn_metadata,
-                residual,
-                layer_idx=i,
-            )
+            hidden_states, residual = layer(positions, hidden_states, residual, i)
         hidden_states, _ = self.norm(hidden_states, residual)
         return hidden_states
 
@@ -1145,8 +1154,6 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
         self,
         positions: torch.Tensor,
         hidden_states: torch.Tensor,
-        kv_cache: torch.Tensor,
-        attn_metadata,
         residual: Optional[torch.Tensor],
         layer_idx: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -1159,8 +1166,6 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
         hidden_states = self.self_attn(
             positions=positions,
             hidden_states=hidden_states,
-            kv_cache=kv_cache,
-            attn_metadata=attn_metadata,
             layer_idx=layer_idx,
         )
 
@@ -1212,8 +1217,6 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
             self,
             positions: torch.Tensor,
             hidden_states: torch.Tensor,
-            kv_cache: torch.Tensor,
-            attn_metadata,
             layer_idx: int,
         ) -> torch.Tensor:
             qkv, _ = self.qkv_proj(hidden_states)
@@ -1223,6 +1226,8 @@ def minference_patch_vllm_executor(config_file: str, patch_config={}):
                 attn_output = self.attn(
                     q, k, v, kv_cache, attn_metadata, self.kv_scale, layer_idx
                 )
+            elif vllm_version >= "0.8.0":
+                attn_output = self.attn(q, k, v, layer_idx=layer_idx)
             elif vllm_version >= "0.4.3":
                 attn_output = self.attn(
                     q, k, v, kv_cache, attn_metadata, layer_idx=layer_idx

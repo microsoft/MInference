@@ -14,6 +14,8 @@ from transformers.utils.import_utils import _is_package_available
 if _is_package_available("vllm"):
     try:
         from vllm import _custom_ops as vllm_ops
+        from vllm.attention.backends.abstract import AttentionType
+        from vllm.attention.backends.utils import get_num_prefill_decode_query_kv_tokens
         from vllm.attention.ops.paged_attn import PagedAttention
         from vllm.distributed import get_tensor_model_parallel_rank
         from vllm_flash_attn import flash_attn_varlen_func, flash_attn_with_kvcache
@@ -28,7 +30,6 @@ from ..ops.pit_sparse_flash_attention_v2 import vertical_slash_sparse_attention
 from ..ops.streaming_kernel import streaming_forward, streaming_forward2
 from .flexprefill import flexprefill_forward
 from .kvcompression import *
-from .leank import *
 from .quest import quest_forward
 from .snapkv import *
 
@@ -785,7 +786,6 @@ def kvcompress_forward(
         "streaming": snapkv_forward,
         "quest": quest_forward,
         "dense": snapkv_forward,
-        "leank": leank_forward,
     }
 
     return forward_map[method]
@@ -1170,15 +1170,17 @@ def minference_vllm_forward(
         # Reshape the output tensor.
         return output.view(num_tokens, hidden_size)
 
-    def forward_vllm_043(
+    def forward_vllm_080(
         self,
+        layer,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
         attn_metadata,
-        kv_scale: float,
-        layer_idx: int,
+        output: Optional[torch.Tensor] = None,
+        output_scale: Optional[torch.Tensor] = None,
+        layer_idx: int = 0,
     ) -> torch.Tensor:
         """Forward pass with FlashAttention.
 
@@ -1194,7 +1196,6 @@ def minference_vllm_forward(
         # NOTE(woosuk): FlashAttention does not support FP8 KV cache.
         self.patch_config = patch_config
         self.best_pattern = {int(ii): jj for ii, jj in pattern_config[layer_idx].items()}
-        assert kv_scale == 1.0, "kv_scale is not supported in FlashAttention."
 
         def repeat_kv(hidden_states, n_rep):
             sqlen, num_head, head_dim = hidden_states.shape
@@ -1239,49 +1240,65 @@ def minference_vllm_forward(
         key = key.view(-1, self.num_kv_heads, self.head_size)
         value = value.view(-1, self.num_kv_heads, self.head_size)
 
-        if kv_cache is not None:
+        attn_type = self.attn_type
+        kv_cache_dtype: str = self.kv_cache_dtype
+        softmax_scale: float = self.scale
+        window_size = self.sliding_window
+        alibi_slopes: Optional[torch.Tensor] = self.alibi_slopes
+        logits_soft_cap: Optional[float] = self.logits_soft_cap
+        fp8_attention = kv_cache_dtype.startswith("fp8")
+
+        if kv_cache.numel() > 0:
             key_cache = kv_cache[0]
             value_cache = kv_cache[1]
+            # We skip updating the KV cache under two conditions:
+            #  a. When the Attention Type is ENCODER. In this phase, we compute
+            #     only the encoder attention without updating the cache.
+            #  b. When both Key and Value are None. This occurs during
+            #     cross-attention computation in the decoding phase, where the
+            #     KV cache is already populated with the cross-attention
+            #     tensor. Thus, we skip cache updates during this time.
+            if (attn_type != AttentionType.ENCODER) and (key is not None) and (
+                    value is not None):
+                if attn_type == AttentionType.ENCODER_DECODER:
+                    # Update cross-attention KV cache (prefill-only)
+                    updated_slot_mapping = attn_metadata.cross_slot_mapping
+                else:
+                    # Update self-attention KV cache (prefill/decode)
+                    updated_slot_mapping = attn_metadata.slot_mapping
 
-            # Reshape the input keys and values and store them in the cache.
-            # If kv_cache is not provided, the new key and value tensors are
-            # not cached. This happens during the initial memory profiling run.
-            addition_params = {}
-            if "k_scale" in inspect.signature(vllm_ops.reshape_and_cache_flash).parameters:
-                addition_params = {"k_scale": 1.0, "v_scale": 1.0}
-            vllm_ops.reshape_and_cache_flash(
-                key,
-                value,
-                key_cache,
-                value_cache,
-                attn_metadata.slot_mapping.flatten(),
-                self.kv_cache_dtype,
-                **addition_params,
-            )
+                # Reshape the input keys and values and store them in the cache.
+                # If kv_cache is not provided, the new key and value tensors are
+                # not cached. This happens during the initial memory
+                # profiling run.
+                torch.ops._C_cache_ops.reshape_and_cache_flash(
+                    key,
+                    value,
+                    kv_cache[0],
+                    kv_cache[1],
+                    updated_slot_mapping.flatten(),  # type: ignore[union-attr]
+                    kv_cache_dtype,
+                    layer._k_scale,
+                    layer._v_scale,
+                )
 
-        num_prefill_tokens = attn_metadata.num_prefill_tokens
-        num_decode_tokens = attn_metadata.num_decode_tokens
-        assert key.shape[0] == num_prefill_tokens + num_decode_tokens
-        assert value.shape[0] == num_prefill_tokens + num_decode_tokens
+        (num_prefill_query_tokens, num_prefill_kv_tokens,
+        num_decode_query_tokens) = \
+            get_num_prefill_decode_query_kv_tokens(attn_metadata, attn_type)
+        decode_query = query[num_prefill_query_tokens:]
+        decode_output = output[num_prefill_query_tokens:]
+        # QKV for prefill.
+        query = query[:num_prefill_query_tokens]
+        prefill_output = output[:num_prefill_query_tokens]
+        assert query.shape[0] == num_prefill_query_tokens
+        assert decode_query.shape[0] == num_decode_query_tokens
 
         output = torch.empty_like(query)
-        # Query for decode. KV is not needed because it is already cached.
-        decode_query = query[num_prefill_tokens:]
-        # QKV for prefill.
-        query = query[:num_prefill_tokens]
-        key = key[:num_prefill_tokens]
-        value = value[:num_prefill_tokens]
-
-        assert query.shape[0] == num_prefill_tokens
-        assert decode_query.shape[0] == num_decode_tokens
 
         if prefill_meta := attn_metadata.prefill_metadata:
             # Prompt run.
-            if (
-                kv_cache is None or prefill_meta.block_tables is None
-                or prefill_meta.block_tables.numel() == 0
-                or query.shape[0] > 10_000 # temporary solution in enable_prefix_caching=True
-            ):
+            if (kv_cache.numel() == 0 or prefill_meta.block_tables is None
+                    or prefill_meta.block_tables.numel() == 0):
                 # normal attention
                 # When block_tables are not filled, it means q and k are the
                 # prompt, and they have the same length.
@@ -1299,13 +1316,13 @@ def minference_vllm_forward(
                 #     alibi_slopes=self.alibi_slopes,
                 # )
                 out = minference_prefill_func(query, key, value)
-                assert output[:num_prefill_tokens].shape == out.shape
-                output[:num_prefill_tokens] = out
+                assert output[:num_prefill_query_tokens].shape == out.shape
+                output[:num_prefill_query_tokens] = out
             else:
                 # prefix-enabled attention
                 assert prefill_meta.seq_lens is not None
                 max_seq_len = max(prefill_meta.seq_lens)
-                output[:num_prefill_tokens] = flash_attn_varlen_func(
+                output[:num_prefill_query_tokens] = flash_attn_varlen_func(
                     q=query,
                     k=key_cache,
                     v=value_cache,
@@ -1321,7 +1338,7 @@ def minference_vllm_forward(
 
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
-            output[num_prefill_tokens:] = flash_attn_with_kvcache(
+            output[num_prefill_query_tokens:] = flash_attn_with_kvcache(
                 decode_query.unsqueeze(1),
                 key_cache,
                 value_cache,
@@ -1340,5 +1357,5 @@ def minference_vllm_forward(
     elif vllm_version == "0.4.2":
         return forward_vllm_042
     elif vllm_version >= "0.4.3":
-        return forward_vllm_043
+        return forward_vllm_080
     assert False, "Only support 'vllm>=0.4.1'. Please update your vllm version."
