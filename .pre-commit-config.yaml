@@ -37,6 +37,7 @@ repos:
     hooks:
     -   id: insert-license
         files: \.(py|sh|toml)$
+        stages: [pre-commit]
         args:
         - --license-filepath
         - assets/license_header.txt
@@ -46,12 +47,15 @@ repos:
     rev: 5.13.2
     hooks:
     -   id: isort
+        stages: [pre-commit]
 -   repo: https://github.com/psf/black
     rev: 23.3.0
     hooks:
     -   id: black
+        stages: [pre-commit]
         exclude: minference/ops|minference/modules/minference\_forward\.py
 -   repo: https://github.com/nbQA-dev/nbQA
     rev: 1.7.1
     hooks:
     -   id: nbqa-black
+        stages: [pre-commit]
