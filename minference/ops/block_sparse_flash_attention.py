@@ -175,7 +175,8 @@ def block_sparse_attention(
     block_size_N: int = 64,
 ):
     batch_size, num_heads, context_size, head_dim = query.shape
-    pad = block_size_M - (query.shape[2] & (block_size_M - 1))
+    mask_M = block_size_M - 1
+    pad = (block_size_M - (query.shape[2] & mask_M)) & mask_M
     query = torch.nn.functional.pad(query, [0, 0, 0, pad, 0, 0, 0, 0])
     key = torch.nn.functional.pad(key, [0, 0, 0, pad, 0, 0, 0, 0])
     value = torch.nn.functional.pad(value, [0, 0, 0, pad, 0, 0, 0, 0])
