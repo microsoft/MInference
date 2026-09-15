@@ -41,6 +41,15 @@ MODEL2PATH = {
     "Qwen/Qwen2.5-14B-Instruct-1M": os.path.join(
         BASE_DIR, "Qwen2.5_14B_Instruct_1M.json"
     ),
+    "Qwen/Qwen3-0.6B": os.path.join(
+        BASE_DIR, "Qwen3_0.6B_128k_instruct_kv_out_v32_fit_o_best_pattern.json"
+    ),
+    "Qwen/Qwen3-8B": os.path.join(
+        BASE_DIR, "Qwen3_8B_128k_kv_out_v32_fit_o_best_pattern.json"
+    ),
+    "Qwen/Qwen3-32B": os.path.join(
+        BASE_DIR, "Qwen3_32B_128k_kv_out_v32_fit_o_best_pattern.json"
+    ),
     "THUDM/glm-4-9b-chat-1m": os.path.join(
         BASE_DIR, "GLM_4_9B_1M_instruct_kv_out_v32_fit_o_best_pattern.json"
     ),
