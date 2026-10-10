@@ -1,5 +1,5 @@
 transformers==4.48.0
-datasets==2.20.0
+datasets==5.0.1
 tensorboard
 
 # For Data Preparation
