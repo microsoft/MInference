@@ -103,7 +103,7 @@ if not SKIP_CUDA_BUILD:
                 os.path.join("csrc", "kernels.cpp"),
                 os.path.join("csrc", "vertical_slash_index.cu"),
             ],
-            extra_compile_args=["-std=c++17", "-O3"],
+            extra_compile_args=["-O3"],
         )
     )
 
