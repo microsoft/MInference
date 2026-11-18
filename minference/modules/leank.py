@@ -3,8 +3,6 @@
 
 from typing import List, Optional, Union
 
-import tilelang
-import tilelang.language as T
 import torch
 from transformers.cache_utils import DynamicCache
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
@@ -318,6 +316,14 @@ def leank_forward(
         args.append(maskmid)
     if n_groups < 4:
         number_groups += [0] * (4 - n_groups)
+
+    try:
+        import tilelang
+        import tilelang.language as T
+    except ImportError:
+        raise ImportError(
+            "LeanK Flash Decoding kernel is not available. Please install the required Tilelang package."
+        )
 
     kernel_kwargs = [T.symbolic("batch"), nh]
     kernel_kwargs += [i * heads_per_group for i in number_groups]

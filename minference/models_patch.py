@@ -11,7 +11,7 @@ from .patch import (
     new_patch,
     patch_hf,
 )
-from modules.leank import patch_leank
+from .modules.leank import patch_leank
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
