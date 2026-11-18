@@ -14,6 +14,10 @@
     <a href="https://aka.ms/MMInference"><b>MMInference</b></a> |
 </p>
 
+<p align="center">
+  <b>English</b> · <a href="https://github.com/microsoft/MInference/blob/main/README.zh.md">简体中文</a>
+</p>
+
 https://github.com/microsoft/MInference/assets/30883354/52613efc-738f-4081-8367-7123c81d6b19
 
 _Now, you can process **1M context 10x faster in a single A100** using Long-context LLMs like LLaMA-3-8B-1M, GLM-4-1M, with even **better accuracy**, try **MInference 1.0** right now!_
