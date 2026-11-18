@@ -370,6 +370,11 @@ class StreamingLLMKVCache(SnapKVCache):
 class DynamicCacheWithRepeat(DynamicCache):
     def __init__(self, config, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # update()/get_seq_length() read these directly and never touch DynamicCache's own
+        # storage, so self-init them like BaseKVCache above instead of relying on the parent.
+        self._seen_tokens = 0
+        self.key_cache: List[torch.Tensor] = []
+        self.value_cache: List[torch.Tensor] = []
         self.temp_key_cache = []
         self.temp_value_cache = []
 
